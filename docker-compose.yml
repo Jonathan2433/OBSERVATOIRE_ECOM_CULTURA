@@ -1,0 +1,98 @@
+# =============================================================================
+#  Observatoire Ecom Studio — orchestration des conteneurs (mono-poste)
+# -----------------------------------------------------------------------------
+#  Services : web (nginx + front React) · api (FastAPI) · worker (RQ + ML)
+#             db (PostgreSQL) · redis (file de jobs)
+#
+#  Garde-fous : SEUL le service `web` est exposé, et UNIQUEMENT sur 127.0.0.1.
+#  db / redis / api ne sont accessibles que sur le réseau interne Docker.
+#  Aucune donnée ne sort du poste (offline strict).
+#
+#  Lancement :  cp .env.example .env  &&  docker compose up --build
+# =============================================================================
+
+name: observatoire-ecom-studio
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-oes}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Definir POSTGRES_PASSWORD dans .env}
+      POSTGRES_DB: ${POSTGRES_DB:-oes}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-oes} -d ${POSTGRES_DB:-oes}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    # Aucun port publié -> base 100 % locale, jamais accessible hors du réseau Docker.
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  api:
+    build:
+      context: ./app/api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-oes}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-oes}
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:?Definir SECRET_KEY dans .env}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    # Pas de port publié sur l'hôte : l'API n'est joignable qu'à travers le proxy `web`.
+
+  worker:
+    build:
+      context: .
+      dockerfile: app/worker/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-oes}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-oes}
+      REDIS_URL: redis://redis:6379/0
+      MODELS_DIR: /data/models
+      CONFIG_PATH: /app/config/config.yaml
+      OMP_NUM_THREADS: ${WORKER_THREADS:-4}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./data/models:/data/models:ro     # modèles montés en LECTURE SEULE (garde-fou)
+      - ./data/uploads:/data/uploads
+      - ./data/output:/data/output
+      - ./data/logs:/data/logs
+
+  web:
+    build:
+      context: ./app/web
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8080}:80"   # exposé UNIQUEMENT sur localhost
+
+volumes:
+  pgdata:

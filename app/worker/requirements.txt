@@ -1,0 +1,6 @@
+# Dépendances SPÉCIFIQUES au worker (en plus du requirements.txt ML racine).
+# Le worker exécute les jobs lourds (pipeline CamemBERT) et écrit en base.
+rq>=1.16,<2.0
+redis>=5.0,<6.0
+SQLAlchemy>=2.0,<2.1
+psycopg[binary]>=3.1,<3.3

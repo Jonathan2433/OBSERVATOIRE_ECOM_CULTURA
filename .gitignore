@@ -43,3 +43,9 @@ __pycache__/
 # --- Secrets / config locale -------------------------------------------------
 .env
 *.local
+
+# --- Application (front / données de runtime) --------------------------------
+app/web/node_modules/
+app/web/dist/
+data/uploads/
+data/logs/

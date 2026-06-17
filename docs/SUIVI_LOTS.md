@@ -8,7 +8,7 @@
 
 | Lot | Intitulé | Statut | Branche |
 |---|---|---|---|
-| L0 | Socle projet & conteneurisation | 🟦 En cours | `lot/0-socle-conteneurisation` |
+| L0 | Socle projet & conteneurisation | ⏸️ En attente de validation | `lot/0-socle-conteneurisation` |
 | L1 | Auth, comptes & rôles | ⬜ | — |
 | L2 | Cœur ML : worker async + gestion modèle | ⬜ | — |
 | L3 | Ingestion & lancement de lot + suivi | ⬜ | — |
@@ -20,20 +20,22 @@
 
 ---
 
-## L0 — Socle projet & conteneurisation 🟦
+## L0 — Socle projet & conteneurisation ⏸️
 
 **Objectif** : fondations techniques + lever le risque image worker arm64 (torch/onnx).
 
 Critères d'acceptation :
-- [ ] Arborescence `app/` (api / worker / web) + moteur `src/` réutilisable
-- [ ] `docker-compose.yml` (web, api, worker, db Postgres, redis) + `.env.example`
-- [ ] `docker compose config` valide (syntaxe)
-- [ ] API FastAPI : `/health` + config + logging structuré
-- [ ] Squelette web React/TS (Vite) appelant `/api/health`
-- [ ] Worker RQ qui démarre et se connecte à Redis
-- [ ] Base Postgres + Alembic configuré (migration baseline)
-- [ ] Images **linux/arm64**, aucun accès réseau sortant au runtime
-- [ ] `docker compose up` → page d'accueil + `/health` OK *(à exécuter sur le poste, daemon requis)*
+- [x] Arborescence `app/` (api / worker / web) + moteur `src/` réutilisable
+- [x] `docker-compose.yml` (web, api, worker, db Postgres, redis) + `.env.example`
+- [x] `docker compose config` valide (syntaxe) — vérifié
+- [x] API FastAPI : `/health` + `/api/health` + config + logging structuré
+- [x] Squelette web React/TS (Vite) appelant `/api/health`
+- [x] Worker RQ qui démarre et se connecte à Redis (code + bootstrap)
+- [x] Base Postgres + Alembic configuré (migration baseline `0001`)
+- [x] Exposition **localhost uniquement**, aucun accès réseau sortant au runtime (par conception)
+- [ ] **À exécuter sur le poste (daemon Docker requis)** : `docker compose up --build` → page d'accueil + DB/Redis « OK ». *Valide aussi le build de l'image worker arm64 (torch/onnx) — risque technique #1.*
+
+**Reste pour clore L0** : lancer `docker compose up --build` sur le laptop cible et confirmer l'écran d'accueil (composants OK). Ensuite → validation PO → merge.
 
 ---
 
