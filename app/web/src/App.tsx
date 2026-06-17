@@ -4,6 +4,8 @@ import Layout from "./components/Layout";
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import UsersPage from "./pages/UsersPage";
+import BatchesPage from "./pages/BatchesPage";
+import BatchDetailPage from "./pages/BatchDetailPage";
 
 function Spinner() {
   return <p style={{ fontFamily: "system-ui", margin: "4rem", textAlign: "center" }}>Chargement…</p>;
@@ -33,6 +35,8 @@ export default function App() {
       <Route element={<RequireAuth />}>
         <Route element={<Layout />}>
           <Route index element={<DashboardPage />} />
+          <Route path="lots" element={<BatchesPage />} />
+          <Route path="lots/:id" element={<BatchDetailPage />} />
           <Route path="admin/users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
         </Route>
       </Route>
