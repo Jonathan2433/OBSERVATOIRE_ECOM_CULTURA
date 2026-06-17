@@ -18,5 +18,17 @@ class Settings(BaseSettings):
     # CORS : en mono-poste, le front est servi par le même proxy -> origines locales.
     cors_origins: list[str] = ["http://localhost:8080", "http://127.0.0.1:8080"]
 
+    # --- Authentification (L1) ---
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 480          # session de travail ~8h
+    session_cookie_name: str = "oes_session"
+    cookie_secure: bool = False                      # localhost en http (mono-poste)
+    # Anti-bruteforce (verrouillage temporaire)
+    max_login_attempts: int = 5
+    lockout_minutes: int = 5
+    # Admin initial créé au démarrage si la base ne contient aucun utilisateur
+    admin_username: str = "admin"
+    admin_password: str = ""                         # vide -> défaut + avertissement
+
 
 settings = Settings()
