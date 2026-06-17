@@ -11,6 +11,7 @@ from . import APP_NAME, __version__
 from .api.routes_auth import router as auth_router
 from .api.routes_batches import router as batches_router
 from .api.routes_health import router as health_router
+from .api.routes_kpi import router as kpi_router
 from .api.routes_models import router as models_router
 from .api.routes_predict import router as predict_router
 from .api.routes_results import router as results_router
@@ -60,5 +61,6 @@ app.include_router(results_router)
 app.include_router(review_router)
 app.include_router(predict_router)
 app.include_router(models_router)
+app.include_router(kpi_router)
 
-# Routers fonctionnels suivants (kpi détaillés, admin/config) : lots L6 -> L7.
+# Routers fonctionnels suivants (admin/config, rétention) : lot L7.

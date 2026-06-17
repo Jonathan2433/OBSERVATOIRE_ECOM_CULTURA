@@ -8,6 +8,8 @@ import BatchesPage from "./pages/BatchesPage";
 import BatchDetailPage from "./pages/BatchDetailPage";
 import ResultsPage from "./pages/ResultsPage";
 import ReviewPage from "./pages/ReviewPage";
+import BatchKpiPage from "./pages/BatchKpiPage";
+import DashboardsPage from "./pages/DashboardsPage";
 import TestPage from "./pages/TestPage";
 
 function Spinner() {
@@ -42,6 +44,8 @@ export default function App() {
           <Route path="lots/:id" element={<BatchDetailPage />} />
           <Route path="lots/:id/resultats" element={<ResultsPage />} />
           <Route path="lots/:id/revue" element={<ReviewPage />} />
+          <Route path="lots/:id/kpi" element={<BatchKpiPage />} />
+          <Route path="tableaux-de-bord" element={<DashboardsPage />} />
           <Route path="test" element={<TestPage />} />
           <Route path="admin/users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
         </Route>

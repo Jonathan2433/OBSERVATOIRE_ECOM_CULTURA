@@ -13,8 +13,8 @@
 | L2 | Cœur ML : worker async + gestion modèle | ✅ Fait (validé PO) | `lot/2` (mergé) |
 | L3 | Ingestion & lancement de lot + suivi | ✅ Fait (validé PO) | `lot/3` (mergé) |
 | L4 | Consultation résultats + exports (→ MVP) | ✅ Fait (validé PO) | `lot/4` (mergé) |
-| L5 | Revue humaine & corrections | ⏸️ En attente de validation | `lot/5-review` |
-| L6 | Tableaux de bord & KPI | ⬜ | — |
+| L5 | Revue humaine & corrections | ✅ Fait (validé PO) | `lot/5` (mergé) |
+| L6 | Tableaux de bord & KPI | ⏸️ En attente de validation | `lot/6-dashboards` |
 | L7 | Historique, audit, config & rétention | ⬜ | — |
 | L8 | Durcissement, RGPD, perf, recette V1 | ⬜ | — |
 
@@ -104,7 +104,7 @@ Critères d'acceptation :
 
 **Validation automatisée** : test E2E FastAPI/SQLite **15/15 OK** (résultats filtrés/paginés, recherche, export CSV [origine+modèle, conforme POC] & XLSX, test à la volée). Front type-check TS strict + build Vite OK.
 **Reste pour clore L4 (= MVP)** : sur le poste, après un lot terminé : Lots → (lot) → « Consulter les résultats » → filtrer, exporter CSV/XLSX ; et « Test à la volée » dans le menu.
-## L5 — Revue humaine & corrections ⏸️
+## L5 — Revue humaine & corrections ✅ (validé PO le 2026-06-17)
 
 **Objectif** : boucle qualité humaine (corriger les cas incertains) + correctif filtre.
 
@@ -119,7 +119,19 @@ Critères d'acceptation :
 
 **Validation automatisée** : test E2E FastAPI/SQLite **13/13 OK** (correctif filtre, file triée, correction valide/invalide [400 hiérarchie], historisation, valider-tel-quel, export corrections).
 **Reste pour clore L5** : sur le poste, après un lot : détail du lot → « Revue humaine (N) » → corriger/valider quelques verbatims (listes niv.2 limitées au niv.1 choisi) → exporter les corrections ; et vérifier que le filtre « Thème (contient…) » marche dans Résultats.
-## L6 — Tableaux de bord & KPI ⬜
+## L6 — Tableaux de bord & KPI ⏸️
+
+**Objectif** : pilotage (KPI modèle, résultats du lot, volumétrie & tendances).
+
+Critères d'acceptation :
+- [x] KPI **résultats du lot** : distribution thèmes niv.1, sous-thèmes, sentiments, signaux, taux de revue, durée, sources
+- [x] KPI **modèle** : métriques de la version active (F1 niv.1/niv.2, accuracy, rappel rupture) ou note « stub »
+- [x] **Volumétrie & tendances** : évolution par lot (volume, taux de revue, signaux) + top thèmes global
+- [x] Visualisations barres (composant `BarList`, sans dépendance lourde)
+- [x] Endpoints : `GET /api/batches/{id}/kpi`, `GET /api/kpi/volumetry`, `GET /api/kpi/model`
+
+**Validation automatisée** : test E2E FastAPI/SQLite **11/11 OK**. Front type-check TS strict + build Vite OK.
+**Reste pour clore L6** : sur le poste, après un lot : détail → « Tableau de bord » (barres thèmes/sentiments, signaux) ; menu « Tableaux de bord » (modèle actif + volumétrie globale).
 ## L7 — Historique, audit, config & rétention ⬜
 ## L8 — Durcissement, RGPD, perf, recette V1 ⬜
 
