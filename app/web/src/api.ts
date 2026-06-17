@@ -229,4 +229,38 @@ export const correctResult = (id: number, p: CorrectionPayload) =>
   request<ResultRow>(`/api/results/${id}`, { method: "PATCH", body: JSON.stringify(p) });
 export const exportCorrectionsUrl = () => "/api/corrections/export";
 
+// --- KPI / tableaux de bord ---
+export interface BatchKpi {
+  batch_id: number;
+  label: string;
+  model_label?: string | null;
+  n_total: number;
+  n_review: number;
+  review_rate: number;
+  n_errors: number;
+  duration_s?: number | null;
+  themes: Record<string, number>;
+  subthemes: Record<string, number>;
+  sentiments: Record<string, number>;
+  sources: Record<string, number>;
+  signals: { rupture: number; churn: number; insatisfaction: number };
+}
+export interface VolumetrySeriesItem {
+  id: number; label: string; created_at?: string | null;
+  n_total: number; n_review: number; review_rate: number;
+  signals: { rupture: number; churn: number; insatisfaction: number };
+}
+export interface Volumetry {
+  n_batches: number;
+  total_verbatims: number;
+  series: VolumetrySeriesItem[];
+  global_themes: Record<string, number>;
+}
+export interface ModelKpi {
+  active: null | { label: string; kind: string; available: boolean; metrics?: Record<string, number> | null };
+}
+export const getBatchKpi = (id: number) => request<BatchKpi>(`/api/batches/${id}/kpi`);
+export const getVolumetry = () => request<Volumetry>("/api/kpi/volumetry");
+export const getModelKpi = () => request<ModelKpi>("/api/kpi/model");
+
 export { ApiError };

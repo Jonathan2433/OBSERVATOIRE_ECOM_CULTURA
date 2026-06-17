@@ -22,6 +22,7 @@ export default function Layout() {
         <nav style={{ display: "flex", gap: "1rem", flex: 1 }}>
           <Link to="/">Accueil</Link>
           <Link to="/lots">Lots</Link>
+          <Link to="/tableaux-de-bord">Tableaux de bord</Link>
           <Link to="/test">Test à la volée</Link>
           {user?.role === "admin" && <Link to="/admin/users">Utilisateurs</Link>}
         </nav>
