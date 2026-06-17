@@ -7,7 +7,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from ..core.db import get_db
@@ -46,7 +46,10 @@ def _get_batch_or_404(db: Session, batch_id: int) -> Batch:
 
 def _apply_filters(query, niv1, sentiment, revue, rupture, churn, insatisfaction, q):
     if niv1:
-        query = query.filter(Result.theme1_niv1 == niv1)
+        # Recherche « contient » sur le thème (niv.1 OU niv.2), pas une égalité
+        # exacte : taper « Programme » doit matcher « Programme de fidélité ».
+        like = f"%{niv1}%"
+        query = query.filter(or_(Result.theme1_niv1.ilike(like), Result.theme1_niv2.ilike(like)))
     if sentiment:
         query = query.filter(Result.theme1_sentiment == sentiment)
     if revue is not None:

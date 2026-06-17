@@ -1,7 +1,7 @@
 """Schémas des résultats de classification et du test à la volée."""
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -34,6 +34,17 @@ class ResultsResponse(BaseModel):
     limit: int
     offset: int
     items: list[ResultOut]
+
+
+class CorrectionRequest(BaseModel):
+    """Revue d'un verbatim : valider tel quel ou corriger des champs."""
+    action: Literal["validate", "correct"] = "correct"
+    theme1_niv1: Optional[str] = None
+    theme1_niv2: Optional[str] = None
+    theme1_sentiment: Optional[str] = None
+    signal_rupture: Optional[bool] = None
+    signal_churn: Optional[bool] = None
+    signal_insatisfaction: Optional[bool] = None
 
 
 class PredictRequest(BaseModel):

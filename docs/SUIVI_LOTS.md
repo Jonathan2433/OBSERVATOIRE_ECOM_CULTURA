@@ -12,8 +12,8 @@
 | L1 | Auth, comptes & rôles | ✅ Fait (validé PO) | `lot/1` (mergé) |
 | L2 | Cœur ML : worker async + gestion modèle | ✅ Fait (validé PO) | `lot/2` (mergé) |
 | L3 | Ingestion & lancement de lot + suivi | ✅ Fait (validé PO) | `lot/3` (mergé) |
-| L4 | Consultation résultats + exports (→ MVP) | ⏸️ En attente de validation | `lot/4-results` |
-| L5 | Revue humaine & corrections | ⬜ | — |
+| L4 | Consultation résultats + exports (→ MVP) | ✅ Fait (validé PO) | `lot/4` (mergé) |
+| L5 | Revue humaine & corrections | ⏸️ En attente de validation | `lot/5-review` |
 | L6 | Tableaux de bord & KPI | ⬜ | — |
 | L7 | Historique, audit, config & rétention | ⬜ | — |
 | L8 | Durcissement, RGPD, perf, recette V1 | ⬜ | — |
@@ -90,7 +90,8 @@ Critères d'acceptation :
 **Validation** : front **type-check TS strict + build Vite OK**. Endpoints back-end couverts par le test E2E L2 (14/14).
 **Reste pour clore L2+L3** : rebuild sur le poste, puis dans l'UI : Lots → Nouveau lot → déposer `data/raw/mdtc_poc.xlsx` (et/ou mopinion) → suivre la progression → voir le résumé (mode stub).
 
-## L4 — Consultation résultats + exports ⏸️  (→ jalon MVP)
+## L4 — Consultation résultats + exports ✅ (validé PO le 2026-06-17, jalon MVP)
+> Bug remonté à la recette : le filtre « Thème 1 » faisait une égalité exacte (mot partiel -> 0 résultat). **Corrigé en L5** (ilike « contient » sur niv.1 + niv.2).
 
 **Objectif** : exploiter les résultats d'un lot (consultation, export) + test à la volée.
 
@@ -103,7 +104,21 @@ Critères d'acceptation :
 
 **Validation automatisée** : test E2E FastAPI/SQLite **15/15 OK** (résultats filtrés/paginés, recherche, export CSV [origine+modèle, conforme POC] & XLSX, test à la volée). Front type-check TS strict + build Vite OK.
 **Reste pour clore L4 (= MVP)** : sur le poste, après un lot terminé : Lots → (lot) → « Consulter les résultats » → filtrer, exporter CSV/XLSX ; et « Test à la volée » dans le menu.
-## L5 — Revue humaine & corrections ⬜
+## L5 — Revue humaine & corrections ⏸️
+
+**Objectif** : boucle qualité humaine (corriger les cas incertains) + correctif filtre.
+
+Critères d'acceptation :
+- [x] **Correctif L4** : filtre « Thème » en « contient » (ilike) sur niv.1 ET niv.2
+- [x] File de revue : verbatims `revue_requise` non revus, triés par confiance croissante
+- [x] Correction dans l'UI : niv.1/niv.2 **contraints par la taxonomie**, sentiment, signaux
+- [x] Actions « Valider » (accepter tel quel) / « Corriger & valider » -> sort de la file
+- [x] Corrections **historisées** (qui/quand/ancienne->nouvelle) ; résultat marqué corrigé/revu
+- [x] Export du jeu « **corrections validées** » (pour ré-entraînement CLI)
+- [x] `GET /api/taxonomy` pour alimenter les listes contraintes
+
+**Validation automatisée** : test E2E FastAPI/SQLite **13/13 OK** (correctif filtre, file triée, correction valide/invalide [400 hiérarchie], historisation, valider-tel-quel, export corrections).
+**Reste pour clore L5** : sur le poste, après un lot : détail du lot → « Revue humaine (N) » → corriger/valider quelques verbatims (listes niv.2 limitées au niv.1 choisi) → exporter les corrections ; et vérifier que le filtre « Thème (contient…) » marche dans Résultats.
 ## L6 — Tableaux de bord & KPI ⬜
 ## L7 — Historique, audit, config & rétention ⬜
 ## L8 — Durcissement, RGPD, perf, recette V1 ⬜

@@ -71,8 +71,9 @@ export default function BatchDetailPage() {
       </section>
 
       {batch.status === "done" && (
-        <p style={{ marginTop: "1.5rem" }}>
+        <p style={{ marginTop: "1.5rem", display: "flex", gap: "1.5rem" }}>
           <Link to={`/lots/${batch.id}/resultats`}>→ Consulter et exporter les résultats</Link>
+          <Link to={`/lots/${batch.id}/revue`}>→ Revue humaine ({batch.n_review})</Link>
         </p>
       )}
     </div>

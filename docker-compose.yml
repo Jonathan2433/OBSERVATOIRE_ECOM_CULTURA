@@ -54,9 +54,11 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       UPLOADS_DIR: /data/uploads
       OUTPUT_DIR: /data/output
+      TAXONOMY_PATH: /app/taxonomy.json
     volumes:
       - ./data/uploads:/data/uploads      # fichiers déposés (partagé avec worker)
       - ./data/output:/data/output        # CSV enrichis (export L4)
+      - ./data/raw/taxonomy_cultura_poc.json:/app/taxonomy.json:ro   # référentiel (revue)
     depends_on:
       db:
         condition: service_healthy
