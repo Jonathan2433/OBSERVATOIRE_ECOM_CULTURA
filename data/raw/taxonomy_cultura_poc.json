@@ -1,0 +1,171 @@
+{
+  "themes": [
+    {
+      "niv1": "Suivi de commande et livraison",
+      "niv2": [
+        "Absence de notification",
+        "Colis endommagé",
+        "Colis perdu",
+        "Délai non respecté",
+        "Erreur de livraison"
+      ]
+    },
+    {
+      "niv1": "Tunnel de vente - Paiement",
+      "niv2": [
+        "Bug paiement",
+        "Problème code promo / réduction",
+        "Problème de remboursement",
+        "Problème e-carte cadeau"
+      ]
+    },
+    {
+      "niv1": "Annulation commande",
+      "niv2": [
+        "Annulation sans explication",
+        "Erreur de prix",
+        "Produit disponible devenu en rupture"
+      ]
+    },
+    {
+      "niv1": "Trouver son produit",
+      "niv2": [
+        "Facile",
+        "Filtres peu performants",
+        "Manque de visibilité des promotions",
+        "Recherche peu efficace"
+      ]
+    },
+    {
+      "niv1": "Prix de la livraison",
+      "niv2": [
+        "Clarifier l'information sur les livraisons",
+        "Frais inattendus",
+        "Trop élevé"
+      ]
+    },
+    {
+      "niv1": "Site / Application",
+      "niv2": [
+        "Bug technique",
+        "Ergonomie mobile",
+        "Lenteur du site",
+        "Navigation difficile"
+      ]
+    },
+    {
+      "niv1": "Produit",
+      "niv2": [
+        "Contenu manquant ou incomplet",
+        "Non conforme à la description",
+        "Qualité décevante"
+      ]
+    },
+    {
+      "niv1": "Service client",
+      "niv2": [
+        "Difficile à joindre",
+        "Délai de réponse trop long",
+        "Réponse insatisfaisante"
+      ]
+    },
+    {
+      "niv1": "Programme de fidélité",
+      "niv2": [
+        "Bon d'achat non reçu",
+        "Points non crédités",
+        "Règles peu claires"
+      ]
+    },
+    {
+      "niv1": "Retour / Remboursement",
+      "niv2": [
+        "Délai de remboursement trop long",
+        "Procédure complexe",
+        "Remboursement partiel"
+      ]
+    },
+    {
+      "niv1": "Disponibilité & Stock",
+      "niv2": [
+        "Délai de réapprovisionnement inconnu",
+        "Pré-commande mal gérée",
+        "Rupture de stock non signalée",
+        "Stock en ligne différent du magasin"
+      ]
+    },
+    {
+      "niv1": "Click & Collect",
+      "niv2": [
+        "Commande non prête à l'heure prévue",
+        "Délai de préparation trop long",
+        "Mauvaise communication sur la disponibilité",
+        "Produit manquant lors du retrait"
+      ]
+    },
+    {
+      "niv1": "Compte client & Connexion",
+      "niv2": [
+        "Données personnelles incorrectes",
+        "Historique de commandes inaccessible",
+        "Problème de connexion / mot de passe"
+      ]
+    },
+    {
+      "niv1": "Communication & Emails Cultura",
+      "niv2": [
+        "Contenu email non pertinent",
+        "Email important non reçu",
+        "Trop d'emails promotionnels"
+      ]
+    },
+    {
+      "niv1": "Fiche produit & Contenu",
+      "niv2": [
+        "Avis clients peu fiables ou absents",
+        "Informations produit insuffisantes",
+        "Photos insuffisantes ou trompeuses"
+      ]
+    },
+    {
+      "niv1": "Catalogue & Offre produit",
+      "niv2": [
+        "Catalogue moins large que la concurrence",
+        "Nouveautés difficiles à trouver",
+        "Référence manquante au catalogue"
+      ]
+    },
+    {
+      "niv1": "Prix produit",
+      "niv2": [
+        "Erreur de prix affiché",
+        "Prix différent entre site et magasin",
+        "Prix trop élevé vs concurrence"
+      ]
+    },
+    {
+      "niv1": "Carte cadeau physique",
+      "niv2": [
+        "Carte cadeau non acceptée en ligne",
+        "Expiration non communiquée",
+        "Solde incorrect ou inconnu"
+      ]
+    },
+    {
+      "niv1": "Expérience omnicanale",
+      "niv2": [
+        "Commande web non gérable en magasin",
+        "Programme fidélité non unifié",
+        "Stock magasin non visible en ligne"
+      ]
+    },
+    {
+      "niv1": "Personnalisation & Recommandations",
+      "niv2": [
+        "Historique de navigation non exploité",
+        "Pas d'alerte disponibilité",
+        "Recommandations non pertinentes"
+      ]
+    }
+  ]
+}

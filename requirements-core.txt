@@ -1,0 +1,21 @@
+# =============================================================================
+#  Dépendances "coeur léger" — SANS torch/transformers/optimum.
+#  Permet de faire tourner rapidement (et sans 2 Go de téléchargement) :
+#    - python scripts/validate_pipeline.py   (validation pipeline, stub)
+#    - la préparation des données (prepare_dataset), le nettoyage, l'anonymisation,
+#      l'export CSV et la logique de décision.
+#  L'entraînement et l'inférence CamemBERT nécessitent requirements.txt (complet).
+#
+#  Installation :
+#     python -m pip install --upgrade pip
+#     pip install --prefer-binary -r requirements-core.txt
+#     python -m spacy download fr_core_news_sm
+# =============================================================================
+pandas>=2.1.0
+openpyxl>=3.1.2
+numpy>=1.26.0,<2.0
+scikit-learn>=1.4.0
+pyyaml>=6.0.1
+tqdm>=4.66.0
+joblib>=1.3.0
+spacy>=3.7.0,<3.8.0

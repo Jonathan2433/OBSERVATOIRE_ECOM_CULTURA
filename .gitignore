@@ -1,0 +1,45 @@
+# =============================================================================
+#  .gitignore — Cultura Verbatim Classifier
+# =============================================================================
+
+# --- Modèles et poids (lourds, régénérables, peuvent contenir des artefacts) -
+data/models/
+*.onnx
+*.bin
+*.safetensors
+*.joblib
+*.pkl
+
+# --- Données intermédiaires et sorties (peuvent contenir des verbatims) ------
+data/processed/
+data/output/
+# On garde data/raw/ versionné pour le POC (données simulées, aucune PII réelle).
+# En production : décommenter la ligne suivante pour ne JAMAIS versionner de données clients.
+# data/raw/
+
+# --- Environnements virtuels -------------------------------------------------
+.venv/
+venv/
+env/
+.venv_validate/
+
+# --- Caches Python -----------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ipynb_checkpoints/
+
+# --- Caches HuggingFace / spaCy (téléchargements) ----------------------------
+.cache/
+~/.cache/huggingface/
+
+# --- IDE / OS ----------------------------------------------------------------
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# --- Secrets / config locale -------------------------------------------------
+.env
+*.local

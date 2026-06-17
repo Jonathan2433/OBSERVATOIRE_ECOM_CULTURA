@@ -1,0 +1,13 @@
+# =============================================================================
+#  Dépendances OPTIONNELLES pour les notebooks (EDA + démos).
+#  Volontairement séparées du coeur : le méta-paquet `jupyter` tire
+#  notebook/jupyterlab/nbclassic et provoque une résolution pip très lente.
+#  On installe directement jupyterlab (suffisant pour ouvrir les notebooks).
+#
+#  Installation :
+#     pip install --prefer-binary -r requirements-notebooks.txt
+# =============================================================================
+jupyterlab>=4.0.0
+ipykernel>=6.0.0
+matplotlib>=3.8.0
+seaborn>=0.13.0

@@ -1,0 +1,41 @@
+# =============================================================================
+#  Cultura Verbatim Classifier — Dépendances coeur (runtime + entraînement)
+# -----------------------------------------------------------------------------
+#  PYTHON 3.10 ou 3.11 RECOMMANDÉ (3.12 OK). Sur Python 3.9 ça fonctionne aussi
+#  grâce aux versions épinglées ci-dessous, mais 3.11 est le plus fiable.
+#  Aucun GPU requis (CPU).
+#
+#  Installation (IMPORTANT : mettre pip à jour d'abord, sinon résolution très lente) :
+#     python -m pip install --upgrade pip
+#     pip install --prefer-binary -r requirements.txt
+#     python -m spacy download fr_core_news_sm
+#
+#  Notebooks (optionnel) :   pip install -r requirements-notebooks.txt
+#  Validation sans torch :   pip install -r requirements-core.txt
+# =============================================================================
+
+# --- Coeur ML / NLP ----------------------------------------------------------
+torch>=2.1.0
+# optimum 1.x : c'est l'API ONNX (optimum.onnxruntime) utilisée par le code.
+# transformers borné en conséquence pour une résolution propre de l'export ONNX.
+transformers>=4.38.0,<4.46.0
+optimum[onnxruntime]>=1.17.0,<2.0.0
+datasets>=2.17.0
+scikit-learn>=1.4.0               # Détecteurs de signaux (LogReg) + métriques
+
+# --- Données / IO ------------------------------------------------------------
+pandas>=2.1.0
+openpyxl>=3.1.2                   # Lecture/écriture des fichiers Excel (.xlsx)
+numpy>=1.26.0,<2.0                # <2.0 : ABI compatible avec les wheels py3.9-3.12
+
+# --- Anonymisation (NER français) -------------------------------------------
+# spaCy 3.7.x : wheels disponibles pour py3.9 -> 3.12 (évite la compilation de
+# thinc>=8.3.12 qui n'a PAS de wheel py3.9 et provoque un échec/backtracking).
+spacy>=3.7.0,<3.8.0
+# Le modèle fr_core_news_sm s'installe à part :
+#   python -m spacy download fr_core_news_sm
+
+# --- Utilitaires -------------------------------------------------------------
+tqdm>=4.66.0                      # Barres de progression
+pyyaml>=6.0.1                     # Lecture config.yaml
+joblib>=1.3.0                     # Sérialisation des modèles scikit-learn

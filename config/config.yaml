@@ -1,0 +1,157 @@
+# =============================================================================
+#  config.yaml — Configuration centrale du pipeline Cultura Verbatim Classifier
+# -----------------------------------------------------------------------------
+#  TOUS les hyperparamètres, chemins et seuils sont externalisés ici.
+#  Aucun "nombre magique" ne doit être codé en dur dans le code source.
+#  Les chemins sont relatifs à la racine du projet (cultura-verbatim-classifier/).
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+#  Modèle de base et hyperparamètres d'entraînement
+# -----------------------------------------------------------------------------
+model:
+  base_model: "camembert-base"     # Licence MIT, HuggingFace
+  local_model_dir: "data/models/camembert-base"   # Poids locaux (mode hors ligne)
+  max_length: 256                  # Longueur max de séquence (tokens)
+  batch_size_train: 16
+  batch_size_inference: 32
+  epochs: 5
+  learning_rate: 2.0e-5
+  warmup_ratio: 0.1
+  weight_decay: 0.01
+  seed: 42
+  early_stopping_patience: 3       # Arrêt anticipé sur F1-macro val
+  num_workers: 0                   # DataLoader workers (0 = sûr sur CPU/Windows)
+  device: "auto"                   # auto | cpu | cuda  (le POC vise le CPU)
+
+# -----------------------------------------------------------------------------
+#  Mode "smoke test" : validation rapide du pipeline de bout en bout.
+#  Activé via --smoke sur run_training.py. NE PAS utiliser pour la production.
+#  Sous-échantillonne les données, réduit max_length et le nb d'epochs pour
+#  vérifier en quelques minutes que tout s'enchaîne sans erreur.
+# -----------------------------------------------------------------------------
+smoke_test:
+  enabled: false
+  sample_size: 400
+  epochs: 1
+  max_length: 64
+
+# -----------------------------------------------------------------------------
+#  Seuils de décision (sigmoid / probabilités)
+# -----------------------------------------------------------------------------
+thresholds:
+  classification_niv1: 0.35        # Seuil sigmoid pour activer un thème niv.1
+  classification_niv2: 0.40        # Seuil pour activer un sous-thème niv.2
+  signal_rupture: 0.60             # Seuil détection rupture client
+  signal_churn: 0.50               # Seuil détection churn
+  signal_insatisfaction: 0.50      # Seuil détection insatisfaction forte
+  revue_humaine: 0.70              # confidence_globale < seuil -> revue humaine
+  max_themes: 2                    # Nb max de thèmes retournés par verbatim (scope POC)
+
+# -----------------------------------------------------------------------------
+#  Signaux spécifiques
+#  Architecture : régression logistique sur embeddings CamemBERT GELÉS.
+#  Justification : signal_rupture ne compte que ~0.4% de positifs (29/7000) ;
+#  un fine-tuning complet sur si peu de positifs sur-apprendrait. Une LogReg
+#  pondérée (class_weight=balanced) sur embeddings figés est robuste, rapide,
+#  et le seuil de décision est abaissable pour privilégier le RAPPEL (priorité
+#  métier : ne pas rater une rupture client).
+# -----------------------------------------------------------------------------
+signals:
+  pooling: "mean"                  # mean | cls  (pooling des embeddings CamemBERT)
+  class_weight: "balanced"
+  max_iter: 2000
+  # Règle déterministe additionnelle pour insatisfaction_forte (cf. cahier des
+  # charges : "note <= 3 ET sentiment très négatif"). Combinée au modèle (OR).
+  insatisfaction_score_max: 3      # satisfaction_score <= 3
+  rupture_recall_priority: true    # abaisse dynamiquement le seuil si rappel faible
+
+# -----------------------------------------------------------------------------
+#  Modèle de sentiment (3 classes)
+# -----------------------------------------------------------------------------
+sentiment:
+  labels: ["Négatif", "Neutre", "Positif"]
+  # Le score de satisfaction (1-10) est un signal auxiliaire fort. Plutôt que de
+  # concaténer le scalaire à l'embedding [CLS] (ce qui imposerait une tête custom
+  # incompatible avec l'export ONNX standard d'optimum), on l'injecte en préfixe
+  # textuel normalisé : "[SATISFACTION 3/10] <verbatim>". Compatible ONNX, sans
+  # tête custom, et exploite le même signal de manière interprétable.
+  use_satisfaction_prefix: true
+
+# -----------------------------------------------------------------------------
+#  Préparation du dataset
+# -----------------------------------------------------------------------------
+dataset:
+  split_train: 0.70
+  split_val: 0.15
+  split_test: 0.15
+  stratify_on: "theme1_niv1"       # Stratification (99.6% des verbatims = 1 thème)
+  rare_class_threshold_warn: 30    # Warning si sous-thème < 30 exemples
+  rare_class_threshold_weight: 50  # class_weight obligatoire si sous-thème < 50
+
+# -----------------------------------------------------------------------------
+#  Nettoyage du texte
+# -----------------------------------------------------------------------------
+cleaning:
+  lowercase: true
+  remove_emojis: true
+  normalize_unicode: true          # NFKC
+  min_tokens: 5                    # Filtre : verbatims trop courts écartés
+  max_tokens: 512                  # Tronqué au-delà (avant tokenisation modèle)
+
+# -----------------------------------------------------------------------------
+#  Anonymisation (PII supprimées AVANT tout traitement)
+# -----------------------------------------------------------------------------
+anonymization:
+  enabled: true
+  spacy_model: "fr_core_news_sm"
+  entities_to_mask: ["PER", "EMAIL", "PHONE", "ORDER_ID"]
+  mask_tokens:
+    PER: "[NOM]"
+    EMAIL: "[EMAIL]"
+    PHONE: "[TEL]"
+    ORDER_ID: "[COMMANDE]"
+
+# -----------------------------------------------------------------------------
+#  Mapping des colonnes sources (gère les 2 formats Excel différents)
+# -----------------------------------------------------------------------------
+sources:
+  mdtc:
+    date_col: "Date de commande"
+    satisfaction_col: "Niveau de satisfaction général"
+    # Colonne principale à classifier + colonne secondaire concaténée si présente
+    text_col_primary: "Verbatim justification"
+    text_col_secondary: "Verbatim suggestion"
+  mopinion:
+    date_col: "Date du retour"
+    satisfaction_col: "Niveau de satisfaction général"
+    # Insatisfaits -> "Description du bug" ; satisfaits -> "Suggestion".
+    # On prend la première non-vide (cf. loader.py).
+    text_cols_primary: ["Description du bug", "Suggestion"]
+
+# -----------------------------------------------------------------------------
+#  Chemins (relatifs à la racine du projet)
+# -----------------------------------------------------------------------------
+paths:
+  data_raw: "data/raw"
+  data_processed: "data/processed"
+  models: "data/models"
+  output: "data/output"
+  taxonomy: "data/raw/taxonomy_cultura_poc.json"
+  historique: "data/raw/historique_labels_poc.xlsx"
+  # Sous-dossiers de modèles (peuplés par run_training.py)
+  model_classifier_niv1: "data/models/classifier_niv1"
+  model_classifier_niv2: "data/models/classifier_niv2"
+  model_sentiment: "data/models/sentiment"
+  model_signals: "data/models/signals"
+  training_logs: "data/processed/training_logs.json"
+  eval_report: "data/processed/eval_report.json"
+
+# -----------------------------------------------------------------------------
+#  Export ONNX + quantization int8 (optimisation CPU)
+# -----------------------------------------------------------------------------
+onnx:
+  enabled: true
+  quantize_int8: true
+  # Si true, l'inférence charge en priorité les modèles ONNX quantifiés.
+  use_for_inference: true
