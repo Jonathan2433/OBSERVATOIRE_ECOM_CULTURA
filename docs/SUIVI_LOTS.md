@@ -11,7 +11,7 @@
 | L0 | Socle projet & conteneurisation | ✅ Fait (validé PO) | `lot/0` (mergé) |
 | L1 | Auth, comptes & rôles | ✅ Fait (validé PO) | `lot/1` (mergé) |
 | L2 | Cœur ML : worker async + gestion modèle | ⏸️ En attente de validation | `lot/2-core-ml` |
-| L3 | Ingestion & lancement de lot + suivi | ⬜ | — |
+| L3 | Ingestion & lancement de lot + suivi | ⏸️ En attente de validation | `lot/3-ingestion` |
 | L4 | Consultation résultats + exports (→ MVP) | ⬜ | — |
 | L5 | Revue humaine & corrections | ⬜ | — |
 | L6 | Tableaux de bord & KPI | ⬜ | — |
@@ -75,7 +75,21 @@ Critères d'acceptation :
 **Reste pour clore L2** : sur le poste, `docker compose down -v && docker compose up --build` (rebuild après refactor `common` + nouvelles deps API), vérifier que le worker synchronise le registre et que `GET /api/models` répond. (L'UI de lancement des lots arrive au L3.)
 
 **Décision (D7)** : L2 embarque un **classifieur stub** (mots-clés) activé tant qu'aucun modèle CamemBERT n'est déposé/activé, afin de rendre l'app démontrable de bout en bout sans attendre l'entraînement (~2-4h). Le modèle réel se branche via le registre.
-## L3 — Ingestion & lancement de lot + suivi ⬜
+## L3 — Ingestion & lancement de lot + suivi ⏸️
+
+**Objectif** : permettre au métier de charger les fichiers et lancer/suivre un lot.
+
+Critères d'acceptation :
+- [x] Écran « Lots » : liste des lots (statut, progression, modèle, volumétrie)
+- [x] Formulaire « Nouveau lot » : upload MDTC + Mopinion (l'un ou l'autre), label, seuil de revue
+- [x] Lancement -> création du lot via l'API -> traitement asynchrone
+- [x] Suivi : barre de progression (polling) jusqu'à « terminé », puis résumé du lot
+- [x] Diagnostic clair en cas d'échec (message d'erreur du lot affiché)
+- [x] Navigation : lien « Lots » dans l'en-tête + raccourci sur l'accueil
+
+**Validation** : front **type-check TS strict + build Vite OK**. Endpoints back-end couverts par le test E2E L2 (14/14).
+**Reste pour clore L2+L3** : rebuild sur le poste, puis dans l'UI : Lots → Nouveau lot → déposer `data/raw/mdtc_poc.xlsx` (et/ou mopinion) → suivre la progression → voir le résumé (mode stub).
+
 ## L4 — Consultation résultats + exports ⬜
 ## L5 — Revue humaine & corrections ⬜
 ## L6 — Tableaux de bord & KPI ⬜

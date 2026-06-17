@@ -66,4 +66,73 @@ export const updateUser = (id: number, patch: Partial<{ role: Role; is_active: b
   request<User>(`/api/users/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
 export const deactivateUser = (id: number) => request<User>(`/api/users/${id}`, { method: "DELETE" });
 
+// --- Lots (batches) ---
+export interface Batch {
+  id: number;
+  label: string;
+  status: string; // pending | running | done | failed | canceled
+  created_by?: number | null;
+  created_at?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  model_label?: string | null;
+  seuil_revue: number;
+  n_total: number;
+  n_processed: number;
+  n_review: number;
+  n_errors: number;
+  duration_s?: number | null;
+  error_message?: string | null;
+}
+
+export interface BatchProgress {
+  id: number;
+  status: string;
+  n_total: number;
+  n_processed: number;
+  progress: number;
+}
+
+export const listBatches = () => request<Batch[]>("/api/batches");
+export const getBatch = (id: number) => request<Batch>(`/api/batches/${id}`);
+export const getBatchProgress = (id: number) => request<BatchProgress>(`/api/batches/${id}/progress`);
+
+export async function createBatch(opts: {
+  label?: string;
+  seuilRevue: number;
+  mdtc?: File | null;
+  mopinion?: File | null;
+}): Promise<Batch> {
+  const form = new FormData();
+  if (opts.label) form.append("label", opts.label);
+  form.append("seuil_revue", String(opts.seuilRevue));
+  if (opts.mdtc) form.append("mdtc", opts.mdtc);
+  if (opts.mopinion) form.append("mopinion", opts.mopinion);
+  // Pas de Content-Type manuel : le navigateur pose le boundary multipart.
+  const res = await fetch("/api/batches", { method: "POST", credentials: "include", body: form });
+  if (!res.ok) {
+    let detail = `Erreur ${res.status}`;
+    try {
+      const b = await res.json();
+      if (b?.detail) detail = typeof b.detail === "string" ? b.detail : JSON.stringify(b.detail);
+    } catch { /* ignore */ }
+    throw new ApiError(res.status, detail);
+  }
+  return res.json();
+}
+
+// --- Modèles ---
+export interface ModelVersion {
+  id: number;
+  kind: string; // stub | real
+  label: string;
+  is_active: boolean;
+  available: boolean;
+  metrics?: Record<string, unknown> | null;
+  registered_at?: string | null;
+}
+export const listModels = () => request<ModelVersion[]>("/api/models");
+export const activateModel = (id: number) => request<ModelVersion>(`/api/models/${id}/activate`, { method: "POST" });
+export const rescanModels = () => request<{ status: string }>("/api/models/rescan", { method: "POST" });
+
 export { ApiError };

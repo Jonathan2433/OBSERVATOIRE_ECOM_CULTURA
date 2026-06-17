@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { getHealth, type Health } from "../api";
 import { useAuth } from "../auth";
 
@@ -30,9 +31,11 @@ export default function DashboardPage() {
         )}
       </section>
 
-      <p style={{ marginTop: "2rem", color: "#999", fontSize: ".9rem" }}>
-        Les modules « Traitement des lots », « Résultats », « Revue » et « Tableaux de bord »
-        arriveront aux lots suivants (L2 → L6).
+      <p style={{ marginTop: "2rem" }}>
+        <Link to="/lots">→ Traiter un nouveau lot de verbatims</Link>
+      </p>
+      <p style={{ color: "#999", fontSize: ".9rem" }}>
+        Les modules « Résultats », « Revue » et « Tableaux de bord » arriveront aux lots suivants (L4 → L6).
       </p>
     </div>
   );

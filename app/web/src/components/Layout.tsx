@@ -21,6 +21,7 @@ export default function Layout() {
         <strong style={{ fontSize: "1.05rem" }}>Observatoire Ecom Studio</strong>
         <nav style={{ display: "flex", gap: "1rem", flex: 1 }}>
           <Link to="/">Accueil</Link>
+          <Link to="/lots">Lots</Link>
           {user?.role === "admin" && <Link to="/admin/users">Utilisateurs</Link>}
         </nav>
         <span style={{ color: "#666", fontSize: ".9rem" }}>
