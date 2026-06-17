@@ -6,6 +6,8 @@ import DashboardPage from "./pages/DashboardPage";
 import UsersPage from "./pages/UsersPage";
 import BatchesPage from "./pages/BatchesPage";
 import BatchDetailPage from "./pages/BatchDetailPage";
+import ResultsPage from "./pages/ResultsPage";
+import TestPage from "./pages/TestPage";
 
 function Spinner() {
   return <p style={{ fontFamily: "system-ui", margin: "4rem", textAlign: "center" }}>Chargement…</p>;
@@ -37,6 +39,8 @@ export default function App() {
           <Route index element={<DashboardPage />} />
           <Route path="lots" element={<BatchesPage />} />
           <Route path="lots/:id" element={<BatchDetailPage />} />
+          <Route path="lots/:id/resultats" element={<ResultsPage />} />
+          <Route path="test" element={<TestPage />} />
           <Route path="admin/users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
         </Route>
       </Route>

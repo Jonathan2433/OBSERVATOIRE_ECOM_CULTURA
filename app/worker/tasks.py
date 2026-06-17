@@ -37,6 +37,20 @@ def sync_registry_job() -> dict:
     return {"status": "synced"}
 
 
+def predict_one_job(text: str, satisfaction=None) -> dict:
+    """Prédiction unitaire (test à la volée) avec le modèle actif. Renvoie le dict de sortie."""
+    cfg = build_worker_cfg()
+    with SessionLocal() as db:
+        active = get_active(db)
+        label = active.label if active else None
+    predictor = get_predictor(active, cfg)
+    masked, _ = predictor.anonymizer.anonymize(text or "")
+    cleaned = predictor.cleaner.clean(masked)
+    result = predictor.predict_cleaned_batch([cleaned], [satisfaction])[0]
+    result["model_label"] = label
+    return result
+
+
 def _now():
     return datetime.now(timezone.utc)
 

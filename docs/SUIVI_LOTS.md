@@ -10,9 +10,9 @@
 |---|---|---|---|
 | L0 | Socle projet & conteneurisation | ✅ Fait (validé PO) | `lot/0` (mergé) |
 | L1 | Auth, comptes & rôles | ✅ Fait (validé PO) | `lot/1` (mergé) |
-| L2 | Cœur ML : worker async + gestion modèle | ⏸️ En attente de validation | `lot/2-core-ml` |
-| L3 | Ingestion & lancement de lot + suivi | ⏸️ En attente de validation | `lot/3-ingestion` |
-| L4 | Consultation résultats + exports (→ MVP) | ⬜ | — |
+| L2 | Cœur ML : worker async + gestion modèle | ✅ Fait (validé PO) | `lot/2` (mergé) |
+| L3 | Ingestion & lancement de lot + suivi | ✅ Fait (validé PO) | `lot/3` (mergé) |
+| L4 | Consultation résultats + exports (→ MVP) | ⏸️ En attente de validation | `lot/4-results` |
 | L5 | Revue humaine & corrections | ⬜ | — |
 | L6 | Tableaux de bord & KPI | ⬜ | — |
 | L7 | Historique, audit, config & rétention | ⬜ | — |
@@ -56,7 +56,7 @@ Critères d'acceptation :
 **Validation automatisée** : test d'intégration FastAPI/SQLite **11/11 OK** (login, RBAC, garde-fous, validation mot de passe) ; front **type-check TS strict + build Vite OK**.
 **Reste pour clore L1** : `docker compose up --build` sur le poste → se connecter (admin du `.env`) → créer un analyste → vérifier les accès. Puis validation PO → merge.
 
-## L2 — Cœur ML : worker async + gestion modèle ⏸️
+## L2 — Cœur ML : worker async + gestion modèle ✅ (validé PO le 2026-06-17)
 
 **Objectif** : industrialiser le moteur du POC en traitement asynchrone tracé.
 
@@ -75,7 +75,7 @@ Critères d'acceptation :
 **Reste pour clore L2** : sur le poste, `docker compose down -v && docker compose up --build` (rebuild après refactor `common` + nouvelles deps API), vérifier que le worker synchronise le registre et que `GET /api/models` répond. (L'UI de lancement des lots arrive au L3.)
 
 **Décision (D7)** : L2 embarque un **classifieur stub** (mots-clés) activé tant qu'aucun modèle CamemBERT n'est déposé/activé, afin de rendre l'app démontrable de bout en bout sans attendre l'entraînement (~2-4h). Le modèle réel se branche via le registre.
-## L3 — Ingestion & lancement de lot + suivi ⏸️
+## L3 — Ingestion & lancement de lot + suivi ✅ (validé PO le 2026-06-17)
 
 **Objectif** : permettre au métier de charger les fichiers et lancer/suivre un lot.
 
@@ -90,7 +90,19 @@ Critères d'acceptation :
 **Validation** : front **type-check TS strict + build Vite OK**. Endpoints back-end couverts par le test E2E L2 (14/14).
 **Reste pour clore L2+L3** : rebuild sur le poste, puis dans l'UI : Lots → Nouveau lot → déposer `data/raw/mdtc_poc.xlsx` (et/ou mopinion) → suivre la progression → voir le résumé (mode stub).
 
-## L4 — Consultation résultats + exports ⬜
+## L4 — Consultation résultats + exports ⏸️  (→ jalon MVP)
+
+**Objectif** : exploiter les résultats d'un lot (consultation, export) + test à la volée.
+
+Critères d'acceptation :
+- [x] Tableau des résultats paginé, **filtrable** (thème niv.1, sentiment, signaux, revue) + recherche texte
+- [x] Colonnes utiles affichées (thèmes+scores, sentiment, signaux, confiance, statut revue)
+- [x] Export **CSV** et **XLSX** conformes au format POC (colonnes d'origine + colonnes modèle)
+- [x] **Test à la volée** : saisir un verbatim -> prédiction immédiate (via worker, modèle actif)
+- [x] Affichage systématique du score de confiance et du statut (auto / revue)
+
+**Validation automatisée** : test E2E FastAPI/SQLite **15/15 OK** (résultats filtrés/paginés, recherche, export CSV [origine+modèle, conforme POC] & XLSX, test à la volée). Front type-check TS strict + build Vite OK.
+**Reste pour clore L4 (= MVP)** : sur le poste, après un lot terminé : Lots → (lot) → « Consulter les résultats » → filtrer, exporter CSV/XLSX ; et « Test à la volée » dans le menu.
 ## L5 — Revue humaine & corrections ⬜
 ## L6 — Tableaux de bord & KPI ⬜
 ## L7 — Historique, audit, config & rétention ⬜

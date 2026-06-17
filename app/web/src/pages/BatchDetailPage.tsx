@@ -71,8 +71,8 @@ export default function BatchDetailPage() {
       </section>
 
       {batch.status === "done" && (
-        <p style={{ marginTop: "1.5rem", color: "#999" }}>
-          La consultation détaillée des résultats et les exports arrivent au lot L4.
+        <p style={{ marginTop: "1.5rem" }}>
+          <Link to={`/lots/${batch.id}/resultats`}>→ Consulter et exporter les résultats</Link>
         </p>
       )}
     </div>
