@@ -8,8 +8,8 @@
 
 | Lot | Intitulé | Statut | Branche |
 |---|---|---|---|
-| L0 | Socle projet & conteneurisation | ⏸️ En attente de validation | `lot/0-socle-conteneurisation` |
-| L1 | Auth, comptes & rôles | ⬜ | — |
+| L0 | Socle projet & conteneurisation | ✅ Fait (validé PO) | `lot/0` (mergé) |
+| L1 | Auth, comptes & rôles | ⏸️ En attente de validation | `lot/1-auth` |
 | L2 | Cœur ML : worker async + gestion modèle | ⬜ | — |
 | L3 | Ingestion & lancement de lot + suivi | ⬜ | — |
 | L4 | Consultation résultats + exports (→ MVP) | ⬜ | — |
@@ -20,7 +20,7 @@
 
 ---
 
-## L0 — Socle projet & conteneurisation ⏸️
+## L0 — Socle projet & conteneurisation ✅ (validé PO le 2026-06-17 — accueil affiché, DB/Redis OK)
 
 **Objectif** : fondations techniques + lever le risque image worker arm64 (torch/onnx).
 
@@ -39,8 +39,22 @@ Critères d'acceptation :
 
 ---
 
-## L1 — Auth, comptes & rôles ⬜
-Critères : voir [PLAN §4 / L1](PLAN_DEVELOPPEMENT_V1.md). (détaillé à l'ouverture du lot)
+## L1 — Auth, comptes & rôles ⏸️
+
+**Objectif** : sécuriser l'accès, poser le RBAC (Analyste / Admin).
+
+Critères d'acceptation :
+- [x] Table `users` (Alembic `0002`) ; mots de passe hachés (**argon2**)
+- [x] Connexion / déconnexion (JWT en cookie **httpOnly**) ; session expirante (8h)
+- [x] `GET /api/auth/me` ; RBAC **côté API** (dépendances `get_current_user` / `require_admin`)
+- [x] Admin : créer / désactiver / réactiver, réinitialiser mot de passe, changer le rôle
+- [x] Anti-bruteforce (verrouillage temporaire après 5 échecs)
+- [x] Admin initial créé au démarrage si aucun utilisateur (via `.env`)
+- [x] Front : page de connexion, shell authentifié, page admin « Utilisateurs », déconnexion
+- [x] Garde-fous : pas d'auto-désactivation, dernier admin protégé ; non-authentifié bloqué ; Analyste bloqué sur écrans admin
+
+**Validation automatisée** : test d'intégration FastAPI/SQLite **11/11 OK** (login, RBAC, garde-fous, validation mot de passe) ; front **type-check TS strict + build Vite OK**.
+**Reste pour clore L1** : `docker compose up --build` sur le poste → se connecter (admin du `.env`) → créer un analyste → vérifier les accès. Puis validation PO → merge.
 
 ## L2 — Cœur ML : worker async + gestion modèle ⬜
 ## L3 — Ingestion & lancement de lot + suivi ⬜

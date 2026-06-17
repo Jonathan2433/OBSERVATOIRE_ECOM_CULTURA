@@ -34,6 +34,15 @@ version se fera dans l'UI admin (lot L7).
 ## État d'avancement
 Voir [../docs/SUIVI_LOTS.md](../docs/SUIVI_LOTS.md). Lot courant : **L0 — socle & conteneurisation**.
 
+## Dépannage
+
+| Symptôme | Cause | Solution |
+|---|---|---|
+| `password authentication failed for user "oes"` + `Skipping initialization`, l'`api` redémarre en boucle | `POSTGRES_PASSWORD` du `.env` ne correspond plus à celui gravé dans le volume `pgdata` lors du **premier** démarrage (Postgres ne ré-applique pas le mot de passe sur un volume existant). Survient typiquement après un `cp .env.example .env` qui réécrit le mot de passe. | Réinitialiser le volume : `docker compose down -v && docker compose up --build`. **Attention** : `-v` efface la base (comptes, lots, résultats). |
+| L'`api` redémarre quelques fois au lancement puis se stabilise | la base n'était pas encore prête | normal (les healthchecks gèrent l'attente) |
+
+> ⚠️ **Important** : une fois en production avec des données, **ne changez pas** `POSTGRES_PASSWORD` sans procédure (sinon `down -v` détruirait les données). Fixez-le une fois pour toutes dans `.env`.
+
 ## Validation sans daemon
 ```bash
 docker compose config -q          # syntaxe compose
