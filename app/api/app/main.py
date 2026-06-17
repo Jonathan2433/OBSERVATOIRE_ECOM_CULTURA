@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import APP_NAME, __version__
 from .api.routes_auth import router as auth_router
 from .api.routes_batches import router as batches_router
+from .api.routes_admin import router as admin_router
 from .api.routes_health import router as health_router
 from .api.routes_kpi import router as kpi_router
 from .api.routes_models import router as models_router
@@ -62,5 +63,4 @@ app.include_router(review_router)
 app.include_router(predict_router)
 app.include_router(models_router)
 app.include_router(kpi_router)
-
-# Routers fonctionnels suivants (admin/config, rétention) : lot L7.
+app.include_router(admin_router)

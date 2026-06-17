@@ -81,6 +81,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       MODELS_DIR: /data/models
       PROCESSED_DIR: /data/processed
+      UPLOADS_DIR: /data/uploads
       CONFIG_PATH: /app/config/config.yaml
       OMP_NUM_THREADS: ${WORKER_THREADS:-4}
     depends_on:

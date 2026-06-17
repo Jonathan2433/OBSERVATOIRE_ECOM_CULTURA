@@ -14,8 +14,8 @@
 | L3 | Ingestion & lancement de lot + suivi | ✅ Fait (validé PO) | `lot/3` (mergé) |
 | L4 | Consultation résultats + exports (→ MVP) | ✅ Fait (validé PO) | `lot/4` (mergé) |
 | L5 | Revue humaine & corrections | ✅ Fait (validé PO) | `lot/5` (mergé) |
-| L6 | Tableaux de bord & KPI | ⏸️ En attente de validation | `lot/6-dashboards` |
-| L7 | Historique, audit, config & rétention | ⬜ | — |
+| L6 | Tableaux de bord & KPI | ✅ Fait (validé PO) | `lot/6` (mergé) |
+| L7 | Historique, audit, config & rétention (+ graphe thème×sentiment) | ⏸️ En attente de validation | `lot/7-admin` |
 | L8 | Durcissement, RGPD, perf, recette V1 | ⬜ | — |
 
 ---
@@ -119,7 +119,7 @@ Critères d'acceptation :
 
 **Validation automatisée** : test E2E FastAPI/SQLite **13/13 OK** (correctif filtre, file triée, correction valide/invalide [400 hiérarchie], historisation, valider-tel-quel, export corrections).
 **Reste pour clore L5** : sur le poste, après un lot : détail du lot → « Revue humaine (N) » → corriger/valider quelques verbatims (listes niv.2 limitées au niv.1 choisi) → exporter les corrections ; et vérifier que le filtre « Thème (contient…) » marche dans Résultats.
-## L6 — Tableaux de bord & KPI ⏸️
+## L6 — Tableaux de bord & KPI ✅ (validé PO le 2026-06-17)
 
 **Objectif** : pilotage (KPI modèle, résultats du lot, volumétrie & tendances).
 
@@ -132,7 +132,20 @@ Critères d'acceptation :
 
 **Validation automatisée** : test E2E FastAPI/SQLite **11/11 OK**. Front type-check TS strict + build Vite OK.
 **Reste pour clore L6** : sur le poste, après un lot : détail → « Tableau de bord » (barres thèmes/sentiments, signaux) ; menu « Tableaux de bord » (modèle actif + volumétrie globale).
-## L7 — Historique, audit, config & rétention ⬜
+## L7 — Historique, audit, config & rétention ⏸️
+
+**Objectif** : traçabilité (audit), administration (config, rétention RGPD) + graphe demandé.
+
+Critères d'acceptation :
+- [x] **Graphe thème × sentiment × volumétrie** (barres empilées par sentiment) — lot + global
+- [x] **Journal d'audit** (admin) : connexions, lancements, corrections, activations modèle, config, purge
+- [x] **Configuration** (admin) : seuil de revue par défaut, durée de rétention (mois)
+- [x] **Rétention/purge RGPD** : purge des lots au-delà de la rétention (manuelle + au démarrage worker) + suppression fichiers
+- [x] Migration 0005 (audit_log, app_config)
+- [x] Endpoints : `GET /api/audit`, `GET/PATCH /api/config`, `POST /api/admin/purge`
+
+**Validation automatisée** : test E2E FastAPI/SQLite **14/14 OK** (crosstab lot+global, config get/patch/validation, purge, audit des actions clés, RBAC analyste→403).
+**Reste pour clore L7** : sur le poste (`down -v` requis : migration 0005) : page « Administration » (config + purge + journal d'audit), graphe « Thèmes × sentiment » sur le tableau de bord du lot et global.
 ## L8 — Durcissement, RGPD, perf, recette V1 ⬜
 
 ---

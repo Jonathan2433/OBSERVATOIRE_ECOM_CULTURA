@@ -6,6 +6,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
+from ..core.audit import record_audit
 from ..core.db import get_db
 from ..core.security import (
     clear_session_cookie,
@@ -34,11 +35,13 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
     # Message identique que le compte existe ou non (pas d'énumération).
     if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
         rate_limiter.record_failure(username)
+        record_audit(db, action="auth.login_failed", username=username)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Identifiants invalides")
 
     rate_limiter.reset(username)
     token = create_access_token(user.id, user.role, user.username)
     set_session_cookie(response, token)
+    record_audit(db, action="auth.login", user=user)
     logger.info("Connexion réussie : %s (%s)", user.username, user.role)
     return MeResponse(id=user.id, username=user.username, role=user.role)
 

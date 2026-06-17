@@ -6,6 +6,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from ..core.audit import record_audit
 from ..core.db import get_db
 from ..core.security import hash_password, require_admin
 from ..models.user import ROLE_ADMIN, User
@@ -40,6 +41,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
+    record_audit(db, action="user.create", entity="user", entity_id=user.id, details=f"{user.username}/{user.role}")
     logger.info("Compte créé : %s (%s)", user.username, user.role)
     return user
 
@@ -89,5 +91,6 @@ def deactivate_user(user_id: int, db: Session = Depends(get_db), admin: User = D
     user.is_active = False
     db.commit()
     db.refresh(user)
+    record_audit(db, action="user.deactivate", user=admin, entity="user", entity_id=user.id, details=user.username)
     logger.info("Compte désactivé : %s", user.username)
     return user

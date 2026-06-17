@@ -5,6 +5,8 @@ from .batch import Batch, BATCH_STATUSES
 from .result import Result
 from .correction import Correction
 from .model_version import ModelVersion, MODEL_KIND_REAL, MODEL_KIND_STUB
+from .audit import AuditLog
+from .app_config import AppConfig
 
 __all__ = [
     "User", "ROLE_ADMIN", "ROLE_ANALYSTE", "ROLES",
@@ -12,4 +14,6 @@ __all__ = [
     "Result",
     "Correction",
     "ModelVersion", "MODEL_KIND_REAL", "MODEL_KIND_STUB",
+    "AuditLog",
+    "AppConfig",
 ]
