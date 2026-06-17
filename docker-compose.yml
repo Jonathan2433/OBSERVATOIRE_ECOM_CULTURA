@@ -42,8 +42,8 @@ services:
 
   api:
     build:
-      context: ./app/api
-      dockerfile: Dockerfile
+      context: ./app
+      dockerfile: api/Dockerfile
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-production}
@@ -52,6 +52,11 @@ services:
       SECRET_KEY: ${SECRET_KEY:?Definir SECRET_KEY dans .env}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      UPLOADS_DIR: /data/uploads
+      OUTPUT_DIR: /data/output
+    volumes:
+      - ./data/uploads:/data/uploads      # fichiers déposés (partagé avec worker)
+      - ./data/output:/data/output        # CSV enrichis (export L4)
     depends_on:
       db:
         condition: service_healthy
@@ -73,6 +78,7 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-oes}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-oes}
       REDIS_URL: redis://redis:6379/0
       MODELS_DIR: /data/models
+      PROCESSED_DIR: /data/processed
       CONFIG_PATH: /app/config/config.yaml
       OMP_NUM_THREADS: ${WORKER_THREADS:-4}
     depends_on:
@@ -82,6 +88,7 @@ services:
         condition: service_healthy
     volumes:
       - ./data/models:/data/models:ro     # modèles montés en LECTURE SEULE (garde-fou)
+      - ./data/processed:/data/processed:ro   # eval_report.json (métriques modèle), optionnel
       - ./data/uploads:/data/uploads
       - ./data/output:/data/output
       - ./data/logs:/data/logs

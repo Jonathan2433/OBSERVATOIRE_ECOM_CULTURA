@@ -1,29 +1,8 @@
-"""Accès base de données (SQLAlchemy 2.0).
+"""Réexport de la couche DB partagée (``common.db``).
 
-Définit l'``engine``, la fabrique de sessions et la ``Base`` déclarative dont
-hériteront les modèles ORM (ajoutés au fil des lots : users, batches, ...).
+Conservé pour compatibilité des imports existants (``from ..core.db import ...``).
+La source de vérité est désormais le package partagé ``common``.
 """
-from __future__ import annotations
+from common.db import Base, SessionLocal, engine, get_db  # noqa: F401
 
-from collections.abc import Iterator
-
-from sqlalchemy import create_engine
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
-
-from .config import settings
-
-engine = create_engine(settings.database_url, pool_pre_ping=True, future=True)
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
-
-
-class Base(DeclarativeBase):
-    """Base déclarative commune à tous les modèles ORM."""
-
-
-def get_db() -> Iterator[Session]:
-    """Dépendance FastAPI : fournit une session DB par requête."""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+__all__ = ["Base", "SessionLocal", "engine", "get_db"]

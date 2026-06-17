@@ -14,11 +14,24 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 QUEUES = ["default"]
 
 
+def _sync_registry_safe() -> None:
+    """Synchronise le registre des modèles au démarrage (non bloquant)."""
+    try:
+        from .config_worker import build_worker_cfg
+        from .model_registry import sync_registry
+
+        sync_registry(build_worker_cfg())
+        logger.info("Registre des modèles synchronisé.")
+    except Exception as exc:  # pragma: no cover
+        logger.warning("Synchronisation du registre ignorée au démarrage : %s", exc)
+
+
 def main() -> None:
     logger.info("Worker en démarrage — Redis=%s, files=%s", REDIS_URL, QUEUES)
     connection = Redis.from_url(REDIS_URL)
     # Vérifie la connectivité avant de boucler.
     connection.ping()
+    _sync_registry_safe()
     logger.info("Connexion Redis OK. En attente de jobs...")
     worker = Worker([Queue(name, connection=connection) for name in QUEUES], connection=connection)
     worker.work(with_scheduler=False)

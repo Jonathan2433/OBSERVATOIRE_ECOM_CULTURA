@@ -9,8 +9,8 @@
 | Lot | Intitulé | Statut | Branche |
 |---|---|---|---|
 | L0 | Socle projet & conteneurisation | ✅ Fait (validé PO) | `lot/0` (mergé) |
-| L1 | Auth, comptes & rôles | ⏸️ En attente de validation | `lot/1-auth` |
-| L2 | Cœur ML : worker async + gestion modèle | ⬜ | — |
+| L1 | Auth, comptes & rôles | ✅ Fait (validé PO) | `lot/1` (mergé) |
+| L2 | Cœur ML : worker async + gestion modèle | ⏸️ En attente de validation | `lot/2-core-ml` |
 | L3 | Ingestion & lancement de lot + suivi | ⬜ | — |
 | L4 | Consultation résultats + exports (→ MVP) | ⬜ | — |
 | L5 | Revue humaine & corrections | ⬜ | — |
@@ -39,7 +39,7 @@ Critères d'acceptation :
 
 ---
 
-## L1 — Auth, comptes & rôles ⏸️
+## L1 — Auth, comptes & rôles ✅ (validé PO le 2026-06-17)
 
 **Objectif** : sécuriser l'accès, poser le RBAC (Analyste / Admin).
 
@@ -56,7 +56,25 @@ Critères d'acceptation :
 **Validation automatisée** : test d'intégration FastAPI/SQLite **11/11 OK** (login, RBAC, garde-fous, validation mot de passe) ; front **type-check TS strict + build Vite OK**.
 **Reste pour clore L1** : `docker compose up --build` sur le poste → se connecter (admin du `.env`) → créer un analyste → vérifier les accès. Puis validation PO → merge.
 
-## L2 — Cœur ML : worker async + gestion modèle ⬜
+## L2 — Cœur ML : worker async + gestion modèle ⏸️
+
+**Objectif** : industrialiser le moteur du POC en traitement asynchrone tracé.
+
+Critères d'acceptation :
+- [x] Package partagé `common` (DB + modèles ORM) importé par `api` ET `worker`
+- [x] Tables `batches`, `results` (texte **anonymisé** uniquement), `model_versions` (Alembic 0003)
+- [x] Registre de modèles : découverte stub + modèle réel dans `/data/models`, activation (admin)
+- [x] Tâche worker : lot Excel -> anonymisation -> nettoyage -> inférence -> résultats en base
+- [x] Progression incrémentale (n traités/total) + gestion d'erreur **par verbatim**
+- [x] Traçabilité **lot ↔ version de modèle** ; un seul job lourd concurrent (1 worker)
+- [x] Mode **stub** (heuristique, sans torch) si aucun modèle réel -> app démontrable avant entraînement
+- [x] Endpoints : `POST/GET /api/batches`, `GET /api/batches/{id}` (+ `/progress`), `GET /api/models`, `POST /api/models/{id}/activate`, `POST /api/models/rescan`
+- [x] Aucun verbatim non anonymisé en base (seul `verbatim_analyse` est stocké)
+
+**Validation automatisée** : test E2E FastAPI/SQLite **14/14 OK** (upload → traitement worker → 30 résultats persistés, hiérarchie taxonomie respectée, colonnes d'origine, progression, registre stub actif).
+**Reste pour clore L2** : sur le poste, `docker compose down -v && docker compose up --build` (rebuild après refactor `common` + nouvelles deps API), vérifier que le worker synchronise le registre et que `GET /api/models` répond. (L'UI de lancement des lots arrive au L3.)
+
+**Décision (D7)** : L2 embarque un **classifieur stub** (mots-clés) activé tant qu'aucun modèle CamemBERT n'est déposé/activé, afin de rendre l'app démontrable de bout en bout sans attendre l'entraînement (~2-4h). Le modèle réel se branche via le registre.
 ## L3 — Ingestion & lancement de lot + suivi ⬜
 ## L4 — Consultation résultats + exports ⬜
 ## L5 — Revue humaine & corrections ⬜
@@ -76,3 +94,4 @@ Critères d'acceptation :
 | D4 | 2026-06-17 | Dév. par Claude Code (agent unique) ; **pas de backlog formel**, suivi léger + commits par lot + portes de validation | Pas d'équipe humaine à coordonner ; valeur = continuité inter-sessions + visibilité PO + DoD |
 | D5 | 2026-06-17 | Service `web` = nginx multi-stage (build React + sert le statique + proxy `/api`) au lieu de 2 services proxy+frontend | Moins de conteneurs sur un laptop, même résultat |
 | D6 | 2026-06-17 | `api` reste **léger (sans torch)** ; tout le ML est dans le `worker` | Démarrage rapide de l'API, séparation des responsabilités, image API petite |
+| D7 | 2026-06-17 | Package partagé `common` (DB + modèles ORM) + classifieur **stub** activé tant qu'aucun modèle réel n'est déposé | `api` et `worker` partagent le schéma sans duplication ; l'app est démontrable avant l'entraînement CamemBERT |

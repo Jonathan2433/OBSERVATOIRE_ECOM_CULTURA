@@ -9,7 +9,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import APP_NAME, __version__
 from .api.routes_auth import router as auth_router
+from .api.routes_batches import router as batches_router
 from .api.routes_health import router as health_router
+from .api.routes_models import router as models_router
 from .api.routes_users import router as users_router
 from .core.config import settings
 from .core.logging import setup_logging
@@ -23,11 +25,12 @@ async def lifespan(app: FastAPI):
     # Amorçage de l'admin initial (si aucun compte). Les tables sont créées par
     # Alembic (lancé avant uvicorn dans l'entrypoint du conteneur).
     try:
-        from .seed import seed_admin
+        from .seed import ensure_stub_model, seed_admin
 
         seed_admin()
+        ensure_stub_model()
     except Exception as exc:  # pragma: no cover - ne bloque pas le démarrage
-        logger.warning("Amorçage admin ignoré (%s)", exc)
+        logger.warning("Amorçage ignoré (%s)", exc)
     yield
 
 
@@ -49,5 +52,7 @@ app.add_middleware(
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(users_router)
+app.include_router(batches_router)
+app.include_router(models_router)
 
-# Routers fonctionnels suivants (batches, results, review, kpi, admin) : lots L2 -> L7.
+# Routers fonctionnels suivants (results, review, kpi détaillés) : lots L4 -> L7.

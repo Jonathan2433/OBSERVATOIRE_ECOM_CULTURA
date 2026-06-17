@@ -7,7 +7,8 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PYTHONPATH=/app \
     HF_HUB_OFFLINE=1 \
-    TRANSFORMERS_OFFLINE=1
+    TRANSFORMERS_OFFLINE=1 \
+    TAXONOMY_PATH=/app/taxonomy.json
 
 WORKDIR /app
 
@@ -22,9 +23,11 @@ RUN pip install --no-cache-dir -r requirements-worker.txt
 # 3) Modèle spaCy FR embarqué (anonymisation) -> fonctionne hors ligne au runtime
 RUN python -m spacy download fr_core_news_sm
 
-# 4) Code : moteur ML réutilisé + config + worker
+# 4) Code : moteur ML réutilisé + package partagé + config + taxonomie + worker
 COPY src ./src
+COPY app/common ./common
 COPY config ./config
+COPY data/raw/taxonomy_cultura_poc.json ./taxonomy.json
 COPY app/worker ./worker
 
 # Démarre le worker RQ (consomme la file 'default').
