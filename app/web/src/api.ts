@@ -210,4 +210,23 @@ export interface Prediction {
 export const predict = (text: string, satisfaction?: number | null) =>
   request<Prediction>("/api/predict", { method: "POST", body: JSON.stringify({ text, satisfaction: satisfaction ?? null }) });
 
+// --- Revue humaine ---
+export interface TaxonomyTheme { niv1: string; niv2: string[] }
+export const getTaxonomy = () => request<{ themes: TaxonomyTheme[] }>("/api/taxonomy");
+export const getReviewQueue = (batchId: number, offset = 0, limit = 1) =>
+  request<ResultsResponse>(`/api/batches/${batchId}/review?limit=${limit}&offset=${offset}`);
+
+export interface CorrectionPayload {
+  action: "validate" | "correct";
+  theme1_niv1?: string;
+  theme1_niv2?: string;
+  theme1_sentiment?: string;
+  signal_rupture?: boolean;
+  signal_churn?: boolean;
+  signal_insatisfaction?: boolean;
+}
+export const correctResult = (id: number, p: CorrectionPayload) =>
+  request<ResultRow>(`/api/results/${id}`, { method: "PATCH", body: JSON.stringify(p) });
+export const exportCorrectionsUrl = () => "/api/corrections/export";
+
 export { ApiError };

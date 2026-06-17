@@ -32,7 +32,7 @@ export default function ResultsPage() {
 
       <section style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center", marginBottom: "1rem" }}>
         <input placeholder="Recherche texte…" onChange={(e) => apply({ q: e.target.value || undefined })} />
-        <input placeholder="Thème niv.1" onChange={(e) => apply({ niv1: e.target.value || undefined })} />
+        <input placeholder="Thème (contient…)" onChange={(e) => apply({ niv1: e.target.value || undefined })} />
         <select onChange={(e) => apply({ sentiment: e.target.value || undefined })}>
           <option value="">Sentiment (tous)</option>
           <option>Négatif</option><option>Neutre</option><option>Positif</option>

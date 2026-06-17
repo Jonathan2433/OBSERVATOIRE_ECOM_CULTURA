@@ -5,9 +5,10 @@ n'est jamais stocké en base.
 """
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import JSON, Boolean, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db import Base
@@ -40,7 +41,12 @@ class Result(Base):
 
     confidence_globale: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     revue_requise: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
-    corrected: Mapped[bool] = mapped_column(Boolean, default=False)  # utilisé au lot L5
+
+    # Revue humaine (L5)
+    corrected: Mapped[bool] = mapped_column(Boolean, default=False)
+    reviewed: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    reviewed_by: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Colonnes d'origine du fichier source (pour le CSV enrichi).
     original_columns: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)

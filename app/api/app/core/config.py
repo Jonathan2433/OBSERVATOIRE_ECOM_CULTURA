@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     # --- Traitement par lots (L2) ---
     uploads_dir: str = "/data/uploads"               # fichiers déposés (partagé avec worker)
     output_dir: str = "/data/output"                 # CSV enrichis (export L4)
+    taxonomy_path: str = "/app/taxonomy.json"        # référentiel (listes contraintes de la revue)
     job_queue: str = "default"
     job_timeout_seconds: int = 7200                  # 2h max par lot
     max_upload_mb: int = 60

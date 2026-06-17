@@ -7,6 +7,7 @@ import UsersPage from "./pages/UsersPage";
 import BatchesPage from "./pages/BatchesPage";
 import BatchDetailPage from "./pages/BatchDetailPage";
 import ResultsPage from "./pages/ResultsPage";
+import ReviewPage from "./pages/ReviewPage";
 import TestPage from "./pages/TestPage";
 
 function Spinner() {
@@ -40,6 +41,7 @@ export default function App() {
           <Route path="lots" element={<BatchesPage />} />
           <Route path="lots/:id" element={<BatchDetailPage />} />
           <Route path="lots/:id/resultats" element={<ResultsPage />} />
+          <Route path="lots/:id/revue" element={<ReviewPage />} />
           <Route path="test" element={<TestPage />} />
           <Route path="admin/users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
         </Route>
