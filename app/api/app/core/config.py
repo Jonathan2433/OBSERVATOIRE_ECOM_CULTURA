@@ -30,5 +30,12 @@ class Settings(BaseSettings):
     admin_username: str = "admin"
     admin_password: str = ""                         # vide -> défaut + avertissement
 
+    # --- Traitement par lots (L2) ---
+    uploads_dir: str = "/data/uploads"               # fichiers déposés (partagé avec worker)
+    output_dir: str = "/data/output"                 # CSV enrichis (export L4)
+    job_queue: str = "default"
+    job_timeout_seconds: int = 7200                  # 2h max par lot
+    max_upload_mb: int = 60
+
 
 settings = Settings()

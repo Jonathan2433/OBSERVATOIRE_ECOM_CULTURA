@@ -1,5 +1,6 @@
-"""Modèles ORM (SQLAlchemy). Importés ici pour enregistrer Base.metadata."""
+"""Réexport des modèles ORM partagés (``common.models``).
 
-from .user import User, ROLE_ADMIN, ROLE_ANALYSTE, ROLES
-
-__all__ = ["User", "ROLE_ADMIN", "ROLE_ANALYSTE", "ROLES"]
+Conservé pour compatibilité (``from app.models import ...``, autogenerate Alembic).
+"""
+from common.models import *  # noqa: F401,F403
+from common.models import ROLE_ADMIN, ROLE_ANALYSTE, ROLES, User  # noqa: F401

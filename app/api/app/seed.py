@@ -7,10 +7,28 @@ from .core.config import settings
 from .core.db import SessionLocal
 from .core.security import hash_password
 from .models.user import ROLE_ADMIN, User
+from common.models import MODEL_KIND_STUB, ModelVersion
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_PASSWORD = "admin-changeme-12+"
+_STUB_LABEL = "stub-heuristique"
+
+
+def ensure_stub_model() -> None:
+    """Garantit la présence d'un modèle 'stub' actif (avant la synchro worker).
+
+    Évite que l'UI/registre soit vide au tout premier démarrage. Le worker
+    réconcilie ensuite (détection d'un éventuel modèle CamemBERT réel).
+    """
+    with SessionLocal() as db:
+        if db.query(ModelVersion).filter_by(label=_STUB_LABEL).first():
+            return
+        active_exists = db.query(ModelVersion).filter_by(is_active=True).count() > 0
+        db.add(ModelVersion(kind=MODEL_KIND_STUB, label=_STUB_LABEL,
+                            is_active=not active_exists, available=True))
+        db.commit()
+        logger.info("Modèle 'stub' enregistré (actif=%s).", not active_exists)
 
 
 def seed_admin() -> None:

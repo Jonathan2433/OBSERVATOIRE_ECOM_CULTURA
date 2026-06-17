@@ -1,20 +1,23 @@
-# API FastAPI — image légère (sans torch). Compatible linux/arm64 et amd64.
+# API FastAPI — image légère (sans torch). Contexte de build = ./app
+# (pour embarquer le package partagé `common`). Compatible arm64/amd64.
 FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/app
 
 WORKDIR /app
 
 # Dépendances d'abord (cache de couche)
-COPY requirements.txt ./
+COPY api/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Code applicatif
-COPY alembic.ini ./
-COPY migrations ./migrations
-COPY app ./app
+# Code : package partagé + API
+COPY common ./common
+COPY api/alembic.ini ./
+COPY api/migrations ./migrations
+COPY api/app ./app
 
 EXPOSE 8000
 
