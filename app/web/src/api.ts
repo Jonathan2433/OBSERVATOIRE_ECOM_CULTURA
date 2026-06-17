@@ -135,4 +135,79 @@ export const listModels = () => request<ModelVersion[]>("/api/models");
 export const activateModel = (id: number) => request<ModelVersion>(`/api/models/${id}/activate`, { method: "POST" });
 export const rescanModels = () => request<{ status: string }>("/api/models/rescan", { method: "POST" });
 
+// --- Résultats ---
+export interface ResultRow {
+  id: number;
+  row_index: number;
+  source?: string | null;
+  verbatim_analyse: string;
+  nb_themes: number;
+  theme1_niv1?: string | null;
+  theme1_niv2?: string | null;
+  theme1_sentiment?: string | null;
+  theme1_score?: number | null;
+  theme2_niv1?: string | null;
+  theme2_niv2?: string | null;
+  theme2_sentiment?: string | null;
+  signal_rupture: boolean;
+  signal_churn: boolean;
+  signal_insatisfaction: boolean;
+  confidence_globale?: number | null;
+  revue_requise: boolean;
+  corrected: boolean;
+}
+export interface ResultsResponse {
+  total: number;
+  limit: number;
+  offset: number;
+  items: ResultRow[];
+}
+export interface ResultFilters {
+  niv1?: string;
+  sentiment?: string;
+  revue?: boolean;
+  rupture?: boolean;
+  churn?: boolean;
+  insatisfaction?: boolean;
+  q?: string;
+  limit?: number;
+  offset?: number;
+}
+export function listResults(batchId: number, f: ResultFilters = {}): Promise<ResultsResponse> {
+  const p = new URLSearchParams();
+  if (f.niv1) p.set("niv1", f.niv1);
+  if (f.sentiment) p.set("sentiment", f.sentiment);
+  if (f.revue !== undefined) p.set("revue", String(f.revue));
+  if (f.rupture) p.set("rupture", "true");
+  if (f.churn) p.set("churn", "true");
+  if (f.insatisfaction) p.set("insatisfaction", "true");
+  if (f.q) p.set("q", f.q);
+  p.set("limit", String(f.limit ?? 50));
+  p.set("offset", String(f.offset ?? 0));
+  return request<ResultsResponse>(`/api/batches/${batchId}/results?${p.toString()}`);
+}
+export const exportUrl = (batchId: number, format: "csv" | "xlsx") =>
+  `/api/batches/${batchId}/export?format=${format}`;
+
+// --- Test à la volée ---
+export interface Prediction {
+  "verbatim_analysé": string;
+  nb_themes: number;
+  theme1_niv1: string;
+  theme1_niv2: string;
+  theme1_sentiment: string;
+  theme1_score_confiance: number | string;
+  theme2_niv1: string;
+  theme2_niv2: string;
+  theme2_sentiment: string;
+  signal_rupture_client: boolean;
+  signal_churn: boolean;
+  signal_insatisfaction_forte: boolean;
+  confidence_globale: number | string;
+  revue_humaine_requise: boolean;
+  model_label?: string | null;
+}
+export const predict = (text: string, satisfaction?: number | null) =>
+  request<Prediction>("/api/predict", { method: "POST", body: JSON.stringify({ text, satisfaction: satisfaction ?? null }) });
+
 export { ApiError };

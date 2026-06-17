@@ -12,6 +12,8 @@ from .api.routes_auth import router as auth_router
 from .api.routes_batches import router as batches_router
 from .api.routes_health import router as health_router
 from .api.routes_models import router as models_router
+from .api.routes_predict import router as predict_router
+from .api.routes_results import router as results_router
 from .api.routes_users import router as users_router
 from .core.config import settings
 from .core.logging import setup_logging
@@ -53,6 +55,8 @@ app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(batches_router)
+app.include_router(results_router)
+app.include_router(predict_router)
 app.include_router(models_router)
 
-# Routers fonctionnels suivants (results, review, kpi détaillés) : lots L4 -> L7.
+# Routers fonctionnels suivants (revue, kpi détaillés) : lots L5 -> L7.
