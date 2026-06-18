@@ -2,40 +2,43 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getHealth, type Health } from "../api";
 import { useAuth } from "../auth";
+import { Badge, Card, StatCard } from "../ui";
+
+function statusBadge(ok: boolean | undefined) {
+  return ok ? <Badge tone="success" dot>OK</Badge> : <Badge tone="danger" dot>KO</Badge>;
+}
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const [health, setHealth] = useState<Health | null>(null);
+  const [err, setErr] = useState(false);
 
   useEffect(() => {
-    getHealth().then(setHealth).catch(() => setHealth(null));
+    getHealth().then(setHealth).catch(() => setErr(true));
   }, []);
 
   return (
     <div>
-      <h1>Bienvenue, {user?.username}</h1>
-      <p style={{ color: "#666" }}>
-        Plateforme de classification et de pilotage des verbatims clients Cultura.
-      </p>
+      <div className="page-header">
+        <h1 className="page-header__title">Bienvenue, {user?.username}</h1>
+        <p className="page-header__sub">Plateforme de classification et de pilotage des verbatims clients Cultura.</p>
+      </div>
 
-      <section style={{ marginTop: "2rem", padding: "1rem 1.25rem", border: "1px solid #eee", borderRadius: 8 }}>
-        <h3 style={{ marginTop: 0 }}>État du système</h3>
-        {health ? (
-          <ul>
-            <li>API : <b>{health.status}</b> (v{health.version})</li>
-            <li>Base de données : <b>{health.components?.database ? "OK" : "KO"}</b></li>
-            <li>File de traitement (Redis) : <b>{health.components?.redis ? "OK" : "KO"}</b></li>
-          </ul>
-        ) : (
-          <p style={{ color: "crimson" }}>API injoignable.</p>
-        )}
-      </section>
+      <div className="ui-stack">
+        <div className="ui-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
+          <StatCard label="API" value={err ? "Injoignable" : (health?.status ?? "…")} hint={health ? `v${health.version}` : undefined} />
+          <StatCard label="Base de données" value={statusBadge(health?.components?.database)} />
+          <StatCard label="File de traitement" value={statusBadge(health?.components?.redis)} hint="Redis" />
+        </div>
 
-      <nav style={{ marginTop: "2rem", display: "flex", flexWrap: "wrap", gap: "1.25rem" }}>
-        <Link to="/lots">→ Traiter un nouveau lot de verbatims</Link>
-        <Link to="/tableaux-de-bord">→ Tableaux de bord</Link>
-        <Link to="/test">→ Test à la volée</Link>
-      </nav>
+        <Card title="Démarrer">
+          <div className="ui-row ui-row--wrap">
+            <Link className="ui-btn ui-btn--primary ui-btn--md" to="/lots">Traiter un nouveau lot</Link>
+            <Link className="ui-btn ui-btn--secondary ui-btn--md" to="/tableaux-de-bord">Tableaux de bord</Link>
+            <Link className="ui-btn ui-btn--secondary ui-btn--md" to="/test">Test à la volée</Link>
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }
