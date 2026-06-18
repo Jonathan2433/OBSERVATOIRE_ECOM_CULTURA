@@ -2,14 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getBatch, type Batch } from "../api";
 import StatusBadge from "../components/StatusBadge";
-
-function ProgressBar({ pct }: { pct: number }) {
-  return (
-    <div style={{ background: "#eee", borderRadius: 6, height: 14, overflow: "hidden", maxWidth: 420 }}>
-      <div style={{ width: `${pct}%`, background: "#0b5cad", height: "100%", transition: "width .3s" }} />
-    </div>
-  );
-}
+import { Card, EmptyState, ProgressBar, Spinner, StatCard } from "../ui";
 
 export default function BatchDetailPage() {
   const { id } = useParams();
@@ -34,49 +27,60 @@ export default function BatchDetailPage() {
     return () => { active = false; clearTimeout(timer); };
   }, [batchId]);
 
-  if (error) return <p style={{ color: "crimson" }}>{error} — <Link to="/lots">retour</Link></p>;
-  if (!batch) return <p>Chargement…</p>;
+  if (error) {
+    return <EmptyState title="Lot introuvable" description={error} action={<Link className="ui-btn ui-btn--secondary ui-btn--md" to="/lots">Retour aux lots</Link>} />;
+  }
+  if (!batch) return <Spinner label="Chargement du lot…" />;
 
   const pct = batch.n_total ? Math.round((batch.n_processed / batch.n_total) * 100) : 0;
   const running = batch.status === "pending" || batch.status === "running";
+  const reviewPct = batch.n_total ? Math.round((batch.n_review / batch.n_total) * 100) : 0;
 
   return (
     <div>
-      <p><Link to="/lots">← Lots</Link></p>
-      <h1>Lot #{batch.id} — {batch.label} <StatusBadge status={batch.status} /></h1>
+      <div className="page-header">
+        <div className="ui-row">
+          <h1 className="page-header__title">Lot #{batch.id} — {batch.label}</h1>
+          <StatusBadge status={batch.status} />
+        </div>
+        <p className="page-header__sub">{batch.model_label ? `Modèle : ${batch.model_label}` : "Modèle non renseigné"}</p>
+      </div>
 
-      {running && (
-        <section style={{ margin: "1.5rem 0" }}>
-          <p>Traitement en cours… {batch.n_processed} / {batch.n_total || "?"} ({pct}%)</p>
-          <ProgressBar pct={pct} />
-        </section>
-      )}
+      <div className="ui-stack">
+        {running && (
+          <Card title="Traitement en cours">
+            <div className="ui-stack">
+              <ProgressBar value={pct} indeterminate={batch.status === "pending"} />
+              <span className="ui-muted">{batch.n_processed} / {batch.n_total || "?"} verbatims traités</span>
+            </div>
+          </Card>
+        )}
 
-      {batch.status === "failed" && (
-        <p style={{ color: "crimson" }}><b>Échec :</b> {batch.error_message || "erreur inconnue"}</p>
-      )}
+        {batch.status === "failed" && (
+          <Card title="Échec du traitement">
+            <p className="ui-field__error">{batch.error_message || "Erreur inconnue."}</p>
+          </Card>
+        )}
 
-      <section style={{ marginTop: "1.5rem", padding: "1rem 1.25rem", border: "1px solid #eee", borderRadius: 8 }}>
-        <h3 style={{ marginTop: 0 }}>Résumé</h3>
-        <table>
-          <tbody>
-            <tr><td style={{ padding: "0.2rem 1rem 0.2rem 0", color: "#666" }}>Modèle utilisé</td><td>{batch.model_label ?? "—"}</td></tr>
-            <tr><td style={{ color: "#666" }}>Seuil de revue</td><td>{batch.seuil_revue.toFixed(2)}</td></tr>
-            <tr><td style={{ color: "#666" }}>Verbatims traités</td><td>{batch.n_total}</td></tr>
-            <tr><td style={{ color: "#666" }}>En revue humaine</td><td>{batch.status === "done" ? `${batch.n_review} (${batch.n_total ? Math.round((batch.n_review / batch.n_total) * 100) : 0}%)` : "—"}</td></tr>
-            <tr><td style={{ color: "#666" }}>Erreurs</td><td>{batch.n_errors}</td></tr>
-            <tr><td style={{ color: "#666" }}>Durée</td><td>{batch.duration_s != null ? `${batch.duration_s.toFixed(1)} s` : "—"}</td></tr>
-          </tbody>
-        </table>
-      </section>
+        <div className="ui-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}>
+          <StatCard label="Verbatims traités" value={batch.n_total || "—"} />
+          <StatCard label="En revue humaine" value={batch.status === "done" ? batch.n_review : "—"}
+                    hint={batch.status === "done" ? `${reviewPct} %` : undefined} />
+          <StatCard label="Erreurs" value={batch.n_errors} />
+          <StatCard label="Durée" value={batch.duration_s != null ? `${batch.duration_s.toFixed(1)} s` : "—"} />
+          <StatCard label="Seuil de revue" value={batch.seuil_revue.toFixed(2)} />
+        </div>
 
-      {batch.status === "done" && (
-        <p style={{ marginTop: "1.5rem", display: "flex", gap: "1.5rem" }}>
-          <Link to={`/lots/${batch.id}/resultats`}>→ Résultats &amp; export</Link>
-          <Link to={`/lots/${batch.id}/kpi`}>→ Tableau de bord</Link>
-          <Link to={`/lots/${batch.id}/revue`}>→ Revue humaine ({batch.n_review})</Link>
-        </p>
-      )}
+        {batch.status === "done" && (
+          <Card title="Exploiter ce lot">
+            <div className="ui-row ui-row--wrap">
+              <Link className="ui-btn ui-btn--primary ui-btn--md" to={`/lots/${batch.id}/resultats`}>Résultats &amp; export</Link>
+              <Link className="ui-btn ui-btn--secondary ui-btn--md" to={`/lots/${batch.id}/kpi`}>Tableau de bord</Link>
+              <Link className="ui-btn ui-btn--secondary ui-btn--md" to={`/lots/${batch.id}/revue`}>Revue humaine ({batch.n_review})</Link>
+            </div>
+          </Card>
+        )}
+      </div>
     </div>
   );
 }

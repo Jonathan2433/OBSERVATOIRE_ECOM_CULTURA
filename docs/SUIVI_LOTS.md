@@ -26,8 +26,8 @@ Réf. : [CHARTE_UI_V2.md](CHARTE_UI_V2.md) · [PLAN_V2_DESIGN.md](PLAN_V2_DESIGN
 | Lot | Intitulé | Statut | Branche |
 |---|---|---|---|
 | D0 | Fondations : tokens, reset/global, primitives, vitrine `/design` | ✅ Fait (validé PO) | `design/0` (mergé) |
-| D1 | AppShell (sidebar + topbar + fil d'Ariane) + Connexion + Accueil | ⏸️ En attente de validation | `design/1-appshell` |
-| D2 | Lots & ingestion (liste, FileDropzone, détail/progression) | ⬜ | — |
+| D1 | AppShell (sidebar + topbar + fil d'Ariane) + Connexion + Accueil | ✅ Fait (validé PO) | `design/1` (mergé) |
+| D2 | Lots & ingestion (liste, FileDropzone, détail/progression) | ⏸️ En attente de validation | `design/2-lots` |
 | D3 | Résultats & exports (filtres chips, Table, Drawer) | ⬜ | — |
 | D4 | Revue humaine (mode focus + raccourcis) | ⬜ | — |
 | D5 | Tableaux de bord & dataviz (StatCards, charts, alertes seuils) | ⬜ | — |

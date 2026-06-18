@@ -1,0 +1,44 @@
+/* =============================================================================
+ *  patterns.css — Motifs réutilisables : table, progression, dropzone, range.
+ * ========================================================================== */
+
+/* --- Table de données --- */
+.ui-table-wrap { overflow-x: auto; border: 1px solid var(--cu-border); border-radius: var(--r-lg); background: var(--cu-surface); }
+.ui-table { width: 100%; border-collapse: collapse; font-size: var(--fs-base); }
+.ui-table thead th {
+  position: sticky; top: 0; background: var(--cu-neutral-50);
+  text-align: left; font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.4px;
+  color: var(--cu-text-muted); font-weight: var(--fw-semibold);
+  padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--cu-border); white-space: nowrap;
+}
+.ui-table tbody td { padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--cu-border); vertical-align: middle; }
+.ui-table tbody tr:last-child td { border-bottom: none; }
+.ui-table tbody tr.is-clickable { cursor: pointer; transition: background var(--t-fast); }
+.ui-table tbody tr.is-clickable:hover { background: var(--cu-primary-50); }
+.ui-table__num { font-variant-numeric: tabular-nums; color: var(--cu-text-muted); }
+.ui-table__empty { padding: var(--sp-8); text-align: center; color: var(--cu-text-muted); }
+
+/* --- Barre de progression --- */
+.ui-progress { display: flex; align-items: center; gap: var(--sp-3); }
+.ui-progress__track { flex: 1; height: 8px; background: var(--cu-neutral-200); border-radius: var(--r-pill); overflow: hidden; min-width: 80px; }
+.ui-progress__bar { height: 100%; background: var(--cu-primary-500); border-radius: var(--r-pill); transition: width var(--t-base); }
+.ui-progress__bar.is-indeterminate { width: 35% !important; animation: ui-indeterminate 1.1s ease-in-out infinite; }
+.ui-progress__label { font-size: var(--fs-sm); color: var(--cu-text-muted); font-variant-numeric: tabular-nums; min-width: 38px; text-align: right; }
+@keyframes ui-indeterminate { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
+
+/* --- Zone de dépôt de fichier --- */
+.ui-dropzone {
+  display: flex; flex-direction: column; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-6); text-align: center;
+  border: 1.5px dashed var(--cu-border-strong); border-radius: var(--r-lg);
+  background: var(--cu-surface-alt); color: var(--cu-text-muted);
+  cursor: pointer; transition: border-color var(--t-fast), background var(--t-fast);
+}
+.ui-dropzone:hover, .ui-dropzone.is-drag { border-color: var(--cu-primary-400); background: var(--cu-primary-50); }
+.ui-dropzone.is-filled { border-style: solid; border-color: var(--cu-primary-300); background: var(--cu-primary-50); color: var(--cu-text); }
+.ui-dropzone__title { font-weight: var(--fw-medium); color: var(--cu-text); }
+.ui-dropzone__hint { font-size: var(--fs-xs); }
+.ui-dropzone__file { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); }
+
+/* --- Curseur (range) --- */
+.ui-range { width: 100%; accent-color: var(--cu-primary-500); }

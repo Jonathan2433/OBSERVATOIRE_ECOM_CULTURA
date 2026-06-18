@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { createBatch, listBatches, type Batch } from "../api";
 import StatusBadge from "../components/StatusBadge";
+import { Button, Card, FileDropzone, Input, ProgressBar } from "../ui";
 
 export default function BatchesPage() {
   const navigate = useNavigate();
@@ -10,14 +11,13 @@ export default function BatchesPage() {
   const [busy, setBusy] = useState(false);
   const [label, setLabel] = useState("");
   const [seuil, setSeuil] = useState(0.7);
-  const mdtcRef = useRef<HTMLInputElement>(null);
-  const mopinionRef = useRef<HTMLInputElement>(null);
+  const [mdtc, setMdtc] = useState<File | null>(null);
+  const [mopinion, setMopinion] = useState<File | null>(null);
 
   const refresh = () => listBatches().then(setBatches).catch((e) => setError(String(e.message ?? e)));
 
   useEffect(() => {
     refresh();
-    // Rafraîchit tant qu'un lot est en cours.
     const t = setInterval(() => {
       setBatches((prev) => {
         if (prev.some((b) => b.status === "pending" || b.status === "running")) refresh();
@@ -30,8 +30,6 @@ export default function BatchesPage() {
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-    const mdtc = mdtcRef.current?.files?.[0] ?? null;
-    const mopinion = mopinionRef.current?.files?.[0] ?? null;
     if (!mdtc && !mopinion) {
       setError("Sélectionnez au moins un fichier (MDTC ou Mopinion).");
       return;
@@ -49,52 +47,70 @@ export default function BatchesPage() {
 
   return (
     <div>
-      <h1>Lots de traitement</h1>
+      <div className="page-header">
+        <h1 className="page-header__title">Lots de traitement</h1>
+        <p className="page-header__sub">Déposez les deux exports Excel du mois, puis lancez et suivez le traitement.</p>
+      </div>
 
-      <section style={{ padding: "1rem 1.25rem", border: "1px solid #eee", borderRadius: 8, marginBottom: "2rem" }}>
-        <h3 style={{ marginTop: 0 }}>Nouveau lot</h3>
-        {error && <p style={{ color: "crimson" }}>{error}</p>}
-        <form onSubmit={onSubmit} style={{ display: "grid", gap: "0.75rem", maxWidth: 560 }}>
-          <label>Fichier MDTC (.xlsx) <input type="file" accept=".xlsx" ref={mdtcRef} /></label>
-          <label>Fichier Mopinion (.xlsx) <input type="file" accept=".xlsx" ref={mopinionRef} /></label>
-          <label>Libellé du lot
-            <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="ex. juillet 2026" style={{ marginLeft: 8 }} />
-          </label>
-          <label>Seuil de revue humaine ({seuil.toFixed(2)})
-            <input type="range" min={0} max={1} step={0.05} value={seuil}
-                   onChange={(e) => setSeuil(parseFloat(e.target.value))} style={{ marginLeft: 8, verticalAlign: "middle" }} />
-          </label>
-          <div><button type="submit" disabled={busy}>{busy ? "Lancement…" : "Lancer le traitement"}</button></div>
-        </form>
-      </section>
+      <div className="ui-stack">
+        <Card title="Nouveau lot">
+          {error && <p className="ui-field__error" style={{ marginBottom: "var(--sp-3)" }}>{error}</p>}
+          <form onSubmit={onSubmit} className="ui-stack" style={{ maxWidth: 720 }}>
+            <div className="ui-grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+              <FileDropzone label="Fichier MDTC" hint="Glisser-déposer ou cliquer (.xlsx)" file={mdtc} onSelect={setMdtc} />
+              <FileDropzone label="Fichier Mopinion" hint="Glisser-déposer ou cliquer (.xlsx)" file={mopinion} onSelect={setMopinion} />
+            </div>
+            <Input label="Libellé du lot (optionnel)" value={label}
+                   onChange={(e) => setLabel(e.target.value)} placeholder="ex. juillet 2026" />
+            <label className="ui-field">
+              <span className="ui-field__label">Seuil de revue humaine : <b>{seuil.toFixed(2)}</b></span>
+              <input className="ui-range" type="range" min={0} max={1} step={0.05} value={seuil}
+                     onChange={(e) => setSeuil(parseFloat(e.target.value))} />
+              <span className="ui-field__hint">En dessous de ce score de confiance, un verbatim part en revue.</span>
+            </label>
+            <div>
+              <Button type="submit" variant="primary" loading={busy}>
+                {busy ? "Lancement…" : "Lancer le traitement"}
+              </Button>
+            </div>
+          </form>
+        </Card>
 
-      <h3>Historique</h3>
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr style={{ textAlign: "left", borderBottom: "2px solid #ddd" }}>
-            <th style={{ padding: "0.4rem" }}>#</th><th>Libellé</th><th>Statut</th>
-            <th>Progression</th><th>Verbatims</th><th>Revue</th><th>Modèle</th>
-          </tr>
-        </thead>
-        <tbody>
-          {batches.length === 0 && <tr><td colSpan={7} style={{ padding: "0.6rem", color: "#888" }}>Aucun lot pour l'instant.</td></tr>}
-          {batches.map((b) => {
-            const pct = b.n_total ? Math.round((b.n_processed / b.n_total) * 100) : 0;
-            return (
-              <tr key={b.id} onClick={() => navigate(`/lots/${b.id}`)}
-                  style={{ borderBottom: "1px solid #eee", cursor: "pointer" }}>
-                <td style={{ padding: "0.4rem" }}>{b.id}</td>
-                <td>{b.label}</td>
-                <td><StatusBadge status={b.status} /></td>
-                <td>{b.status === "running" || b.status === "pending" ? `${pct}%` : "—"}</td>
-                <td>{b.n_total || "—"}</td>
-                <td>{b.status === "done" ? b.n_review : "—"}</td>
-                <td style={{ color: "#666", fontSize: ".85rem" }}>{b.model_label ?? "—"}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+        <Card title="Historique des lots">
+          <div className="ui-table-wrap">
+            <table className="ui-table">
+              <thead>
+                <tr>
+                  <th>#</th><th>Libellé</th><th>Statut</th><th>Progression</th>
+                  <th>Verbatims</th><th>En revue</th><th>Modèle</th>
+                </tr>
+              </thead>
+              <tbody>
+                {batches.length === 0 && (
+                  <tr><td colSpan={7} className="ui-table__empty">Aucun lot pour l'instant.</td></tr>
+                )}
+                {batches.map((b) => {
+                  const pct = b.n_total ? Math.round((b.n_processed / b.n_total) * 100) : 0;
+                  const active = b.status === "running" || b.status === "pending";
+                  return (
+                    <tr key={b.id} className="is-clickable" onClick={() => navigate(`/lots/${b.id}`)}>
+                      <td className="ui-table__num">{b.id}</td>
+                      <td>{b.label}</td>
+                      <td><StatusBadge status={b.status} /></td>
+                      <td style={{ minWidth: 140 }}>
+                        {active ? <ProgressBar value={pct} indeterminate={b.status === "pending"} /> : "—"}
+                      </td>
+                      <td className="ui-table__num">{b.n_total || "—"}</td>
+                      <td className="ui-table__num">{b.status === "done" ? b.n_review : "—"}</td>
+                      <td className="ui-muted">{b.model_label ?? "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }
