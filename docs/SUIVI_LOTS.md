@@ -43,7 +43,7 @@ Réf. : [PLAN_V3.md](PLAN_V3.md). Périmètre validé : moteur ML CamemBERT prou
 |---|---|---|---|
 | T1 | Chaîne ML fiabilisée + smoke test + jeu de démo + guide entraînement | ⏸️ En attente de validation | `v3/1-moteur-ml` |
 | T2 | Run réel CamemBERT + perf 11k<1h (jalon PO) | ⬜ | — |
-| P1 | Transmission : packaging & restauration avec historique | ⏸️ En attente de validation | `v3/2-transmission` |
+| P1 | Transmission : packaging & restauration avec historique | ✅ Fait (validé PO) | `v3/2` (mergé) |
 | R1 | Robustesse traitements (annulation, reprise des jobs) | ⬜ | — |
 | X1 | Exploitation (KPI ops) & changement de mot de passe | ⬜ | — |
 | F1 | Dossier de passation + recette V3 + tag v3.0 | ⬜ | — |
