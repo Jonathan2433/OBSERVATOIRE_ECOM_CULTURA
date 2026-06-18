@@ -1,15 +1,23 @@
 import { useEffect, useState, type FormEvent } from "react";
 import {
-  getAudit, getConfig, patchConfig, purgeData,
-  type AppConfigValues, type AuditEntry,
+  getAudit, getConfig, getOps, patchConfig, purgeData,
+  type AppConfigValues, type AuditEntry, type OpsKpi,
 } from "../api";
-import { Button, Card, Dialog, EmptyState, Input } from "../ui";
+import { Button, Card, Dialog, EmptyState, Input, StatCard } from "../ui";
 
-type Tab = "config" | "retention" | "audit";
+type Tab = "config" | "ops" | "retention" | "audit";
+
+function fmtBytes(n: number): string {
+  if (!n) return "0 o";
+  const u = ["o", "Ko", "Mo", "Go", "To"];
+  const i = Math.min(u.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
+  return `${(n / 1024 ** i).toFixed(i ? 1 : 0)} ${u[i]}`;
+}
 
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>("config");
   const [cfg, setCfg] = useState<AppConfigValues | null>(null);
+  const [ops, setOps] = useState<OpsKpi | null>(null);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [retention, setRetention] = useState("13");
   const [seuil, setSeuil] = useState("0.70");
@@ -22,6 +30,7 @@ export default function AdminPage() {
     getConfig().then((c) => { setCfg(c); setRetention(c.retention_months); setSeuil(c.default_seuil_revue); })
       .catch((e) => setError(String(e.message ?? e)));
     getAudit(100).then(setAudit).catch(() => setAudit([]));
+    getOps().then(setOps).catch(() => setOps(null));
   };
   useEffect(() => { refresh(); }, []);
 
@@ -61,6 +70,7 @@ export default function AdminPage() {
 
       <nav className="ui-tabs" aria-label="Sections d'administration">
         {tabBtn("config", "Configuration")}
+        {tabBtn("ops", "Exploitation")}
         {tabBtn("retention", "Rétention")}
         {tabBtn("audit", "Journal d'audit")}
       </nav>
@@ -78,6 +88,36 @@ export default function AdminPage() {
             </form>
           )}
         </Card>
+      )}
+
+      {tab === "ops" && (
+        <div className="ui-stack">
+          {!ops ? <p className="ui-muted">Chargement…</p> : (
+            <>
+              <div className="ui-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+                <StatCard label="Lots traités" value={ops.batches.total} />
+                <StatCard label="Taux d'échec des jobs" value={`${(ops.batches.failure_rate * 100).toFixed(1)} %`} />
+                <StatCard label="Durée moyenne" value={ops.batches.avg_duration_s != null ? `${ops.batches.avg_duration_s.toFixed(0)} s` : "—"} />
+                <StatCard label="Lots purgeables" value={ops.purgeable_batches}
+                          hint={ops.purge_cutoff ? `avant ${ops.purge_cutoff.slice(0, 10)}` : `rétention ${ops.retention_months} mois`} />
+              </div>
+              <div className="ui-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+                <StatCard label="Espace disque libre" value={fmtBytes(ops.disk.free_bytes)}
+                          hint={`sur ${fmtBytes(ops.disk.total_bytes)}`} />
+                <StatCard label="Fichiers déposés" value={fmtBytes(ops.disk.uploads_bytes)} hint="uploads" />
+                <StatCard label="Exports" value={fmtBytes(ops.disk.output_bytes)} hint="output" />
+              </div>
+              <Card title="Lots par statut">
+                <div className="ui-row ui-row--wrap">
+                  {Object.entries(ops.batches.by_status).map(([s, n]) => (
+                    <span key={s} className="ui-chip">{s} : {n}</span>
+                  ))}
+                  {Object.keys(ops.batches.by_status).length === 0 && <span className="ui-muted">Aucun lot.</span>}
+                </div>
+              </Card>
+            </>
+          )}
+        </div>
       )}
 
       {tab === "retention" && (

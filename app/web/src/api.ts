@@ -279,4 +279,17 @@ export const patchConfig = (p: Partial<{ retention_months: number; default_seuil
   request<AppConfigValues>("/api/config", { method: "PATCH", body: JSON.stringify(p) });
 export const purgeData = () => request<{ batches: number; cutoff: string | null }>("/api/admin/purge", { method: "POST" });
 
+export interface OpsKpi {
+  batches: { total: number; by_status: Record<string, number>; failure_rate: number; avg_duration_s: number | null };
+  retention_months: number;
+  purge_cutoff: string | null;
+  purgeable_batches: number;
+  disk: { uploads_bytes: number; output_bytes: number; free_bytes: number; total_bytes: number };
+}
+export const getOps = () => request<OpsKpi>("/api/admin/ops");
+
+// --- Compte (mot de passe) ---
+export const changePassword = (current_password: string, new_password: string) =>
+  request<{ status: string }>("/api/auth/password", { method: "POST", body: JSON.stringify({ current_password, new_password }) });
+
 export { ApiError };

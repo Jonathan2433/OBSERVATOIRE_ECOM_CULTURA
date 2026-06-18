@@ -98,7 +98,7 @@ export default function Layout() {
           ))}
         </nav>
         <div className="ui-spacer" />
-        <span className="app-user">{user?.username} · <b>{user?.role}</b></span>
+        <Link to="/compte" className="app-user" title="Mon compte">{user?.username} · <b>{user?.role}</b></Link>
         <Button variant="secondary" size="sm" onClick={onLogout}>Déconnexion</Button>
       </header>
 
