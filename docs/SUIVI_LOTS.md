@@ -15,8 +15,8 @@
 | L4 | Consultation résultats + exports (→ MVP) | ✅ Fait (validé PO) | `lot/4` (mergé) |
 | L5 | Revue humaine & corrections | ✅ Fait (validé PO) | `lot/5` (mergé) |
 | L6 | Tableaux de bord & KPI | ✅ Fait (validé PO) | `lot/6` (mergé) |
-| L7 | Historique, audit, config & rétention (+ graphe thème×sentiment) | ⏸️ En attente de validation | `lot/7-admin` |
-| L8 | Durcissement, RGPD, perf, recette V1 | ⬜ | — |
+| L7 | Historique, audit, config & rétention (+ graphe thème×sentiment) | ✅ Fait (validé PO) | `lot/7` (mergé) |
+| L8 | Durcissement, RGPD, perf, recette V1 | ⏸️ En attente de validation | `lot/8-durcissement` |
 
 ---
 
@@ -132,7 +132,7 @@ Critères d'acceptation :
 
 **Validation automatisée** : test E2E FastAPI/SQLite **11/11 OK**. Front type-check TS strict + build Vite OK.
 **Reste pour clore L6** : sur le poste, après un lot : détail → « Tableau de bord » (barres thèmes/sentiments, signaux) ; menu « Tableaux de bord » (modèle actif + volumétrie globale).
-## L7 — Historique, audit, config & rétention ⏸️
+## L7 — Historique, audit, config & rétention ✅ (validé PO le 2026-06-18)
 
 **Objectif** : traçabilité (audit), administration (config, rétention RGPD) + graphe demandé.
 
@@ -145,8 +145,21 @@ Critères d'acceptation :
 - [x] Endpoints : `GET /api/audit`, `GET/PATCH /api/config`, `POST /api/admin/purge`
 
 **Validation automatisée** : test E2E FastAPI/SQLite **14/14 OK** (crosstab lot+global, config get/patch/validation, purge, audit des actions clés, RBAC analyste→403).
-**Reste pour clore L7** : sur le poste (`down -v` requis : migration 0005) : page « Administration » (config + purge + journal d'audit), graphe « Thèmes × sentiment » sur le tableau de bord du lot et global.
-## L8 — Durcissement, RGPD, perf, recette V1 ⬜
+**Validation PO le 2026-06-18** : stack reconstruite (`down -v` + `up --build`, migration 0005 appliquée), traitement de lot, page Administration et graphe thème×sentiment validés sur le poste.
+## L8 — Durcissement, RGPD, perf, recette V1 ⏸️ (lot final)
+
+**Objectif** : clore la V1 — sécurité, conformité RGPD/offline, performance, recette §11, documentation.
+
+Critères d'acceptation :
+- [x] **Durcissement nginx** : en-têtes de sécurité (CSP stricte, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, COOP), `server_tokens off`.
+- [x] **Vérif sécurité** (déjà en place, confirmé) : anti-bruteforce (429 après 5 échecs), RBAC côté API, CORS localhost, cookie httpOnly, `.env` gitignoré.
+- [x] **Vérif RGPD/offline** : anonymisation avant stockage (aucune PII en base), offline strict (`HF_HUB_OFFLINE`/`TRANSFORMERS_OFFLINE`), modèles `:ro`, `web` sur `127.0.0.1` seul.
+- [x] **Perf** : chemin 11k < 1 h en place (ONNX int8, worker chaud, `batch_size_inference` réglable, un seul job lourd) — mesure finale au dépôt du modèle réel.
+- [x] **Recette automatisée** : `app/tests/recette_v1.py` (hors ligne, SQLite, stub) — **48/48 OK**, couvre garde-fous §10 + cœur DoD §11, E2E pipeline inclus.
+- [x] **Documentation** : `GUIDE_UTILISATEUR.md`, `EXPLOITATION.md` (install, secrets, **sauvegarde/restauration**, dépôt/activation modèle, dépannage), `RECETTE_V1.md` (checklist DoD + garde-fous).
+
+**Validation automatisée** : recette **48/48 OK** (`.venv_validate`), `docker compose config` valide. *(L8 ne modifie que `nginx.conf` côté front — aucun source TS touché.)*
+**Reste pour clore L8 (recette PO sur poste)** : DoD #4 — mesurer un lot ~11k **< 1 h** une fois le modèle CamemBERT réel déposé (seul critère dépendant du modèle entraîné ; chemin technique vérifié).
 
 ---
 
@@ -161,3 +174,4 @@ Critères d'acceptation :
 | D5 | 2026-06-17 | Service `web` = nginx multi-stage (build React + sert le statique + proxy `/api`) au lieu de 2 services proxy+frontend | Moins de conteneurs sur un laptop, même résultat |
 | D6 | 2026-06-17 | `api` reste **léger (sans torch)** ; tout le ML est dans le `worker` | Démarrage rapide de l'API, séparation des responsabilités, image API petite |
 | D7 | 2026-06-17 | Package partagé `common` (DB + modèles ORM) + classifieur **stub** activé tant qu'aucun modèle réel n'est déposé | `api` et `worker` partagent le schéma sans duplication ; l'app est démontrable avant l'entraînement CamemBERT |
+| D8 | 2026-06-18 | Recette V1 = **script unique** `app/tests/recette_v1.py` (SQLite + stub, hors ligne), exécuté en venv de recette ; non embarqué dans les images | Reproductible et torch-free ; le code étant réparti api/worker, un venv de recette couvre les deux couches d'un coup (48/48) ; les sections skippent proprement selon l'environnement |
