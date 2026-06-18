@@ -1,0 +1,99 @@
+/* =============================================================================
+ *  components.css — Styles des primitives du design system (src/ui/).
+ *  Tout dérive des tokens (tokens.css). Aucun hex en dur.
+ * ========================================================================== */
+
+/* --- Button ------------------------------------------------------------- */
+.ui-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
+  font-weight: var(--fw-medium); border: 1px solid transparent; border-radius: var(--r-sm);
+  cursor: pointer; white-space: nowrap; transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
+}
+.ui-btn--md { padding: 8px 14px; font-size: var(--fs-base); }
+.ui-btn--sm { padding: 5px 10px; font-size: var(--fs-sm); }
+.ui-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.ui-btn--primary { background: var(--cu-primary-500); color: var(--cu-text-invert); }
+.ui-btn--primary:not(:disabled):hover { background: var(--cu-primary-600); }
+
+.ui-btn--secondary { background: var(--cu-surface); color: var(--cu-text); border-color: var(--cu-border-strong); }
+.ui-btn--secondary:not(:disabled):hover { background: var(--cu-neutral-100); }
+
+.ui-btn--ghost { background: transparent; color: var(--cu-primary-700); }
+.ui-btn--ghost:not(:disabled):hover { background: var(--cu-primary-50); }
+
+.ui-btn--danger { background: var(--cu-danger); color: var(--cu-text-invert); }
+.ui-btn--danger:not(:disabled):hover { filter: brightness(0.93); }
+
+/* --- Card / Section ----------------------------------------------------- */
+.ui-card {
+  background: var(--cu-surface); border: 1px solid var(--cu-border);
+  border-radius: var(--r-lg); box-shadow: var(--sh-1);
+}
+.ui-card__header {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--cu-border);
+}
+.ui-card__title { font-size: var(--fs-md); font-weight: var(--fw-semibold); margin: 0; }
+.ui-card__body { padding: var(--sp-5); }
+
+/* --- StatCard ----------------------------------------------------------- */
+.ui-stat {
+  background: var(--cu-surface); border: 1px solid var(--cu-border);
+  border-radius: var(--r-lg); padding: var(--sp-5); box-shadow: var(--sh-1);
+  border-left: 3px solid var(--cu-primary-500);
+}
+.ui-stat__label { font-size: var(--fs-sm); color: var(--cu-text-muted); }
+.ui-stat__value { font-size: var(--fs-xl); font-weight: var(--fw-bold); margin-top: var(--sp-1); }
+.ui-stat__hint { font-size: var(--fs-xs); color: var(--cu-text-muted); margin-top: var(--sp-1); }
+
+/* --- Badge -------------------------------------------------------------- */
+.ui-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 10px; border-radius: var(--r-pill);
+  font-size: var(--fs-xs); font-weight: var(--fw-medium); line-height: 1.6;
+}
+.ui-badge__dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: 0.9; }
+.ui-badge--neutral { background: var(--cu-neutral-100); color: var(--cu-neutral-700); }
+.ui-badge--primary { background: var(--cu-primary-50); color: var(--cu-primary-700); }
+.ui-badge--success { background: var(--cu-success-bg); color: var(--cu-success); }
+.ui-badge--warning { background: var(--cu-warning-bg); color: var(--cu-warning); }
+.ui-badge--danger  { background: var(--cu-danger-bg); color: var(--cu-danger); }
+.ui-badge--info    { background: var(--cu-info-bg); color: var(--cu-info); }
+
+/* --- Champs de formulaire ---------------------------------------------- */
+.ui-field { display: flex; flex-direction: column; gap: 6px; }
+.ui-field__label { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--cu-text); }
+.ui-field__hint { font-size: var(--fs-xs); color: var(--cu-text-muted); }
+.ui-field__error { font-size: var(--fs-xs); color: var(--cu-danger); }
+.ui-input, .ui-select, .ui-textarea {
+  width: 100%; padding: 8px 11px; background: var(--cu-surface);
+  border: 1px solid var(--cu-border-strong); border-radius: var(--r-sm);
+  color: var(--cu-text); transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+.ui-input::placeholder, .ui-textarea::placeholder { color: var(--cu-neutral-400); }
+.ui-input:focus, .ui-select:focus, .ui-textarea:focus {
+  outline: none; border-color: var(--cu-primary-400); box-shadow: var(--cu-focus-ring);
+}
+.ui-input--invalid, .ui-select--invalid, .ui-textarea--invalid { border-color: var(--cu-danger); }
+.ui-textarea { resize: vertical; min-height: 84px; }
+
+/* --- Spinner ------------------------------------------------------------ */
+.ui-spinner {
+  display: inline-block; border-radius: 50%;
+  border: 2px solid var(--cu-neutral-300); border-top-color: var(--cu-primary-500);
+  animation: ui-spin 0.7s linear infinite;
+}
+.ui-spinner--sm { width: 14px; height: 14px; }
+.ui-spinner--md { width: 22px; height: 22px; }
+.ui-btn--primary .ui-spinner, .ui-btn--danger .ui-spinner {
+  border-color: rgba(255,255,255,0.45); border-top-color: #fff;
+}
+@keyframes ui-spin { to { transform: rotate(360deg); } }
+
+/* --- EmptyState --------------------------------------------------------- */
+.ui-empty {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  gap: var(--sp-3); padding: var(--sp-12) var(--sp-6); color: var(--cu-text-muted);
+}
+.ui-empty__title { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--cu-text); }
