@@ -52,3 +52,6 @@ data/logs/
 
 # Jeu de démo généré (reproductible via scripts/make_demo_data.py)
 data/demo/
+
+# Bundles de transmission générés (scripts/package_app.sh)
+transmission/
