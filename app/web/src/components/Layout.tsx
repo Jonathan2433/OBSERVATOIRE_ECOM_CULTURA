@@ -14,6 +14,7 @@ const IconChart = icon(<><path d="M3 3v18h18" /><path d="M7 14l3-3 3 3 4-5" /></
 const IconTest = icon(<><path d="M10 2v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V2" /><path d="M8 2h8" /></>);
 const IconUsers = icon(<><circle cx="9" cy="8" r="3" /><path d="M3 20a6 6 0 0 1 12 0" /><path d="M16 6a3 3 0 0 1 0 6" /><path d="M21 20a6 6 0 0 0-4-5.6" /></>);
 const IconCog = icon(<><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2" /></>);
+const IconHelp = icon(<><circle cx="12" cy="12" r="9" /><path d="M9.2 9a2.8 2.8 0 0 1 5.5.8c0 1.8-2.7 2.2-2.7 4" /><path d="M12 17h.01" /></>);
 
 interface NavItem { to: string; label: string; icon: ReactNode; end?: boolean }
 const MAIN: NavItem[] = [
@@ -21,6 +22,7 @@ const MAIN: NavItem[] = [
   { to: "/lots", label: "Lots", icon: IconLots },
   { to: "/tableaux-de-bord", label: "Tableaux de bord", icon: IconChart },
   { to: "/test", label: "Test à la volée", icon: IconTest },
+  { to: "/aide", label: "Comment ça marche", icon: IconHelp },
 ];
 const ADMIN: NavItem[] = [
   { to: "/admin/users", label: "Utilisateurs", icon: IconUsers },

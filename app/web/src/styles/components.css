@@ -123,3 +123,30 @@
 }
 .ui-tab.is-active .ui-tab__count { background: var(--cu-primary-100); color: var(--cu-primary-700); }
 
+/* --- Info-bulle contextuelle --- */
+.ui-infotip { position: relative; display: inline-flex; vertical-align: middle; cursor: help; color: var(--cu-text-muted); margin-left: 4px; }
+.ui-infotip__icon {
+  display: inline-grid; place-items: center; width: 15px; height: 15px;
+  border: 1px solid currentColor; border-radius: 50%; font-size: 10px;
+  font-style: italic; font-weight: var(--fw-semibold); line-height: 1;
+}
+.ui-infotip__bubble {
+  position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  width: max-content; max-width: 260px; background: var(--cu-neutral-800); color: #fff;
+  padding: 7px 10px; border-radius: var(--r-sm); font-size: var(--fs-xs); font-weight: var(--fw-regular);
+  line-height: 1.45; text-align: left; white-space: normal; box-shadow: var(--sh-2);
+  opacity: 0; visibility: hidden; transition: opacity var(--t-fast); z-index: var(--z-toast);
+}
+.ui-infotip:hover .ui-infotip__bubble, .ui-infotip:focus-visible .ui-infotip__bubble { opacity: 1; visibility: visible; }
+
+/* --- Étapes (parcours d'un verbatim) --- */
+.ui-steps { display: flex; flex-direction: column; gap: var(--sp-3); }
+.ui-step { display: flex; gap: var(--sp-3); align-items: flex-start; }
+.ui-step__num {
+  flex: none; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--cu-primary-50); color: var(--cu-primary-700);
+  display: grid; place-items: center; font-weight: var(--fw-semibold); font-size: var(--fs-sm);
+}
+.ui-step__title { font-weight: var(--fw-medium); }
+.ui-step__desc { color: var(--cu-text-muted); font-size: var(--fs-sm); }
+

@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { createBatch, listBatches, type Batch } from "../api";
 import StatusBadge from "../components/StatusBadge";
-import { Button, Card, FileDropzone, Input, ProgressBar } from "../ui";
+import { Button, Card, FileDropzone, InfoTip, Input, ProgressBar } from "../ui";
 
 export default function BatchesPage() {
   const navigate = useNavigate();
@@ -63,7 +63,9 @@ export default function BatchesPage() {
             <Input label="Libellé du lot (optionnel)" value={label}
                    onChange={(e) => setLabel(e.target.value)} placeholder="ex. juillet 2026" />
             <label className="ui-field">
-              <span className="ui-field__label">Seuil de revue humaine : <b>{seuil.toFixed(2)}</b></span>
+              <span className="ui-field__label">Seuil de revue humaine : <b>{seuil.toFixed(2)}</b>
+                <InfoTip text="En dessous de ce score de confiance, un verbatim est envoyé en revue humaine. Plus le seuil est haut, plus de verbatims sont relus." />
+              </span>
               <input className="ui-range" type="range" min={0} max={1} step={0.05} value={seuil}
                      onChange={(e) => setSeuil(parseFloat(e.target.value))} />
               <span className="ui-field__hint">En dessous de ce score de confiance, un verbatim part en revue.</span>
