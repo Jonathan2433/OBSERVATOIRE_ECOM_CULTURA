@@ -97,3 +97,13 @@
   gap: var(--sp-3); padding: var(--sp-12) var(--sp-6); color: var(--cu-text-muted);
 }
 .ui-empty__title { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--cu-text); }
+
+/* --- Touche de raccourci clavier --- */
+.ui-kbd {
+  display: inline-block; margin-left: 6px; padding: 0 6px;
+  font-family: var(--cu-mono); font-size: var(--fs-xs); line-height: 1.6;
+  background: rgba(255, 255, 255, 0.18); border: 1px solid currentColor;
+  border-radius: var(--r-sm); opacity: 0.85;
+}
+.ui-btn--secondary .ui-kbd { background: var(--cu-neutral-100); color: var(--cu-text-muted); border-color: var(--cu-border-strong); }
+
