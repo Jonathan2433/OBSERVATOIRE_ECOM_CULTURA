@@ -126,15 +126,23 @@ class StubPredictor:
 
 
 def main() -> None:
+    import argparse
+    ap = argparse.ArgumentParser(description="Validation torch-free de la plomberie (stub).")
+    ap.add_argument("--mdtc", default=None, help="Fichier MDTC .xlsx (défaut : data/raw/mdtc_poc.xlsx).")
+    ap.add_argument("--mopinion", default=None, help="Fichier Mopinion .xlsx (défaut : data/raw/mopinion_poc.xlsx).")
+    args = ap.parse_args()
+
     cfg = load_config()
     raw = resolve_path(cfg, cfg["paths"]["data_raw"])
     out_dir = resolve_path(cfg, cfg["paths"]["output"])
+    mdtc_path = Path(args.mdtc) if args.mdtc else raw / "mdtc_poc.xlsx"
+    mopinion_path = Path(args.mopinion) if args.mopinion else raw / "mopinion_poc.xlsx"
 
     print("=" * 60)
     print(" VALIDATION PIPELINE (stub mots-clés, sans torch)")
     print("=" * 60)
 
-    df = load_for_batch(raw / "mdtc_poc.xlsx", raw / "mopinion_poc.xlsx", cfg)
+    df = load_for_batch(mdtc_path, mopinion_path, cfg)
     logger.info("Chargé : %d verbatims (MDTC + Mopinion).", len(df))
 
     predictor = StubPredictor(cfg)
