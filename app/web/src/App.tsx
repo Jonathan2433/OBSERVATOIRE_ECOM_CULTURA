@@ -13,9 +13,14 @@ import DashboardsPage from "./pages/DashboardsPage";
 import AdminPage from "./pages/AdminPage";
 import TestPage from "./pages/TestPage";
 import DesignShowcase from "./pages/DesignShowcase";
+import { Spinner as UISpinner } from "./ui";
 
 function Spinner() {
-  return <p style={{ fontFamily: "system-ui", margin: "4rem", textAlign: "center" }}>Chargement…</p>;
+  return (
+    <div style={{ display: "grid", placeItems: "center", minHeight: "60vh" }}>
+      <UISpinner label="Chargement…" />
+    </div>
+  );
 }
 
 function RequireAuth() {

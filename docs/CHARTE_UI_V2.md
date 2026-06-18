@@ -174,9 +174,13 @@ Passage de la **barre de menu horizontale** à une **barre latérale gauche** (p
 
 ## 8. Définition de « terminé » pour la V2
 
-- [ ] `src/styles/tokens.css` centralise 100 % des couleurs/typo/espacements ; **0 hex en dur** dans les composants.
-- [ ] Toutes les pages utilisent l'`AppShell` et la bibliothèque `src/ui/`.
-- [ ] Cohérence visuelle : mêmes boutons/badges/tables/états partout.
-- [ ] Contraste AA et focus visible vérifiés sur les écrans clés.
-- [ ] Build Vite OK, type-check TS strict OK, **recette V1 toujours 48/48** (aucune régression fonctionnelle).
-- [ ] Palette ajustable en 1 fichier ; documentation à jour.
+- [x] `src/styles/tokens.css` centralise 100 % des couleurs/typo/espacements ; **0 hex en dur** dans les composants.
+- [x] Toutes les pages utilisent l'`AppShell` et la bibliothèque `src/ui/`.
+- [x] Cohérence visuelle : mêmes boutons/badges/tables/états partout.
+- [x] Contraste AA et focus visible (anneau turquoise global, `NavLink` `aria-current`).
+- [x] Build Vite OK, type-check TS strict OK, **recette V1 toujours 48/48** (aucune régression fonctionnelle).
+- [x] Palette ajustable en 1 fichier ; documentation à jour.
+
+> ✅ **V2 livrée** (D0→D7) le 2026-06-18. Bibliothèque `src/ui/` : Button, Card, StatCard, Badge,
+> Input/Select/Textarea, Spinner, EmptyState, ProgressBar, FileDropzone, Drawer, Chip, Dialog
+> + AppShell + onglets. Aucune dépendance runtime ajoutée ; offline strict préservé.
