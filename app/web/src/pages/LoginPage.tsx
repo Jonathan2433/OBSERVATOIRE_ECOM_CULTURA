@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
+import { Button, Card, Input } from "../ui";
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -25,21 +26,29 @@ export default function LoginPage() {
   };
 
   return (
-    <div style={{ fontFamily: "system-ui, sans-serif", maxWidth: 360, margin: "6rem auto", padding: "0 1rem" }}>
-      <h1 style={{ fontSize: "1.3rem" }}>Observatoire Ecom Studio</h1>
-      <p style={{ color: "#666", marginTop: 0 }}>Connexion</p>
-      <form onSubmit={onSubmit} style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-        <input
-          placeholder="Identifiant" value={username} autoFocus
-          onChange={(e) => setUsername(e.target.value)} required
-        />
-        <input
-          type="password" placeholder="Mot de passe" value={password}
-          onChange={(e) => setPassword(e.target.value)} required
-        />
-        {error && <p style={{ color: "crimson", margin: 0 }}>{error}</p>}
-        <button type="submit" disabled={busy}>{busy ? "Connexion…" : "Se connecter"}</button>
-      </form>
+    <div className="auth-screen">
+      <div className="auth-card">
+        <div className="auth-brand">
+          <div className="auth-brand__name">Observatoire Ecom Studio</div>
+          <div className="auth-brand__sub">Pilotage des verbatims clients Cultura</div>
+        </div>
+        <Card title="Connexion">
+          <form onSubmit={onSubmit} className="ui-stack">
+            <Input
+              label="Identifiant" placeholder="prénom.nom" value={username} autoFocus
+              autoComplete="username" onChange={(e) => setUsername(e.target.value)} required
+            />
+            <Input
+              label="Mot de passe" type="password" placeholder="••••••••" value={password}
+              autoComplete="current-password" onChange={(e) => setPassword(e.target.value)}
+              required error={error ?? undefined}
+            />
+            <Button type="submit" variant="primary" loading={busy} style={{ width: "100%" }}>
+              {busy ? "Connexion…" : "Se connecter"}
+            </Button>
+          </form>
+        </Card>
+      </div>
     </div>
   );
 }
