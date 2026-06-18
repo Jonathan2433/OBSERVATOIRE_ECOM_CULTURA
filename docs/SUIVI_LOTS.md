@@ -46,7 +46,9 @@ Réf. : [PLAN_V3.md](PLAN_V3.md). Périmètre validé : moteur ML CamemBERT prou
 | P1 | Transmission : packaging & restauration avec historique | ✅ Fait (validé PO) | `v3/2` (mergé) |
 | R1 | Robustesse traitements (annulation, reprise des jobs) | ✅ Fait (validé PO) | `v3/3` (mergé) |
 | X1 | Exploitation (KPI ops) & changement de mot de passe | ✅ Fait (validé PO) | `v3/4` (mergé) |
-| F1 | Dossier de passation + recette V3 + tag v3.0 | ⏸️ En attente de validation | `v3/5-passation` |
+| F1 | Dossier de passation + recette V3 + tag v3.0 | ✅ Fait (validé PO) | `v3/5` (mergé, tag `v3.0`) |
+
+> 🏁 **V3 « POC avancée » mergée sur `main` (tag `v3.0`).** Chaîne ML prouvée (smoke), transmission hors-ligne avec historique, robustesse (annulation/reprise), exploitation (KPI ops + mot de passe), dossier de passation. Recettes : V1 **48/48**, V3 **13/13**. **Seul reste DoD §11 #4** : run réel CamemBERT (T2) + mesure lot 11k < 1 h (action data, à valider ensemble).
 
 ---
 
