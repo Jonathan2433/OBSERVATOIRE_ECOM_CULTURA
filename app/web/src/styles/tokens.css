@@ -1,0 +1,90 @@
+/* =============================================================================
+ *  tokens.css — Source UNIQUE de vérité du design system (V2).
+ *  Charte : docs/CHARTE_UI_V2.md. Aucun hex en dur ailleurs dans le front.
+ *  Pour adopter la charte Cultura officielle : ajuster --cu-primary-* ci-dessous.
+ * ========================================================================== */
+:root {
+  /* --- Couleurs : primaire (turquoise / bleu canard Cultura) --- */
+  --cu-primary-50:  #e6f5f6;
+  --cu-primary-100: #c3e8ea;
+  --cu-primary-200: #8fd3d8;
+  --cu-primary-300: #54bbc2;
+  --cu-primary-400: #1fa3ac;
+  --cu-primary-500: #008c99;   /* couleur primaire */
+  --cu-primary-600: #007b87;
+  --cu-primary-700: #006670;
+  --cu-primary-800: #004f57;
+  --cu-primary-900: #003b41;
+
+  /* --- Couleurs : neutres (gris ardoise) --- */
+  --cu-neutral-0:   #ffffff;
+  --cu-neutral-50:  #f7f8f9;
+  --cu-neutral-100: #eef0f2;
+  --cu-neutral-200: #e1e4e8;
+  --cu-neutral-300: #cbd1d8;
+  --cu-neutral-400: #9aa3ad;
+  --cu-neutral-500: #6b7682;
+  --cu-neutral-600: #4b5560;
+  --cu-neutral-700: #353d46;
+  --cu-neutral-800: #232930;
+  --cu-neutral-900: #14181d;
+
+  /* --- Couleurs sémantiques (texte + fond clair) --- */
+  --cu-success:     #1a7f37;  --cu-success-bg:  #e7f4ec;
+  --cu-warning:     #b7791f;  --cu-warning-bg:  #fbf1e0;
+  --cu-danger:      #c0392b;  --cu-danger-bg:   #fbe9e7;
+  --cu-info:        #006670;  --cu-info-bg:     #e6f5f6;
+
+  /* --- Couleurs métier --- */
+  --cu-sentiment-negatif: #d64545;
+  --cu-sentiment-neutre:  #9aa0a6;
+  --cu-sentiment-positif: #1a7f37;
+  --cu-signal-rupture:    #c0392b;
+  --cu-signal-churn:      #b7791f;
+  --cu-signal-insatisf:   #e08a2b;
+
+  /* --- Rôles d'application (sémantique d'usage) --- */
+  --cu-bg:           var(--cu-neutral-50);
+  --cu-surface:      var(--cu-neutral-0);
+  --cu-surface-alt:  var(--cu-neutral-50);
+  --cu-border:       var(--cu-neutral-200);
+  --cu-border-strong:var(--cu-neutral-300);
+  --cu-text:         var(--cu-neutral-800);
+  --cu-text-muted:   var(--cu-neutral-500);
+  --cu-text-invert:  var(--cu-neutral-0);
+  --cu-link:         var(--cu-primary-600);
+  --cu-focus-ring:   0 0 0 3px rgba(0, 140, 153, 0.35);
+
+  /* --- Typographie --- */
+  --cu-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+             "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --cu-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --fs-xs: 12px; --fs-sm: 13px; --fs-base: 14px; --fs-md: 16px;
+  --fs-lg: 20px; --fs-xl: 26px; --fs-2xl: 32px;
+  --fw-regular: 400; --fw-medium: 500; --fw-semibold: 600; --fw-bold: 700;
+  --lh-tight: 1.25; --lh-base: 1.5;
+
+  /* --- Espacement (base 4px) --- */
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px; --sp-12: 48px;
+
+  /* --- Rayons --- */
+  --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-pill: 999px;
+
+  /* --- Ombres --- */
+  --sh-1: 0 1px 2px rgba(20, 24, 29, 0.06), 0 1px 3px rgba(20, 24, 29, 0.05);
+  --sh-2: 0 4px 12px rgba(20, 24, 29, 0.10);
+  --sh-3: 0 12px 32px rgba(20, 24, 29, 0.16);
+
+  /* --- Layout --- */
+  --layout-sidebar: 240px;
+  --layout-topbar: 56px;
+  --layout-content-max: 1200px;
+
+  /* --- Transitions --- */
+  --t-fast: 120ms ease;
+  --t-base: 180ms ease;
+
+  /* --- Z-index --- */
+  --z-drawer: 40; --z-modal: 50; --z-toast: 60;
+}

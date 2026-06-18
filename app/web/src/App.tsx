@@ -12,6 +12,7 @@ import BatchKpiPage from "./pages/BatchKpiPage";
 import DashboardsPage from "./pages/DashboardsPage";
 import AdminPage from "./pages/AdminPage";
 import TestPage from "./pages/TestPage";
+import DesignShowcase from "./pages/DesignShowcase";
 
 function Spinner() {
   return <p style={{ fontFamily: "system-ui", margin: "4rem", textAlign: "center" }}>Chargement…</p>;
@@ -48,6 +49,7 @@ export default function App() {
           <Route path="lots/:id/kpi" element={<BatchKpiPage />} />
           <Route path="tableaux-de-bord" element={<DashboardsPage />} />
           <Route path="test" element={<TestPage />} />
+          <Route path="design" element={<DesignShowcase />} />
           <Route path="admin/users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
           <Route path="admin" element={<RequireAdmin><AdminPage /></RequireAdmin>} />
         </Route>
