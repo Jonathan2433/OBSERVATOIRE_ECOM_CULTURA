@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getBatchKpi, type BatchKpi } from "../api";
 import BarList from "../components/BarList";
+import StackedSentimentBar from "../components/StackedSentimentBar";
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -41,6 +42,9 @@ export default function BatchKpiPage() {
 
       <h3>Thèmes (niv.1)</h3>
       <BarList data={kpi.themes} />
+
+      <h3 style={{ marginTop: "2rem" }}>Thèmes × sentiment (volumétrie)</h3>
+      <StackedSentimentBar data={kpi.theme_sentiment} />
 
       <h3 style={{ marginTop: "2rem" }}>Sentiments</h3>
       <BarList data={kpi.sentiments} color="#7a5cad" />

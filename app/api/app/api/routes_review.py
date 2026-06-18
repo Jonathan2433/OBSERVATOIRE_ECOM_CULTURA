@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from ..core import taxonomy as taxo
+from ..core.audit import record_audit
 from ..core.db import get_db
 from ..core.security import get_current_user
 from ..models.user import User
@@ -88,6 +89,8 @@ def review_result(result_id: int, payload: CorrectionRequest,
         res.corrected = True
     db.commit()
     db.refresh(res)
+    record_audit(db, action="result.correct" if changed else "result.validate",
+                 user=current_user, entity="result", entity_id=res.id)
     logger.info("Verbatim %s revu par %s (corrigé=%s)", res.id, current_user.username, changed)
     return ResultOut.model_validate(res)
 

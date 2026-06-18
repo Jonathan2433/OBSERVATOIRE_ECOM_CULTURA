@@ -25,6 +25,7 @@ export default function Layout() {
           <Link to="/tableaux-de-bord">Tableaux de bord</Link>
           <Link to="/test">Test à la volée</Link>
           {user?.role === "admin" && <Link to="/admin/users">Utilisateurs</Link>}
+          {user?.role === "admin" && <Link to="/admin">Administration</Link>}
         </nav>
         <span style={{ color: "#666", fontSize: ".9rem" }}>
           {user?.username} · <em>{user?.role}</em>

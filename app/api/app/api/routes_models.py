@@ -6,6 +6,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from ..core.audit import record_audit
 from ..core.db import get_db
 from ..core.security import get_current_user, require_admin
 from ..schemas.model import ModelVersionOut
@@ -32,6 +33,7 @@ def activate_model(model_id: int, db: Session = Depends(get_db), admin=Depends(r
     model.is_active = True
     db.commit()
     db.refresh(model)
+    record_audit(db, action="model.activate", user=admin, entity="model", entity_id=model.id, details=model.label)
     logger.info("Modèle actif : %s (par %s)", model.label, admin.username)
     return model
 

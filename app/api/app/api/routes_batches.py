@@ -9,6 +9,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
+from ..core.audit import record_audit
 from ..core.config import settings
 from ..core.db import get_db
 from ..core.security import get_current_user
@@ -77,6 +78,8 @@ async def create_batch(
         db.commit()
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                             detail="File de traitement indisponible.")
+    record_audit(db, action="batch.create", user=current_user, entity="batch", entity_id=batch.id,
+                 details=f"{batch.label} (seuil={seuil_revue})")
     logger.info("Lot %s créé par %s", batch.id, current_user.username)
     return batch
 

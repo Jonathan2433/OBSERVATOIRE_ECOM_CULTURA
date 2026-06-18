@@ -32,6 +32,13 @@ def main() -> None:
     # Vérifie la connectivité avant de boucler.
     connection.ping()
     _sync_registry_safe()
+    try:
+        from .tasks import purge_old_data_job
+        res = purge_old_data_job()
+        if res.get("batches"):
+            logger.info("Purge rétention au démarrage : %s lot(s) supprimé(s).", res["batches"])
+    except Exception as exc:  # pragma: no cover
+        logger.warning("Purge de rétention au démarrage ignorée : %s", exc)
     logger.info("Connexion Redis OK. En attente de jobs...")
     worker = Worker([Queue(name, connection=connection) for name in QUEUES], connection=connection)
     worker.work(with_scheduler=False)

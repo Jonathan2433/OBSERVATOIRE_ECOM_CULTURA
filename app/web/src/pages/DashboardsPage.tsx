@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getModelKpi, getVolumetry, type ModelKpi, type Volumetry } from "../api";
 import BarList from "../components/BarList";
+import StackedSentimentBar from "../components/StackedSentimentBar";
 
 const METRIC_LABELS: Record<string, string> = {
   f1_macro_niv1: "F1-macro niv.1",
@@ -57,6 +58,9 @@ export default function DashboardsPage() {
 
             <h4>Répartition globale des thèmes</h4>
             <BarList data={vol.global_themes} />
+
+            <h4 style={{ marginTop: "2rem" }}>Thèmes × sentiment (volumétrie globale)</h4>
+            <StackedSentimentBar data={vol.theme_sentiment} />
 
             <h4 style={{ marginTop: "2rem" }}>Évolution par lot</h4>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".9rem" }}>

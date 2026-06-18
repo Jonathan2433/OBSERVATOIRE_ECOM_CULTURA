@@ -244,6 +244,7 @@ export interface BatchKpi {
   sentiments: Record<string, number>;
   sources: Record<string, number>;
   signals: { rupture: number; churn: number; insatisfaction: number };
+  theme_sentiment: Record<string, Record<string, number>>;
 }
 export interface VolumetrySeriesItem {
   id: number; label: string; created_at?: string | null;
@@ -255,6 +256,7 @@ export interface Volumetry {
   total_verbatims: number;
   series: VolumetrySeriesItem[];
   global_themes: Record<string, number>;
+  theme_sentiment: Record<string, Record<string, number>>;
 }
 export interface ModelKpi {
   active: null | { label: string; kind: string; available: boolean; metrics?: Record<string, number> | null };
@@ -262,5 +264,18 @@ export interface ModelKpi {
 export const getBatchKpi = (id: number) => request<BatchKpi>(`/api/batches/${id}/kpi`);
 export const getVolumetry = () => request<Volumetry>("/api/kpi/volumetry");
 export const getModelKpi = () => request<ModelKpi>("/api/kpi/model");
+
+// --- Admin (audit, config, purge) ---
+export interface AuditEntry {
+  id: number; user?: string | null; action: string;
+  entity?: string | null; entity_id?: string | null; details?: string | null;
+  created_at?: string | null;
+}
+export interface AppConfigValues { retention_months: string; default_seuil_revue: string }
+export const getAudit = (limit = 100) => request<AuditEntry[]>(`/api/audit?limit=${limit}`);
+export const getConfig = () => request<AppConfigValues>("/api/config");
+export const patchConfig = (p: Partial<{ retention_months: number; default_seuil_revue: number }>) =>
+  request<AppConfigValues>("/api/config", { method: "PATCH", body: JSON.stringify(p) });
+export const purgeData = () => request<{ batches: number; cutoff: string | null }>("/api/admin/purge", { method: "POST" });
 
 export { ApiError };

@@ -22,6 +22,21 @@ def _distribution(db: Session, batch_id: int, column) -> dict:
     return {k: v for k, v in sorted(rows, key=lambda x: -x[1])}
 
 
+def _theme_sentiment(db: Session, batch_id: int | None = None) -> dict:
+    """Croisement thème niv.1 × sentiment (volumétrie) -> {niv1: {sentiment: n}}."""
+    q = db.query(Result.theme1_niv1, Result.theme1_sentiment, func.count(Result.id)).filter(
+        Result.theme1_niv1.isnot(None), Result.theme1_niv1 != "",
+        Result.theme1_sentiment.isnot(None),
+    )
+    if batch_id is not None:
+        q = q.filter(Result.batch_id == batch_id)
+    out: dict = {}
+    for niv1, sent, n in q.group_by(Result.theme1_niv1, Result.theme1_sentiment).all():
+        out.setdefault(niv1, {})[sent] = n
+    # Trié par volume total décroissant.
+    return dict(sorted(out.items(), key=lambda kv: -sum(kv[1].values())))
+
+
 def _signal_counts(db: Session, batch_id: int) -> dict:
     base = db.query(func.count(Result.id)).filter(Result.batch_id == batch_id)
     return {
@@ -52,6 +67,7 @@ def batch_kpi(batch_id: int, db: Session = Depends(get_db)):
         "sentiments": _distribution(db, batch_id, Result.theme1_sentiment),
         "sources": _distribution(db, batch_id, Result.source),
         "signals": _signal_counts(db, batch_id),
+        "theme_sentiment": _theme_sentiment(db, batch_id),
     }
 
 
@@ -85,6 +101,7 @@ def volumetry(db: Session = Depends(get_db)):
         "total_verbatims": sum(b.n_total for b in batches),
         "series": series,
         "global_themes": global_themes,
+        "theme_sentiment": _theme_sentiment(db, None),
     }
 
 

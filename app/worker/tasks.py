@@ -37,6 +37,17 @@ def sync_registry_job() -> dict:
     return {"status": "synced"}
 
 
+def purge_old_data_job() -> dict:
+    """Purge RGPD des lots au-delà de la rétention (lue dans app_config)."""
+    from common.models import AppConfig
+    from common.retention import purge_old_batches
+
+    with SessionLocal() as db:
+        cfg = db.get(AppConfig, "retention_months")
+        months = int(float(cfg.value)) if cfg else 13
+        return purge_old_batches(db, months, uploads_dir=os.environ.get("UPLOADS_DIR", "/data/uploads"))
+
+
 def predict_one_job(text: str, satisfaction=None) -> dict:
     """Prédiction unitaire (test à la volée) avec le modèle actif. Renvoie le dict de sortie."""
     cfg = build_worker_cfg()

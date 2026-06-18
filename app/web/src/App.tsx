@@ -10,6 +10,7 @@ import ResultsPage from "./pages/ResultsPage";
 import ReviewPage from "./pages/ReviewPage";
 import BatchKpiPage from "./pages/BatchKpiPage";
 import DashboardsPage from "./pages/DashboardsPage";
+import AdminPage from "./pages/AdminPage";
 import TestPage from "./pages/TestPage";
 
 function Spinner() {
@@ -48,6 +49,7 @@ export default function App() {
           <Route path="tableaux-de-bord" element={<DashboardsPage />} />
           <Route path="test" element={<TestPage />} />
           <Route path="admin/users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
+          <Route path="admin" element={<RequireAdmin><AdminPage /></RequireAdmin>} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
