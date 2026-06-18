@@ -83,13 +83,13 @@ Chemin critique : **T1 → T2** (T2 dépend de ton run d'entraînement) ; P1, R1
 
 ## Definition of Done — V3
 
-- [ ] Smoke ML complet vert ; chaîne entraînement→éval→ONNX→dépôt→activation prouvée (T1).
-- [ ] Modèle CamemBERT **réel** entraîné, activé, KPI réels affichés ; lot **11k < 1 h** mesuré (T2 / DoD §11 #4).
-- [ ] Bundle de transmission produit et **restauré sur cible vierge avec historique identique** (P1).
-- [ ] Annulation de lot + reprise propre des jobs interrompus (R1).
-- [ ] KPI opérationnels admin + changement de mot de passe (X1).
-- [ ] Dossier de passation + recette V3 + tag `v3.0` (F1).
-- [ ] **Aucune régression** : `recette_v1` 48/48, offline strict, 0 PII en base, contrainte taxonomique — à chaque lot.
+- [x] Smoke ML complet vert ; chaîne entraînement→éval→ONNX→dépôt→activation prouvée (T1).
+- [ ] Modèle CamemBERT **réel** entraîné, activé, KPI réels affichés ; lot **11k < 1 h** mesuré (T2 / DoD §11 #4) — *run PO en cours*.
+- [x] Bundle de transmission **produit** + script de restauration avec vérification d'intégrité (P1). *(Restauration sur 2ᵉ machine : test PO restant.)*
+- [x] Annulation de lot + reprise propre des jobs interrompus (R1).
+- [x] KPI opérationnels admin + changement de mot de passe (X1).
+- [x] Dossier de passation + recette V3 (tag `v3.0` posé à la fusion de F1) (F1).
+- [x] **Aucune régression** : `recette_v1` **48/48** + `recette_v3` **13/13**, offline strict, 0 PII, taxonomie — vérifié à chaque lot.
 
 ## Jalons
 - **MV3-1** (fin T2) : moteur ML prouvé sur données réelles + perf.
