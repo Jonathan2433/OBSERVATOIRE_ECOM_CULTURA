@@ -1,9 +1,15 @@
 # Observatoire Ecom Studio — application (V1)
 
 Application conteneurisée de classification et de pilotage des verbatims clients
-Cultura. Réutilise le moteur ML du POC (`../src`). Voir
-[../docs/CAHIER_DES_CHARGES.md](../docs/CAHIER_DES_CHARGES.md) et
-[../docs/PLAN_DEVELOPPEMENT_V1.md](../docs/PLAN_DEVELOPPEMENT_V1.md).
+Cultura. Réutilise le moteur ML du POC (`../src`).
+
+**Documentation** :
+[Cahier des charges](../docs/CAHIER_DES_CHARGES.md) ·
+[Plan de développement](../docs/PLAN_DEVELOPPEMENT_V1.md) ·
+[Suivi des lots](../docs/SUIVI_LOTS.md) ·
+[Guide utilisateur](../docs/GUIDE_UTILISATEUR.md) ·
+[Exploitation](../docs/EXPLOITATION.md) ·
+[Recette V1](../docs/RECETTE_V1.md)
 
 ## Services (docker-compose)
 | Service | Rôle | Exposition |
@@ -29,10 +35,10 @@ de la base et de Redis.
 ## Modèles
 Déposer les artefacts entraînés (CLI) dans `data/models/` : ils sont montés en
 **lecture seule** dans le worker (`/data/models`). La sélection/activation de
-version se fera dans l'UI admin (lot L7).
+version se fait dans l'UI admin (menu *Modèles*) — voir [Exploitation §4](../docs/EXPLOITATION.md).
 
 ## État d'avancement
-Voir [../docs/SUIVI_LOTS.md](../docs/SUIVI_LOTS.md). Lot courant : **L0 — socle & conteneurisation**.
+Voir [../docs/SUIVI_LOTS.md](../docs/SUIVI_LOTS.md). **V1 complète (L0→L8)** : lots L0→L7 validés ; **L8 (durcissement, RGPD, perf, recette + doc)** en attente de validation PO. Recette automatisée : `python app/tests/recette_v1.py` → 48/48.
 
 ## Dépannage
 
@@ -48,3 +54,12 @@ Voir [../docs/SUIVI_LOTS.md](../docs/SUIVI_LOTS.md). Lot courant : **L0 — socl
 docker compose config -q          # syntaxe compose
 find app -name '*.py' | xargs python3 -m py_compile   # syntaxe Python
 ```
+
+## Recette V1 (hors ligne, sans Docker)
+```bash
+python3 -m venv .venv_validate && .venv_validate/bin/python -m pip install --upgrade pip
+.venv_validate/bin/python -m pip install --prefer-binary fastapi httpx sqlalchemy \
+  "pydantic>=2" pydantic-settings argon2-cffi PyJWT python-multipart pandas numpy openpyxl pyyaml redis rq
+.venv_validate/bin/python app/tests/recette_v1.py     # -> 48/48 OK
+```
+Détail de la couverture (garde-fous §10 + DoD §11) : [../docs/RECETTE_V1.md](../docs/RECETTE_V1.md).

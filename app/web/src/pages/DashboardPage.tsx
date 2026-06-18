@@ -31,12 +31,11 @@ export default function DashboardPage() {
         )}
       </section>
 
-      <p style={{ marginTop: "2rem" }}>
+      <nav style={{ marginTop: "2rem", display: "flex", flexWrap: "wrap", gap: "1.25rem" }}>
         <Link to="/lots">→ Traiter un nouveau lot de verbatims</Link>
-      </p>
-      <p style={{ color: "#999", fontSize: ".9rem" }}>
-        Les modules « Résultats », « Revue » et « Tableaux de bord » arriveront aux lots suivants (L4 → L6).
-      </p>
+        <Link to="/tableaux-de-bord">→ Tableaux de bord</Link>
+        <Link to="/test">→ Test à la volée</Link>
+      </nav>
     </div>
   );
 }
