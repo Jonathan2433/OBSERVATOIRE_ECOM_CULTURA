@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -104,3 +105,23 @@ def get_progress(batch_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lot introuvable")
     return BatchProgress(id=batch.id, status=batch.status, n_total=batch.n_total,
                          n_processed=batch.n_processed, progress=batch.progress)
+
+
+@router.post("/{batch_id}/cancel", response_model=BatchOut)
+def cancel_batch(batch_id: int, db: Session = Depends(get_db),
+                 current_user: User = Depends(get_current_user)):
+    """Annule un lot en attente ou en cours. Le worker s'arrête proprement
+    (annulation coopérative, vérifiée entre deux tranches)."""
+    batch = db.get(Batch, batch_id)
+    if batch is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lot introuvable")
+    if batch.status not in ("pending", "running"):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail=f"Lot non annulable (statut : {batch.status}).")
+    batch.status = "canceled"
+    batch.finished_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(batch)
+    record_audit(db, action="batch.cancel", user=current_user, entity="batch", entity_id=batch.id)
+    logger.info("Lot %s annulé par %s", batch_id, current_user.username)
+    return batch

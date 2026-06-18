@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useParams } from "react-router-dom";
-import { getBatch, type Batch } from "../api";
+import { cancelBatch, getBatch, type Batch } from "../api";
 import StatusBadge from "../components/StatusBadge";
-import { Card, EmptyState, ProgressBar, Spinner, StatCard } from "../ui";
+import { Button, Card, Dialog, EmptyState, ProgressBar, Spinner, StatCard } from "../ui";
 
 export default function BatchDetailPage() {
   const { id } = useParams();
   const batchId = Number(id);
   const [batch, setBatch] = useState<Batch | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -34,6 +36,19 @@ export default function BatchDetailPage() {
   const running = batch.status === "pending" || batch.status === "running";
   const reviewPct = batch.n_total ? Math.round((batch.n_review / batch.n_total) * 100) : 0;
 
+  const doCancel = async () => {
+    setCancelling(true);
+    try {
+      const b = await cancelBatch(batchId);
+      setBatch(b);
+    } catch (e: any) {
+      setError(e?.message ?? "Annulation impossible");
+    } finally {
+      setCancelling(false);
+      setConfirmCancel(false);
+    }
+  };
+
   const tabClass = ({ isActive }: { isActive: boolean }) => "ui-tab" + (isActive ? " is-active" : "");
 
   return (
@@ -47,7 +62,9 @@ export default function BatchDetailPage() {
       </div>
 
       {running && (
-        <Card title="Traitement en cours" className="">
+        <Card title="Traitement en cours" actions={
+          <Button variant="danger" size="sm" onClick={() => setConfirmCancel(true)}>Annuler</Button>
+        }>
           <div className="ui-stack">
             <ProgressBar value={pct} indeterminate={batch.status === "pending"} />
             <span className="ui-muted">{batch.n_processed} / {batch.n_total || "?"} verbatims traités — cette page se met à jour automatiquement.</span>
@@ -77,6 +94,14 @@ export default function BatchDetailPage() {
           <StatCard label="Erreurs" value={batch.n_errors} />
         </div>
       )}
+
+      <Dialog
+        open={confirmCancel} danger busy={cancelling}
+        title="Annuler ce lot ?" confirmLabel="Annuler le lot" cancelLabel="Continuer"
+        onConfirm={doCancel} onCancel={() => setConfirmCancel(false)}
+      >
+        <p>Le traitement s'arrêtera proprement. Les résultats déjà calculés sont conservés ; le lot passe au statut « annulé ».</p>
+      </Dialog>
     </div>
   );
 }

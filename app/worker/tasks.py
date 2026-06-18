@@ -48,6 +48,22 @@ def purge_old_data_job() -> dict:
         return purge_old_batches(db, months, uploads_dir=os.environ.get("UPLOADS_DIR", "/data/uploads"))
 
 
+def reconcile_orphan_batches() -> dict:
+    """Au démarrage du worker : un lot resté 'running' = job interrompu (worker
+    tombé). On le repasse en 'failed' avec un message clair. Les lots 'pending'
+    restent en file (RQ les rejoue). Évite les lots « en cours » fantômes (§8)."""
+    with SessionLocal() as db:
+        orphans = db.query(Batch).filter(Batch.status == "running").all()
+        for b in orphans:
+            b.status = "failed"
+            b.error_message = "Traitement interrompu (redémarrage du worker)."
+            b.finished_at = _now()
+        n = len(orphans)
+        if n:
+            db.commit()
+        return {"reconciled": n}
+
+
 def predict_one_job(text: str, satisfaction=None) -> dict:
     """Prédiction unitaire (test à la volée) avec le modèle actif. Renvoie le dict de sortie."""
     cfg = build_worker_cfg()
@@ -123,6 +139,9 @@ def process_batch_job(batch_id: int) -> dict:
         if batch is None:
             logger.error("Lot %s introuvable.", batch_id)
             return {"status": "missing"}
+        if batch.status == "canceled":  # annulé avant la prise en charge
+            logger.info("Lot %s annulé avant démarrage — ignoré.", batch_id)
+            return {"status": "canceled"}
 
         active = get_active(db)
         cfg["thresholds"]["revue_humaine"] = batch.seuil_revue
@@ -150,6 +169,18 @@ def process_batch_job(batch_id: int) -> dict:
             n_err = 0
 
             for start in range(0, total, PROGRESS_CHUNK):
+                # Annulation coopérative : l'API a pu passer le lot en 'canceled'
+                # (requête fraîche, hors cache de session).
+                if db.query(Batch.status).filter(Batch.id == batch_id).scalar() == "canceled":
+                    batch.status = "canceled"
+                    batch.n_processed = start
+                    batch.n_review = n_review
+                    batch.n_errors = n_err
+                    batch.pii_masked = dict(pii)
+                    batch.finished_at = _now()
+                    db.commit()
+                    logger.info("Lot %s annulé en cours (%d/%d traités).", batch_id, start, total)
+                    return {"status": "canceled", "n_processed": start}
                 rows = df.iloc[start:start + PROGRESS_CHUNK]
                 raw_chunk = texts[start:start + PROGRESS_CHUNK]
                 sat_chunk = sats[start:start + PROGRESS_CHUNK]
