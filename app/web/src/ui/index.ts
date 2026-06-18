@@ -9,3 +9,7 @@ export { Input, Select, Textarea } from "./Field";
 export type { InputProps, SelectProps, TextareaProps } from "./Field";
 export { Spinner, EmptyState } from "./Feedback";
 export type { SpinnerProps, EmptyStateProps } from "./Feedback";
+export { ProgressBar } from "./ProgressBar";
+export type { ProgressBarProps } from "./ProgressBar";
+export { FileDropzone } from "./FileDropzone";
+export type { FileDropzoneProps } from "./FileDropzone";
