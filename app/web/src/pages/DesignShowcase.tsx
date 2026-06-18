@@ -1,9 +1,16 @@
 import { useState } from "react";
-import { Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard, Textarea } from "../ui";
+import {
+  Badge, Button, Card, Chip, Dialog, Drawer, EmptyState, FileDropzone,
+  Input, ProgressBar, Select, Spinner, StatCard, Textarea,
+} from "../ui";
 
 /** Vitrine du design system (référence vivante). Route /design. */
 export default function DesignShowcase() {
   const [loading, setLoading] = useState(false);
+  const [drawer, setDrawer] = useState(false);
+  const [dialog, setDialog] = useState(false);
+  const [chip, setChip] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
 
   const primaries = ["50", "100", "200", "300", "400", "500", "600", "700", "800", "900"];
   const neutrals = ["0", "50", "100", "200", "300", "400", "500", "600", "700", "800", "900"];
@@ -72,6 +79,32 @@ export default function DesignShowcase() {
           <Select label="Sentiment"><option>Négatif</option><option>Neutre</option><option>Positif</option></Select>
           <Textarea label="Verbatim" placeholder="Saisir un texte…" />
         </div>
+      </Card>
+
+      <Card title="Progression, chips, dépôt de fichier">
+        <div className="ui-stack">
+          <ProgressBar value={62} />
+          <ProgressBar indeterminate showLabel={false} />
+          <div className="ui-row ui-row--wrap">
+            <Chip active={chip} onClick={() => setChip(!chip)}>Filtre activable</Chip>
+            <Chip>Inactif</Chip>
+          </div>
+          <FileDropzone label="Fichier MDTC" file={file} onSelect={setFile} />
+        </div>
+      </Card>
+
+      <Card title="Surcouches (Drawer, Dialog)">
+        <div className="ui-row ui-row--wrap">
+          <Button variant="secondary" onClick={() => setDrawer(true)}>Ouvrir un panneau</Button>
+          <Button variant="danger" onClick={() => setDialog(true)}>Ouvrir une confirmation</Button>
+        </div>
+        <Drawer open={drawer} title="Panneau de détail" onClose={() => setDrawer(false)}>
+          <p>Contenu du panneau latéral. Ferme sur Échap, clic hors zone, ou ×.</p>
+        </Drawer>
+        <Dialog open={dialog} title="Confirmer l'action ?" danger
+                confirmLabel="Confirmer" onConfirm={() => setDialog(false)} onCancel={() => setDialog(false)}>
+          <p>Exemple de modale de confirmation danger.</p>
+        </Dialog>
       </Card>
 
       <Card title="États (chargement, vide)">
