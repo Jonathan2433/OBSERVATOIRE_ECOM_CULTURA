@@ -30,8 +30,8 @@ Réf. : [CHARTE_UI_V2.md](CHARTE_UI_V2.md) · [PLAN_V2_DESIGN.md](PLAN_V2_DESIGN
 | D2 | Lots & ingestion (liste, FileDropzone, détail/progression) | ✅ Fait (validé PO) | `design/2` (mergé) |
 | D3 | Résultats & exports (filtres chips, Table, Drawer) | ✅ Fait (validé PO) | `design/3` (mergé) |
 | D4 | Revue humaine (mode focus + raccourcis) | ✅ Fait (validé PO) | `design/4` (mergé) |
-| D5 | Tableaux de bord & dataviz (StatCards, charts, alertes seuils) | ⏸️ En attente de validation | `design/5-dashboards` |
-| D6 | Administration & comptes (Tabs, Dialogs, tables) | ⬜ | — |
+| D5 | Tableaux de bord & dataviz (StatCards, charts, alertes seuils) | ✅ Fait (validé PO) | `design/5` (mergé) |
+| D6 | Vue lot **à onglets** (TdB/Résultats/Revue intégrés) + Administration (Tabs, Dialog purge, comptes) | ⏸️ En attente de validation | `design/6-admin-onglets` |
 | D7 | Finition, accessibilité AA & recette UI | ⬜ | — |
 
 ---

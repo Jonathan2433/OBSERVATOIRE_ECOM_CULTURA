@@ -37,17 +37,13 @@ export default function ResultsPage() {
 
   return (
     <div>
-      <div className="page-header">
-        <div className="ui-row">
-          <h1 className="page-header__title">Résultats — lot #{batchId}</h1>
-          <div className="ui-spacer" />
-          <a className="ui-btn ui-btn--secondary ui-btn--sm" href={exportUrl(batchId, "csv")}>Export CSV</a>
-          <a className="ui-btn ui-btn--secondary ui-btn--sm" href={exportUrl(batchId, "xlsx")}>Export Excel</a>
-        </div>
-      </div>
-
       <div className="ui-stack">
-        <Card title="Filtres">
+        <Card title="Filtres" actions={
+          <span className="ui-row">
+            <a className="ui-btn ui-btn--secondary ui-btn--sm" href={exportUrl(batchId, "csv")}>Export CSV</a>
+            <a className="ui-btn ui-btn--secondary ui-btn--sm" href={exportUrl(batchId, "xlsx")}>Export Excel</a>
+          </span>
+        }>
           <div className="ui-toolbar">
             <Input placeholder="Recherche texte…" style={{ minWidth: 200 }}
                    onChange={(e) => apply({ q: e.target.value || undefined })} />

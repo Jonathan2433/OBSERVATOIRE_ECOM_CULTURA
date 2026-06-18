@@ -107,3 +107,19 @@
 }
 .ui-btn--secondary .ui-kbd { background: var(--cu-neutral-100); color: var(--cu-text-muted); border-color: var(--cu-border-strong); }
 
+/* --- Onglets --- */
+.ui-tabs { display: flex; gap: var(--sp-1); border-bottom: 1px solid var(--cu-border); margin-bottom: var(--sp-5); }
+.ui-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 10px 16px; font-weight: var(--fw-medium); color: var(--cu-text-muted);
+  border-bottom: 2px solid transparent; margin-bottom: -1px; text-decoration: none;
+  transition: color var(--t-fast), border-color var(--t-fast);
+}
+.ui-tab:hover { color: var(--cu-text); text-decoration: none; }
+.ui-tab.is-active { color: var(--cu-primary-700); border-bottom-color: var(--cu-primary-500); }
+.ui-tab__count {
+  font-size: var(--fs-xs); background: var(--cu-neutral-100); color: var(--cu-text-muted);
+  border-radius: var(--r-pill); padding: 0 7px; line-height: 1.6;
+}
+.ui-tab.is-active .ui-tab__count { background: var(--cu-primary-100); color: var(--cu-primary-700); }
+
