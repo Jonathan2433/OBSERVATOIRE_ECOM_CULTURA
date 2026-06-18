@@ -32,9 +32,9 @@ Réf. : [CHARTE_UI_V2.md](CHARTE_UI_V2.md) · [PLAN_V2_DESIGN.md](PLAN_V2_DESIGN
 | D4 | Revue humaine (mode focus + raccourcis) | ✅ Fait (validé PO) | `design/4` (mergé) |
 | D5 | Tableaux de bord & dataviz (StatCards, charts, alertes seuils) | ✅ Fait (validé PO) | `design/5` (mergé) |
 | D6 | Vue lot **à onglets** (TdB/Résultats/Revue intégrés) + Administration (Tabs, Dialog purge, comptes) | ⏸️ En attente de validation | `design/6-admin-onglets` |
-| D7 | Finition, accessibilité AA & recette UI | ⏸️ En attente de validation | `design/7-finition` |
+| D7 | Finition, accessibilité AA & recette UI | ✅ Fait (validé PO) | `design/7` (mergé) |
 
-> 🎨 **V2 (couche design) — D0→D7 terminés.** Design-tokens turquoise Cultura, 13 composants `src/ui/` + AppShell + onglets ; toutes les pages habillées (dont TestPage). Recette V1 **48/48** (non-régression). Reste : validation PO de D7.
+> 🎨 **V2 (couche design) complète (D0→D7) mergée sur `main` le 2026-06-18.** Design-tokens turquoise Cultura (1 fichier), 13 composants `src/ui/` + AppShell + onglets ; toutes les pages habillées + vue lot à onglets. Aucune dépendance runtime ajoutée (offline strict). Recette V1 **48/48** (zéro régression).
 
 ---
 
