@@ -17,3 +17,5 @@ export { Drawer } from "./Drawer";
 export type { DrawerProps } from "./Drawer";
 export { Chip } from "./Chip";
 export type { ChipProps } from "./Chip";
+export { Dialog } from "./Dialog";
+export type { DialogProps } from "./Dialog";

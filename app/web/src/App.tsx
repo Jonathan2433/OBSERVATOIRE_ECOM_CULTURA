@@ -43,10 +43,12 @@ export default function App() {
         <Route element={<Layout />}>
           <Route index element={<DashboardPage />} />
           <Route path="lots" element={<BatchesPage />} />
-          <Route path="lots/:id" element={<BatchDetailPage />} />
-          <Route path="lots/:id/resultats" element={<ResultsPage />} />
-          <Route path="lots/:id/revue" element={<ReviewPage />} />
-          <Route path="lots/:id/kpi" element={<BatchKpiPage />} />
+          <Route path="lots/:id" element={<BatchDetailPage />}>
+            <Route index element={<BatchKpiPage />} />
+            <Route path="resultats" element={<ResultsPage />} />
+            <Route path="revue" element={<ReviewPage />} />
+            <Route path="kpi" element={<Navigate to=".." replace />} />
+          </Route>
           <Route path="tableaux-de-bord" element={<DashboardsPage />} />
           <Route path="test" element={<TestPage />} />
           <Route path="design" element={<DesignShowcase />} />

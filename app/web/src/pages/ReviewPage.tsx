@@ -93,11 +93,6 @@ export default function ReviewPage() {
 
   return (
     <div>
-      <div className="page-header">
-        <h1 className="page-header__title">Revue humaine — lot #{batchId}</h1>
-        <p className="page-header__sub">Vérifiez et corrigez les verbatims les moins confiants, du plus incertain au plus sûr.</p>
-      </div>
-
       {error && <p className="ui-field__error">{error}</p>}
       {!loaded && <Spinner label="Chargement de la file…" />}
 

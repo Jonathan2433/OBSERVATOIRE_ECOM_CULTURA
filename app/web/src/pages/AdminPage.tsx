@@ -3,14 +3,20 @@ import {
   getAudit, getConfig, patchConfig, purgeData,
   type AppConfigValues, type AuditEntry,
 } from "../api";
+import { Button, Card, Dialog, EmptyState, Input } from "../ui";
+
+type Tab = "config" | "retention" | "audit";
 
 export default function AdminPage() {
+  const [tab, setTab] = useState<Tab>("config");
   const [cfg, setCfg] = useState<AppConfigValues | null>(null);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [retention, setRetention] = useState("13");
   const [seuil, setSeuil] = useState("0.70");
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmPurge, setConfirmPurge] = useState(false);
+  const [purging, setPurging] = useState(false);
 
   const refresh = () => {
     getConfig().then((c) => { setCfg(c); setRetention(c.retention_months); setSeuil(c.default_seuil_revue); })
@@ -30,65 +36,98 @@ export default function AdminPage() {
   };
 
   const doPurge = async () => {
-    if (!confirm("Purger les lots au-delà de la rétention ? Cette action est irréversible.")) return;
-    setMsg(null); setError(null);
+    setMsg(null); setError(null); setPurging(true);
     try {
       const r = await purgeData();
       setMsg(`Purge effectuée : ${r.batches} lot(s) supprimé(s).`);
       refresh();
     } catch (err: any) { setError(err?.message ?? "Erreur"); }
+    finally { setPurging(false); setConfirmPurge(false); }
   };
+
+  const tabBtn = (key: Tab, label: string) => (
+    <button className={"ui-tab" + (tab === key ? " is-active" : "")} onClick={() => setTab(key)}>{label}</button>
+  );
 
   return (
     <div>
-      <h1>Administration</h1>
-      {msg && <p style={{ color: "green" }}>{msg}</p>}
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+      <div className="page-header">
+        <h1 className="page-header__title">Administration</h1>
+        <p className="page-header__sub">Configuration applicative, rétention RGPD et journal d'audit.</p>
+      </div>
 
-      <section style={{ padding: "1rem 1.25rem", border: "1px solid #eee", borderRadius: 8, marginBottom: "2rem", maxWidth: 560 }}>
-        <h3 style={{ marginTop: 0 }}>Configuration</h3>
-        {!cfg && <p>Chargement…</p>}
-        {cfg && (
-          <form onSubmit={saveConfig} style={{ display: "grid", gap: "0.75rem" }}>
-            <label>Rétention des données (mois)
-              <input type="number" min={0} value={retention} onChange={(e) => setRetention(e.target.value)} style={{ marginLeft: 8, width: 80 }} />
-            </label>
-            <label>Seuil de revue par défaut
-              <input type="number" min={0} max={1} step={0.05} value={seuil} onChange={(e) => setSeuil(e.target.value)} style={{ marginLeft: 8, width: 80 }} />
-            </label>
-            <div><button type="submit">Enregistrer</button></div>
-          </form>
-        )}
-      </section>
+      {msg && <p style={{ color: "var(--cu-success)" }}>{msg}</p>}
+      {error && <p className="ui-field__error">{error}</p>}
 
-      <section style={{ padding: "1rem 1.25rem", border: "1px solid #f0d0d0", borderRadius: 8, marginBottom: "2rem", maxWidth: 560 }}>
-        <h3 style={{ marginTop: 0 }}>Rétention (RGPD)</h3>
-        <p style={{ color: "#666" }}>Supprime définitivement les lots (et leurs verbatims) au-delà de la durée de rétention.</p>
-        <button onClick={doPurge} style={{ color: "#b3261e" }}>Purger maintenant</button>
-      </section>
+      <nav className="ui-tabs" aria-label="Sections d'administration">
+        {tabBtn("config", "Configuration")}
+        {tabBtn("retention", "Rétention")}
+        {tabBtn("audit", "Journal d'audit")}
+      </nav>
 
-      <section>
-        <h3>Journal d'audit (100 dernières actions)</h3>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".85rem" }}>
-          <thead>
-            <tr style={{ textAlign: "left", borderBottom: "2px solid #ddd" }}>
-              <th style={{ padding: "0.3rem" }}>Date</th><th>Utilisateur</th><th>Action</th><th>Cible</th><th>Détails</th>
-            </tr>
-          </thead>
-          <tbody>
-            {audit.map((a) => (
-              <tr key={a.id} style={{ borderBottom: "1px solid #eee" }}>
-                <td style={{ padding: "0.3rem", whiteSpace: "nowrap" }}>{a.created_at?.replace("T", " ").slice(0, 19)}</td>
-                <td>{a.user ?? "—"}</td>
-                <td><code>{a.action}</code></td>
-                <td>{a.entity ? `${a.entity}#${a.entity_id ?? ""}` : "—"}</td>
-                <td style={{ color: "#666" }}>{a.details ?? ""}</td>
-              </tr>
-            ))}
-            {audit.length === 0 && <tr><td colSpan={5} style={{ color: "#888", padding: "0.5rem" }}>Aucune entrée.</td></tr>}
-          </tbody>
-        </table>
-      </section>
+      {tab === "config" && (
+        <Card title="Configuration">
+          {!cfg ? <p className="ui-muted">Chargement…</p> : (
+            <form onSubmit={saveConfig} className="ui-stack" style={{ maxWidth: 360 }}>
+              <Input label="Rétention des données (mois)" type="number" min={0}
+                     value={retention} onChange={(e) => setRetention(e.target.value)} />
+              <Input label="Seuil de revue par défaut" type="number" min={0} max={1} step={0.05}
+                     value={seuil} onChange={(e) => setSeuil(e.target.value)}
+                     hint="S'applique aux nouveaux lots ; les lots passés conservent leur seuil." />
+              <div><Button type="submit" variant="primary">Enregistrer</Button></div>
+            </form>
+          )}
+        </Card>
+      )}
+
+      {tab === "retention" && (
+        <Card title="Rétention (RGPD)">
+          <div className="ui-stack" style={{ maxWidth: 520 }}>
+            <p className="ui-muted">
+              Supprime définitivement les lots (et leurs verbatims/corrections + fichiers déposés)
+              au-delà de la durée de rétention ({cfg?.retention_months ?? "—"} mois). Action irréversible.
+            </p>
+            <div><Button variant="danger" onClick={() => setConfirmPurge(true)}>Purger maintenant</Button></div>
+          </div>
+        </Card>
+      )}
+
+      {tab === "audit" && (
+        <Card title="Journal d'audit (100 dernières actions)">
+          {audit.length === 0 ? (
+            <EmptyState title="Aucune entrée" description="Les actions tracées apparaîtront ici." />
+          ) : (
+            <div className="ui-table-wrap">
+              <table className="ui-table">
+                <thead>
+                  <tr><th>Date</th><th>Utilisateur</th><th>Action</th><th>Cible</th><th>Détails</th></tr>
+                </thead>
+                <tbody>
+                  {audit.map((a) => (
+                    <tr key={a.id}>
+                      <td className="ui-mono" style={{ whiteSpace: "nowrap" }}>{a.created_at?.replace("T", " ").slice(0, 19)}</td>
+                      <td>{a.user ?? "—"}</td>
+                      <td><code>{a.action}</code></td>
+                      <td>{a.entity ? `${a.entity}#${a.entity_id ?? ""}` : "—"}</td>
+                      <td className="ui-muted">{a.details ?? ""}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+
+      <Dialog
+        open={confirmPurge} danger busy={purging}
+        title="Purger les données hors rétention ?"
+        confirmLabel="Purger" cancelLabel="Annuler"
+        onConfirm={doPurge} onCancel={() => setConfirmPurge(false)}
+      >
+        <p>Cette action supprime <b>définitivement</b> les lots au-delà de la rétention
+          ({cfg?.retention_months ?? "—"} mois), avec leurs verbatims, corrections et fichiers. Elle est tracée dans l'audit.</p>
+      </Dialog>
     </div>
   );
 }

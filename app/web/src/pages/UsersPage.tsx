@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { createUser, deactivateUser, listUsers, updateUser, type Role, type User } from "../api";
 import { useAuth } from "../auth";
+import { Badge, Button, Card, Input, Select } from "../ui";
 
 export default function UsersPage() {
   const { user: me } = useAuth();
@@ -38,52 +39,54 @@ export default function UsersPage() {
 
   return (
     <div>
-      <h1>Gestion des utilisateurs</h1>
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+      <div className="page-header">
+        <h1 className="page-header__title">Utilisateurs</h1>
+        <p className="page-header__sub">Comptes locaux et rôles (analyste / admin).</p>
+      </div>
 
-      <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "2rem" }}>
-        <thead>
-          <tr style={{ textAlign: "left", borderBottom: "2px solid #ddd" }}>
-            <th style={{ padding: "0.4rem" }}>Identifiant</th>
-            <th>Rôle</th>
-            <th>Statut</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {users.map((u) => (
-            <tr key={u.id} style={{ borderBottom: "1px solid #eee" }}>
-              <td style={{ padding: "0.4rem" }}>{u.username}{u.id === me?.id && " (vous)"}</td>
-              <td>{u.role}</td>
-              <td style={{ color: u.is_active ? "green" : "#999" }}>{u.is_active ? "actif" : "désactivé"}</td>
-              <td>
-                {u.id !== me?.id && (
-                  <button onClick={() => toggleActive(u)}>
-                    {u.is_active ? "Désactiver" : "Réactiver"}
-                  </button>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {error && <p className="ui-field__error">{error}</p>}
 
-      <h3>Créer un compte</h3>
-      <form onSubmit={onCreate} style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
-        <input
-          placeholder="Identifiant" value={form.username} required
-          onChange={(e) => setForm({ ...form, username: e.target.value })}
-        />
-        <input
-          type="password" placeholder="Mot de passe (≥ 12 car.)" value={form.password} required minLength={12}
-          onChange={(e) => setForm({ ...form, password: e.target.value })}
-        />
-        <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role })}>
-          <option value="analyste">analyste</option>
-          <option value="admin">admin</option>
-        </select>
-        <button type="submit">Créer</button>
-      </form>
+      <div className="ui-stack">
+        <Card title="Comptes">
+          <div className="ui-table-wrap">
+            <table className="ui-table">
+              <thead>
+                <tr><th>Identifiant</th><th>Rôle</th><th>Statut</th><th></th></tr>
+              </thead>
+              <tbody>
+                {users.map((u) => (
+                  <tr key={u.id}>
+                    <td>{u.username}{u.id === me?.id && <span className="ui-muted"> (vous)</span>}</td>
+                    <td><Badge tone={u.role === "admin" ? "primary" : "neutral"}>{u.role}</Badge></td>
+                    <td>{u.is_active ? <Badge tone="success" dot>actif</Badge> : <Badge tone="neutral">désactivé</Badge>}</td>
+                    <td style={{ textAlign: "right" }}>
+                      {u.id !== me?.id && (
+                        <Button variant={u.is_active ? "secondary" : "primary"} size="sm" onClick={() => toggleActive(u)}>
+                          {u.is_active ? "Désactiver" : "Réactiver"}
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+
+        <Card title="Créer un compte">
+          <form onSubmit={onCreate} className="ui-toolbar" style={{ alignItems: "flex-end" }}>
+            <Input label="Identifiant" placeholder="prénom.nom" value={form.username} required
+                   onChange={(e) => setForm({ ...form, username: e.target.value })} />
+            <Input label="Mot de passe (≥ 12 car.)" type="password" value={form.password} required minLength={12}
+                   onChange={(e) => setForm({ ...form, password: e.target.value })} />
+            <Select label="Rôle" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role })}>
+              <option value="analyste">analyste</option>
+              <option value="admin">admin</option>
+            </Select>
+            <Button type="submit" variant="primary">Créer</Button>
+          </form>
+        </Card>
+      </div>
     </div>
   );
 }
