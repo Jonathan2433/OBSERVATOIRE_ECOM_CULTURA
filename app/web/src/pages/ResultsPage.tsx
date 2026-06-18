@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { exportUrl, listResults, type ResultFilters, type ResultRow, type ResultsResponse } from "../api";
-import { Badge, type BadgeTone, Button, Card, Chip, Drawer, EmptyState, Input, Select, Spinner } from "../ui";
+import { Badge, type BadgeTone, Button, Card, Chip, Drawer, EmptyState, InfoTip, Input, Select, Spinner } from "../ui";
 
 const PAGE = 50;
 
@@ -75,7 +75,9 @@ export default function ResultsPage() {
                     <thead>
                       <tr>
                         <th>Verbatim (anonymisé)</th><th>Thème</th><th>Sentiment</th>
-                        <th>Signaux</th><th>Confiance</th><th>Statut</th>
+                        <th>Signaux</th>
+                        <th>Confiance<InfoTip text="Certitude du modèle (0 à 1). Sous le seuil de revue, le verbatim part en relecture humaine." /></th>
+                        <th>Statut<InfoTip text="auto = classé sans relecture · en revue = à vérifier · corrigé = revu par un humain." /></th>
                       </tr>
                     </thead>
                     <tbody>

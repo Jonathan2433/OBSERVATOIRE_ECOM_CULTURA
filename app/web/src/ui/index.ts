@@ -19,3 +19,5 @@ export { Chip } from "./Chip";
 export type { ChipProps } from "./Chip";
 export { Dialog } from "./Dialog";
 export type { DialogProps } from "./Dialog";
+export { InfoTip } from "./InfoTip";
+export type { InfoTipProps } from "./InfoTip";

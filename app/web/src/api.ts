@@ -288,6 +288,13 @@ export interface OpsKpi {
 }
 export const getOps = () => request<OpsKpi>("/api/admin/ops");
 
+// --- Métadonnées (page d'aide, info-bulles) ---
+export interface AppMeta {
+  default_seuil_revue: number;
+  active_model: { label: string; kind: string } | null;
+}
+export const getMeta = () => request<AppMeta>("/api/meta");
+
 // --- Compte (mot de passe) ---
 export const changePassword = (current_password: string, new_password: string) =>
   request<{ status: string }>("/api/auth/password", { method: "POST", body: JSON.stringify({ current_password, new_password }) });

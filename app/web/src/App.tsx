@@ -14,6 +14,7 @@ import AdminPage from "./pages/AdminPage";
 import TestPage from "./pages/TestPage";
 import DesignShowcase from "./pages/DesignShowcase";
 import ProfilePage from "./pages/ProfilePage";
+import AidePage from "./pages/AidePage";
 import { Spinner as UISpinner } from "./ui";
 
 function Spinner() {
@@ -59,6 +60,7 @@ export default function App() {
           <Route path="test" element={<TestPage />} />
           <Route path="design" element={<DesignShowcase />} />
           <Route path="compte" element={<ProfilePage />} />
+          <Route path="aide" element={<AidePage />} />
           <Route path="admin/users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
           <Route path="admin" element={<RequireAdmin><AdminPage /></RequireAdmin>} />
         </Route>
