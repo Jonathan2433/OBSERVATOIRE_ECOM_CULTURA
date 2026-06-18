@@ -31,7 +31,7 @@ Réf. : [CHARTE_UI_V2.md](CHARTE_UI_V2.md) · [PLAN_V2_DESIGN.md](PLAN_V2_DESIGN
 | D3 | Résultats & exports (filtres chips, Table, Drawer) | ✅ Fait (validé PO) | `design/3` (mergé) |
 | D4 | Revue humaine (mode focus + raccourcis) | ✅ Fait (validé PO) | `design/4` (mergé) |
 | D5 | Tableaux de bord & dataviz (StatCards, charts, alertes seuils) | ✅ Fait (validé PO) | `design/5` (mergé) |
-| D6 | Vue lot **à onglets** (TdB/Résultats/Revue intégrés) + Administration (Tabs, Dialog purge, comptes) | ⏸️ En attente de validation | `design/6-admin-onglets` |
+| D6 | Vue lot **à onglets** (TdB/Résultats/Revue intégrés) + Administration (Tabs, Dialog purge, comptes) | ✅ Fait (validé PO) | `design/6` (mergé) |
 | D7 | Finition, accessibilité AA & recette UI | ✅ Fait (validé PO) | `design/7` (mergé) |
 
 > 🎨 **V2 (couche design) complète (D0→D7) mergée sur `main` le 2026-06-18.** Design-tokens turquoise Cultura (1 fichier), 13 composants `src/ui/` + AppShell + onglets ; toutes les pages habillées + vue lot à onglets. Aucune dépendance runtime ajoutée (offline strict). Recette V1 **48/48** (zéro régression).
@@ -41,10 +41,10 @@ Réf. : [PLAN_V3.md](PLAN_V3.md). Périmètre validé : moteur ML CamemBERT prou
 
 | Lot | Intitulé | Statut | Branche |
 |---|---|---|---|
-| T1 | Chaîne ML fiabilisée + smoke test + jeu de démo + guide entraînement | ⏸️ En attente de validation | `v3/1-moteur-ml` |
+| T1 | Chaîne ML fiabilisée + smoke test + jeu de démo + guide entraînement | ✅ Fait (validé PO) | `v3/1` (mergé) |
 | T2 | Run réel CamemBERT + perf 11k<1h (jalon PO) | ⬜ | — |
 | P1 | Transmission : packaging & restauration avec historique | ✅ Fait (validé PO) | `v3/2` (mergé) |
-| R1 | Robustesse traitements (annulation, reprise des jobs) | ⬜ | — |
+| R1 | Robustesse traitements (annulation, reprise des jobs) | ⏸️ En attente de validation | `v3/3-robustesse` |
 | X1 | Exploitation (KPI ops) & changement de mot de passe | ⬜ | — |
 | F1 | Dossier de passation + recette V3 + tag v3.0 | ⬜ | — |
 

@@ -33,6 +33,13 @@ def main() -> None:
     connection.ping()
     _sync_registry_safe()
     try:
+        from .tasks import reconcile_orphan_batches
+        rec = reconcile_orphan_batches()
+        if rec.get("reconciled"):
+            logger.info("Lots orphelins (interrompus) repassés en échec : %s", rec["reconciled"])
+    except Exception as exc:  # pragma: no cover
+        logger.warning("Réconciliation des lots orphelins ignorée : %s", exc)
+    try:
         from .tasks import purge_old_data_job
         res = purge_old_data_job()
         if res.get("batches"):

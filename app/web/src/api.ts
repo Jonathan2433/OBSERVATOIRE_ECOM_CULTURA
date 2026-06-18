@@ -96,6 +96,7 @@ export interface BatchProgress {
 export const listBatches = () => request<Batch[]>("/api/batches");
 export const getBatch = (id: number) => request<Batch>(`/api/batches/${id}`);
 export const getBatchProgress = (id: number) => request<BatchProgress>(`/api/batches/${id}/progress`);
+export const cancelBatch = (id: number) => request<Batch>(`/api/batches/${id}/cancel`, { method: "POST" });
 
 export async function createBatch(opts: {
   label?: string;
