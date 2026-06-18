@@ -1,279 +1,174 @@
-# Cultura Verbatim Classifier — POC
+# Observatoire Ecom Studio — Cultura Verbatim Classifier
 
-Classification automatique des verbatims clients e-commerce Cultura par
-apprentissage automatique (NLP français, CamemBERT), 100 % local, sans GPU et
-sans connexion internet à l'inférence.
+Application interne de **classification et de pilotage des verbatims clients** de
+cultura.com. Pour chaque verbatim (sources **MDTC** et **Mopinion**, ~11 000/mois),
+le moteur produit : une **classification thématique hiérarchique** (niv.1 + niv.2,
+contrainte par un référentiel), un **sentiment**, trois **signaux** (rupture client,
+churn, insatisfaction forte), un **score de confiance** et un **routage vers la revue
+humaine**. Le tout **100 % local, hors-ligne, sans GPU**.
 
----
-
-## 1. Vue d'ensemble
-
-Ce POC automatise l'analyse mensuelle des verbatims clients de cultura.com
-(sources MDTC et Mopinion, ~11 000/mois). Pour chaque verbatim, le pipeline
-produit : une **classification thématique hiérarchique multi-label** (1 à 2
-thèmes, niv.1 + niv.2 contraints par un référentiel), un **sentiment par thème**
-(Positif / Neutre / Négatif), trois **signaux forts** (rupture client, churn,
-insatisfaction forte) et un **score de confiance** routant les cas incertains
-vers une **revue humaine**. Le tout en local, sur CPU, après anonymisation des
-données personnelles.
+> 🔒 **Confidentialité by design** : anonymisation des PII **avant** tout traitement,
+> base **sans donnée brute**, exposition **localhost uniquement**, aucune sortie réseau.
 
 ---
 
-## 2. Prérequis
+## 1. Sommaire
 
-| Élément | Détail |
+- [2. Architecture](#2-architecture)
+- [3. Pile technique](#3-pile-technique)
+- [4. Structure du dépôt](#4-structure-du-dépôt)
+- [5. Démarrage rapide (Docker)](#5-démarrage-rapide-docker)
+- [6. Le moteur ML (entraînement)](#6-le-moteur-ml-entraînement)
+- [7. Données & RGPD](#7-données--rgpd)
+- [8. Sécurité](#8-sécurité)
+- [9. Transmission / sauvegarde](#9-transmission--sauvegarde)
+- [10. Tests & recettes](#10-tests--recettes)
+- [11. Documentation](#11-documentation)
+- [12. Versions](#12-versions)
+
+---
+
+## 2. Architecture
+
+Mono-poste, conteneurisé (Docker Desktop, `linux/arm64`). Seul le service `web` est
+exposé, **uniquement sur `127.0.0.1`**.
+
+```
+ navigateur (localhost:8080)
+        │
+        ▼
+ [web] nginx ── sert le front React + proxy /api ──┐
+        │                                          ▼
+        │                                   [api] FastAPI (sans torch)
+        │                                     │      │
+        │                          enqueue RQ │      └──▶ [db] PostgreSQL
+        │                                     ▼
+        │                            [redis] ◀── [worker] RQ + moteur ML (src/)
+        │                                              │  CamemBERT / ONNX int8
+        ▼                                              ▼
+   build React (Vite)                  volumes : models (RO) · uploads · output
+                          Aucun trafic réseau sortant (offline strict)
+```
+
+- **`web`** : nginx, sert le build React et proxifie `/api` (en-têtes de sécurité, CSP).
+- **`api`** : FastAPI/uvicorn — auth, RBAC, orchestration des lots, KPI, admin. **Sans torch** (démarrage léger).
+- **`worker`** : RQ — exécute le pipeline ML lourd (réutilise le moteur `src/` du POC).
+- **`db`** : PostgreSQL (utilisateurs, lots, **résultats anonymisés**, corrections, audit, config).
+- **`redis`** : file de jobs.
+- Package partagé **`app/common`** (engine SQLAlchemy + modèles ORM) importé par `api` **et** `worker` → schéma unique, pas de duplication.
+- Tant qu'aucun modèle CamemBERT n'est déposé, un **classifieur stub** (heuristique, sans torch) rend l'app démontrable de bout en bout.
+
+## 3. Pile technique
+
+| Couche | Technologies |
 |---|---|
-| **Python** | 3.10 ou supérieur |
-| **GPU** | Non requis (entraînement et inférence sur CPU) |
-| **Espace disque** | ~3 Go (CamemBERT ~450 Mo, dépendances torch/onnx, modèles fine-tunés) |
-| **RAM** | 8 Go recommandés |
-| **Internet** | Requis UNE seule fois (`setup_models.py`), puis tout fonctionne hors ligne |
+| Front | React 18 + TypeScript + Vite ; **design system maison** (tokens CSS, 0 dépendance UI) |
+| API | FastAPI, uvicorn, SQLAlchemy 2, Alembic, argon2, JWT (cookie httpOnly) |
+| Worker / ML | RQ + Redis ; **CamemBERT** (HuggingFace Transformers), **ONNX Runtime int8** (optimum), scikit-learn (signaux), spaCy (NER d'anonymisation) |
+| Données | PostgreSQL 16, openpyxl (Excel) |
+| Infra | Docker Compose (5 services), nginx, offline strict |
 
----
-
-## 3. Installation
-
-> **Python 3.10 ou 3.11 recommandé** (3.12 OK). Sur 3.9 ça fonctionne grâce aux
-> versions épinglées, mais 3.11 est le plus fiable. **Mettez pip à jour d'abord**
-> (le pip bundlé des vieux Python provoque une résolution extrêmement lente).
-
-```bash
-# Depuis la racine du projet (cultura-verbatim-classifier/)
-python -m venv .venv
-source .venv/bin/activate                 # Windows : .venv\Scripts\activate
-python -m pip install --upgrade pip       # IMPORTANT (résolveur moderne)
-
-pip install --prefer-binary -r requirements.txt
-python -m spacy download fr_core_news_sm  # modèle NER français (anonymisation)
-```
-
-Installations **séparées** (recommandé pour aller vite) :
-
-```bash
-# (a) Validation rapide SANS torch (~150 Mo, <2 min) : suffit pour valider la plomberie
-pip install --prefer-binary -r requirements-core.txt
-python -m spacy download fr_core_news_sm
-python scripts/validate_pipeline.py       # bout-en-bout sur les vrais .xlsx, sans modèle
-
-# (b) Notebooks (optionnel)
-pip install --prefer-binary -r requirements-notebooks.txt
-```
-
-### Dépannage installation
-
-| Symptôme | Cause | Solution |
-|---|---|---|
-| `No module named numpy` en lançant un script | venv vide (deps pas installées) | Lancer le `pip install` ci-dessus d'abord |
-| pip tourne >10 min, télécharge des dizaines de versions de `notebook`/`networkx`/`spacy` | résolveur pip ancien + méta-paquet `jupyter` + spaCy non compilable en py3.9 | `Ctrl+C`, puis `python -m pip install --upgrade pip` et réinstaller avec `requirements.txt` à jour (spaCy épinglé 3.7.x, jupyter sorti du coeur) |
-| `No matching distribution found for thinc>=8.3.12` | spaCy 3.8 (thinc sans wheel py3.9) | déjà corrigé : `requirements.txt` épingle `spacy>=3.7,<3.8` |
-| Résolution lente malgré tout | gros graphe torch+optimum | ajouter `--prefer-binary` (évite les builds source) |
-
----
-
-## 4. Premier lancement (avec internet)
-
-Télécharge CamemBERT et le modèle spaCy **une seule fois** et les stocke en
-local (`data/models/camembert-base/`). Toutes les exécutions suivantes sont
-hors ligne.
-
-```bash
-python scripts/setup_models.py
-```
-
----
-
-## 5. Entraînement
-
-```bash
-python scripts/run_training.py            # pipeline complet (~2-4 h sur CPU)
-python scripts/run_training.py --smoke    # validation rapide (sous-échantillon, ~minutes)
-python scripts/run_training.py --skip-onnx   # sans export ONNX
-```
-
-Enchaîne : `prepare_dataset` → classification niv.1 + niv.2 → sentiment →
-signaux → export **ONNX int8** → évaluation. Les modèles sont versionnés avec
-horodatage (`data/models/<modèle>/<AAAAMMJJ_HHMMSS>/`, pointeur `CURRENT`).
-
-> **Note sur les données simulées** : sur les 7 000 verbatims simulés, les F1
-> obtenus seront plus élevés que sur données réelles (verbatims parfois répétés).
-> Cela valide que le **pipeline** fonctionne, pas que le modèle est prêt pour la
-> production. Les seuils cibles du cahier des charges visent les données réelles.
-
----
-
-## 6. Évaluation
-
-Le rapport (`data/processed/eval_report.json` + impression console) couvre :
-
-- **niv.1** : F1 macro / micro / weighted, F1 par thème, top-1 accuracy,
-  matrice de confusion (heatmap ASCII).
-- **niv.2** : F1 macro et accuracy *à niv.1 connu* (qualité intrinsèque de la
-  tête niv.2), F1 par sous-thème.
-- **Précision hiérarchique** : `P(niv1 correct)`, `P(niv2 | niv1 correct)`,
-  `P(niv1 correct mais niv2 faux)`, jointe.
-- **Sentiment** : accuracy + F1 par classe.
-- **Signaux** : précision / rappel / F1 / AUC-ROC (le rappel est prioritaire
-  pour la rupture client).
-- **Taux de revue humaine** selon le seuil de confiance.
-
-Critères de réussite (données réelles) : F1-macro niv.1 ≥ 0,70 ; F1-macro niv.2
-≥ 0,60 ; accuracy sentiment ≥ 0,75 ; **rappel rupture ≥ 0,80** ; taux de revue
-≤ 15 % ; < 2 s / verbatim CPU.
-
----
-
-## 7. Traitement mensuel
-
-```bash
-python scripts/run_monthly_batch.py \
-  --mdtc        data/raw/mdtc_juillet2026.xlsx \
-  --mopinion    data/raw/mopinion_juillet2026.xlsx \
-  --output      data/output/classifications_juillet2026.csv \
-  --seuil_revue 0.70
-```
-
-Produit le CSV enrichi **et** `revue_humaine_juillet2026.csv` (cas incertains),
-puis affiche un résumé (volumes, durée, top thèmes, signaux, taux de revue).
-`--seuil_revue` ajuste le seuil de confiance de routage en revue humaine.
-
----
-
-## 8. Ajouter un nouveau thème (réentraînement trimestriel)
-
-L'architecture est conçue pour qu'ajouter un **sous-thème niv.2** ne nécessite
-aucune refonte du pipeline :
-
-1. **Éditer le référentiel** `data/raw/taxonomy_cultura_poc.json` : ajouter le
-   nouveau `niv2` sous le bon `niv1` (ou ajouter un nouveau bloc `niv1`).
-2. **Labelliser** des exemples du nouveau sous-thème dans
-   `historique_labels_poc.xlsx` (viser ≥ 50 exemples ; un avertissement est émis
-   sous 30).
-3. **Réentraîner** :
-   ```bash
-   python scripts/run_training.py
-   ```
-   `prepare_dataset` régénère automatiquement les encodeurs (l'ordre des classes
-   dérive de la taxonomie), recalcule les pondérations de classes rares, et les
-   modèles niv.1 / niv.2 sont réentraînés avec la nouvelle dimension de sortie.
-4. **Vérifier** le `eval_report.json` (F1 du nouveau sous-thème) avant mise en
-   production.
-
-Aucune modification de code n'est requise : la taxonomie est l'unique source de
-vérité, et la contrainte hiérarchique (masquage niv.2) s'adapte automatiquement.
-
----
-
-## 9. Fichiers de sortie
-
-Le CSV enrichi conserve **toutes les colonnes d'origine** et ajoute :
-
-| Colonne | Type | Description |
-|---|---|---|
-| `verbatim_analysé` | str | Texte nettoyé et anonymisé utilisé pour la prédiction |
-| `nb_themes` | int | Nombre de thèmes détectés (1 ou 2 ; 0 si non classifiable) |
-| `theme1_niv1` | str | Grande thématique principale |
-| `theme1_niv2` | str | Sous-thématique principale |
-| `theme1_sentiment` | str | Positif / Neutre / Négatif |
-| `theme1_score_confiance` | float | Score 0–1 du thème principal |
-| `theme2_niv1` | str | Grande thématique secondaire (vide si `nb_themes`=1) |
-| `theme2_niv2` | str | Sous-thématique secondaire (vide si `nb_themes`=1) |
-| `theme2_sentiment` | str | Vide si `nb_themes`=1 |
-| `theme2_score_confiance` | float | Score 0–1 du thème secondaire |
-| `signal_rupture_client` | bool | Intention explicite de ne plus acheter |
-| `signal_churn` | bool | Risque de churn détecté |
-| `signal_insatisfaction_forte` | bool | Insatisfaction forte (note ≤ 3 + sentiment négatif) |
-| `confidence_globale` | float | Score synthétique 0–1 |
-| `revue_humaine_requise` | bool | True si `confidence_globale < seuil_revue` |
-
-Un second fichier `revue_humaine_*.csv` contient les verbatims sous le seuil,
-triés par confiance croissante.
-
----
-
-## 10. Architecture technique
-
-```
-                         ┌─────────────────────────────┐
-  mdtc_*.xlsx  ─────────▶│  loader.py                  │  (2 schémas distincts,
-  mopinion_*.xlsx ──────▶│  extraction texte principal │   colonnes préservées)
-                         └──────────────┬──────────────┘
-                                        ▼
-                         ┌─────────────────────────────┐
-                         │  anonymizer.py  (PII AVANT   │  EMAIL/TEL/COMMANDE (regex)
-                         │  tout traitement)            │  + NOMS (spaCy NER + stoplist)
-                         └──────────────┬──────────────┘
-                                        ▼
-                         ┌─────────────────────────────┐
-                         │  cleaner.py (NFKC, emojis,   │  filtre longueur min/max
-                         │  espaces, lowercase config)  │
-                         └──────────────┬──────────────┘
-                                        ▼
-        ┌───────────────────────────────────────────────────────────────┐
-        │                    predictor.py (inférence)                    │
-        │                                                                │
-        │  CamemBERT niv.1 ──▶ sigmoïdes (20)  ─┐  seuil + top-2          │
-        │  (multi-label, ONNX int8)             │                        │
-        │                                       ▼                        │
-        │  CamemBERT niv.2 ──▶ softmax (67) ─▶ MASQUAGE hiérarchique ─▶   │
-        │  (multi-classes)                      (enfants du niv.1)       │
-        │                                                                │
-        │  CamemBERT sentiment ──▶ softmax (3)   [+préfixe satisfaction] │
-        │                                                                │
-        │  CamemBERT (gelé) ─▶ embeddings ─▶ 3× LogReg (rupture/churn/   │
-        │                                     insatisfaction)            │
-        │                                                                │
-        │  ─▶ build_output(): seuils, confiance globale, revue humaine   │
-        └───────────────────────────────┬───────────────────────────────┘
-                                         ▼
-              exporter.py (CSV enrichi)  +  human_review_queue.py (CSV revue)
-```
-
-**Choix d'architecture** (détaillés dans `train_classifier.py`,
-`train_signals.py`, `modeling/architecture.py`) :
-- niv.1 multi-label + niv.2 multi-classes 67 voies **masqué** par la hiérarchie
-  à l'inférence → zéro sortie hors-référentiel, et réentraînement simple.
-- Têtes HuggingFace **standard** → export **ONNX int8** trivial via `optimum`.
-- Signaux = LogReg sur embeddings **gelés** (robuste aux ~0,4 % de positifs de
-  rupture ; seuil calibré sur la validation pour viser un rappel ≥ 0,80).
-
----
-
-## 11. Confidentialité & RGPD
-
-| Garantie | Mise en œuvre |
-|---|---|
-| **Anonymisation avant traitement** | `anonymizer.py` masque les PII (e-mails, téléphones, n° de commande par regex ; noms propres par NER spaCy) **avant** toute tokenisation, à l'entraînement **comme** à l'inférence. |
-| **Aucune PII dans les modèles** | Les textes sont anonymisés avant d'entrer dans CamemBERT ; les poids ne contiennent donc aucune donnée brute. |
-| **Pas de sortie de données du SI** | Aucun appel réseau après `setup_models.py`. Inférence 100 % locale (CPU). |
-| **Journalisation** | Le nombre d'entités PII masquées est journalisé à chaque lot (sans exposer les valeurs). |
-| **Réversibilité nulle** | Les PII sont remplacées par des jetons neutres (`[NOM]`, `[EMAIL]`, `[TEL]`, `[COMMANDE]`) — non réversibles. |
-| **Faux positifs NER maîtrisés** | Une liste de vocabulaire métier (Livraison, Colis, Site…) empêche le masquage de termes non personnels, préservant le signal thématique. |
-
-> Les fichiers `data/processed/` et `data/output/` (qui peuvent contenir des
-> verbatims) sont exclus du versionnement (`.gitignore`). En production,
-> exclure également `data/raw/`.
-
----
-
-## Structure du projet
+## 4. Structure du dépôt
 
 ```
 cultura-verbatim-classifier/
-├── config/config.yaml            # tous les hyperparamètres et seuils
-├── data/{raw,processed,models,output}/
-├── src/
-│   ├── utils/        config, taxonomie (contrainte hiérarchique), features
-│   ├── preprocessing/ loader, cleaner, anonymizer
-│   ├── modeling/     architecture partagée train↔inférence, ONNX, embeddings
-│   ├── training/     prepare_dataset, dataset, trainer, train_{classifier,sentiment,signals}
-│   ├── inference/    predictor, batch_processor, human_review_queue
-│   ├── evaluation/   evaluate (rapport complet)
-│   └── output/       exporter (CSV enrichi)
-├── scripts/          setup_models, run_training, run_monthly_batch, validate_pipeline
-└── notebooks/        01_exploration, 02_training_demo, 03_inference_demo
+├── src/                    # Moteur ML du POC (réutilisé par le worker)
+│   ├── preprocessing/      # loader Excel, nettoyage, anonymisation (PII)
+│   ├── modeling/           # architecture, export ONNX int8
+│   ├── training/           # prepare_dataset, train_{classifier,sentiment,signals}
+│   ├── inference/          # predictor (build_output = logique de décision pure)
+│   └── utils/              # config, taxonomie (hiérarchie contrainte)
+├── app/
+│   ├── api/                # service FastAPI (routes, core, migrations Alembic)
+│   ├── worker/             # service RQ (tâches, registre de modèles, classifieurs)
+│   ├── common/             # package partagé : DB + modèles ORM + rétention
+│   ├── web/                # front React/TS (ui/ design system, pages, styles)
+│   └── tests/              # recettes V1 / V3 (torch-free, SQLite)
+├── scripts/                # setup_models, run_training, validate_pipeline,
+│                           # make_demo_data, package_app, restore_app
+├── config/config.yaml      # hyperparamètres, seuils, mapping colonnes (source unique)
+├── data/                   # raw (entrée), models (RO), processed, output, uploads
+├── docs/                   # cahier des charges, plans, guides, recettes, passation
+└── docker-compose.yml
 ```
 
-## Reproductibilité
+## 5. Démarrage rapide (Docker)
 
-`SEED = 42` fixé partout (`random`, `numpy`, `torch`). Modèles horodatés.
-Configuration entièrement externalisée dans `config/config.yaml`.
+```bash
+cp .env.example .env          # éditer SECRET_KEY, ADMIN_PASSWORD, POSTGRES_PASSWORD
+docker compose up --build
+```
+→ **http://localhost:8080** (admin initial créé depuis `.env`). Détails et dépannage :
+[`docs/EXPLOITATION.md`](docs/EXPLOITATION.md). Guide utilisateur :
+[`docs/GUIDE_UTILISATEUR.md`](docs/GUIDE_UTILISATEUR.md).
+
+## 6. Le moteur ML (entraînement)
+
+L'entraînement est une opération **CLI maîtrisée** (jamais automatique en prod),
+nécessitant l'environnement ML complet (`pip install -r requirements.txt`) et internet
+**une seule fois** (téléchargement de `camembert-base`).
+
+```bash
+python scripts/setup_models.py            # 1 fois, avec internet (modèles de base en local)
+python scripts/run_training.py --smoke    # validation rapide de la chaîne (minutes)
+python scripts/run_training.py            # entraînement réel (CPU, plusieurs heures)
+```
+Produit `data/models/{classifier_niv1,classifier_niv2,sentiment,signals}/<version>/`
+(+ ONNX int8) et `data/processed/eval_report.json`. Dépôt → `docker compose restart worker`
+→ activation dans l'UI (Administration → Modèles). Détail complet :
+[`docs/GUIDE_ENTRAINEMENT.md`](docs/GUIDE_ENTRAINEMENT.md).
+
+Validation **sans torch** (stub) et jeu de démo synthétique :
+```bash
+python scripts/make_demo_data.py
+python scripts/validate_pipeline.py --mdtc data/demo/mdtc_demo.xlsx --mopinion data/demo/mopinion_demo.xlsx
+```
+
+## 7. Données & RGPD
+
+- **Anonymisation PII en tête de pipeline** (e-mails, téléphones, n° de commande, noms via NER) → marqueurs `[EMAIL]`, `[TEL]`, `[COMMANDE]`, `[NOM]`.
+- La base ne stocke **que le texte anonymisé** (`verbatim_analyse`) ; jamais le brut.
+- **Rétention** configurable (défaut 13 mois) + **purge** auto (démarrage worker) et manuelle (admin).
+- **Classes contraintes** : toute prédiction respecte la hiérarchie de `taxonomy_cultura_poc.json` (un niv.2 appartient à un seul niv.1).
+
+## 8. Sécurité
+
+- Mots de passe **argon2** ; session **cookie httpOnly** ; **anti-bruteforce** (verrouillage après 5 échecs).
+- **RBAC appliqué côté API** (rôles Analyste / Admin), pas seulement dans l'UI.
+- **CORS** verrouillé localhost ; en-têtes nginx (CSP stricte, `X-Frame-Options: DENY`, `nosniff`).
+- Secrets hors dépôt (`.env` gitignoré) ; modèles montés **lecture seule**.
+
+## 9. Transmission / sauvegarde
+
+Déplacer l'app **hors-ligne** vers un autre poste **en conservant l'historique** :
+```bash
+bash scripts/package_app.sh    # bundle : images + dump PostgreSQL + volumes + manifeste
+# sur la cible : bash restore_app.sh (restaure + vérifie l'intégrité)
+```
+Voir [`docs/TRANSMISSION.md`](docs/TRANSMISSION.md).
+
+## 10. Tests & recettes
+
+Recettes **torch-free** (SQLite, classifieur stub), reproductibles hors ligne :
+```bash
+python app/tests/recette_v1.py   # conformité V1 (garde-fous §10 + DoD §11) -> 48/48
+python app/tests/recette_v3.py   # ajouts V3 (annulation, reprise, ops, mot de passe) -> 13/13
+```
+Front : `cd app/web && npx tsc --noEmit && npm run build`.
+
+## 11. Documentation
+
+Tout est dans [`docs/`](docs/). Point d'entrée : **[`docs/PASSATION.md`](docs/PASSATION.md)**.
+Cahier des charges, plans (V1/V2/V3), guides (utilisateur, entraînement, exploitation,
+transmission), charte UI, recettes, suivi des lots.
+
+## 12. Versions
+
+- **V1** — application fonctionnelle (auth, ingestion, traitement async, résultats/exports, revue, dashboards, admin/RGPD).
+- **V2** — couche design UI/UX (design system turquoise Cultura, navigation latérale, vue lot à onglets).
+- **V3** (`v3.0`) — « POC avancée » : moteur ML prouvé, transmission avec historique, robustesse (annulation/reprise), exploitation, passation.
+- **Reste** : run d'entraînement réel + mesure d'un lot ~11k **< 1 h** (DoD §11). Trajectoire : V1.1 (SSO Entra ID, serveur multi-utilisateur), V2 (MLOps depuis l'UI).
+
+---
+
+*Projet interne Cultura / eXalt — usage confidentiel.*
