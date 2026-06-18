@@ -16,7 +16,9 @@
 | L5 | Revue humaine & corrections | ✅ Fait (validé PO) | `lot/5` (mergé) |
 | L6 | Tableaux de bord & KPI | ✅ Fait (validé PO) | `lot/6` (mergé) |
 | L7 | Historique, audit, config & rétention (+ graphe thème×sentiment) | ✅ Fait (validé PO) | `lot/7` (mergé) |
-| L8 | Durcissement, RGPD, perf, recette V1 | ⏸️ En attente de validation | `lot/8-durcissement` |
+| L8 | Durcissement, RGPD, perf, recette V1 | ✅ Fait (validé PO) | `lot/8` (mergé) |
+
+> 🎉 **V1 complète (L0→L8) mergée sur `main` le 2026-06-18.** Seul reliquat DoD §11 #4 : mesurer un lot ~11k **< 1 h** au dépôt du modèle CamemBERT réel (chemin technique en place).
 
 ---
 
@@ -146,7 +148,7 @@ Critères d'acceptation :
 
 **Validation automatisée** : test E2E FastAPI/SQLite **14/14 OK** (crosstab lot+global, config get/patch/validation, purge, audit des actions clés, RBAC analyste→403).
 **Validation PO le 2026-06-18** : stack reconstruite (`down -v` + `up --build`, migration 0005 appliquée), traitement de lot, page Administration et graphe thème×sentiment validés sur le poste.
-## L8 — Durcissement, RGPD, perf, recette V1 ⏸️ (lot final)
+## L8 — Durcissement, RGPD, perf, recette V1 ✅ (validé PO le 2026-06-18 — V1 complète)
 
 **Objectif** : clore la V1 — sécurité, conformité RGPD/offline, performance, recette §11, documentation.
 
