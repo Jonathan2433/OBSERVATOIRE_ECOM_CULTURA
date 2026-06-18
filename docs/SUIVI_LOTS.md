@@ -36,6 +36,18 @@ Réf. : [CHARTE_UI_V2.md](CHARTE_UI_V2.md) · [PLAN_V2_DESIGN.md](PLAN_V2_DESIGN
 
 > 🎨 **V2 (couche design) complète (D0→D7) mergée sur `main` le 2026-06-18.** Design-tokens turquoise Cultura (1 fichier), 13 composants `src/ui/` + AppShell + onglets ; toutes les pages habillées + vue lot à onglets. Aucune dépendance runtime ajoutée (offline strict). Recette V1 **48/48** (zéro régression).
 
+## Phase V3 — Finalisation « POC avancée »
+Réf. : [PLAN_V3.md](PLAN_V3.md). Périmètre validé : moteur ML CamemBERT prouvé de bout en bout, transmission conteneurisée avec historique, robustesse des traitements, exploitation & passation. Garde-fous : offline strict, 0 PII, taxonomie, recette V1 48/48 à chaque lot.
+
+| Lot | Intitulé | Statut | Branche |
+|---|---|---|---|
+| T1 | Chaîne ML fiabilisée + smoke test + jeu de démo + guide entraînement | ⬜ | — |
+| T2 | Run réel CamemBERT + perf 11k<1h (jalon PO) | ⬜ | — |
+| P1 | Transmission : packaging & restauration avec historique | ⬜ | — |
+| R1 | Robustesse traitements (annulation, reprise des jobs) | ⬜ | — |
+| X1 | Exploitation (KPI ops) & changement de mot de passe | ⬜ | — |
+| F1 | Dossier de passation + recette V3 + tag v3.0 | ⬜ | — |
+
 ---
 
 ## L0 — Socle projet & conteneurisation ✅ (validé PO le 2026-06-17 — accueil affiché, DB/Redis OK)
