@@ -49,3 +49,6 @@ app/web/node_modules/
 app/web/dist/
 data/uploads/
 data/logs/
+
+# Jeu de démo généré (reproductible via scripts/make_demo_data.py)
+data/demo/
