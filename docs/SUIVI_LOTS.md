@@ -29,8 +29,8 @@ Réf. : [CHARTE_UI_V2.md](CHARTE_UI_V2.md) · [PLAN_V2_DESIGN.md](PLAN_V2_DESIGN
 | D1 | AppShell (sidebar + topbar + fil d'Ariane) + Connexion + Accueil | ✅ Fait (validé PO) | `design/1` (mergé) |
 | D2 | Lots & ingestion (liste, FileDropzone, détail/progression) | ✅ Fait (validé PO) | `design/2` (mergé) |
 | D3 | Résultats & exports (filtres chips, Table, Drawer) | ✅ Fait (validé PO) | `design/3` (mergé) |
-| D4 | Revue humaine (mode focus + raccourcis) | ⏸️ En attente de validation | `design/4-revue` |
-| D5 | Tableaux de bord & dataviz (StatCards, charts, alertes seuils) | ⬜ | — |
+| D4 | Revue humaine (mode focus + raccourcis) | ✅ Fait (validé PO) | `design/4` (mergé) |
+| D5 | Tableaux de bord & dataviz (StatCards, charts, alertes seuils) | ⏸️ En attente de validation | `design/5-dashboards` |
 | D6 | Administration & comptes (Tabs, Dialogs, tables) | ⬜ | — |
 | D7 | Finition, accessibilité AA & recette UI | ⬜ | — |
 
