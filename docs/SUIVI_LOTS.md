@@ -20,6 +20,20 @@
 
 > 🎉 **V1 complète (L0→L8) mergée sur `main` le 2026-06-18.** Seul reliquat DoD §11 #4 : mesurer un lot ~11k **< 1 h** au dépôt du modèle CamemBERT réel (chemin technique en place).
 
+## Phase V2 — Couche design UI/UX
+Réf. : [CHARTE_UI_V2.md](CHARTE_UI_V2.md) · [PLAN_V2_DESIGN.md](PLAN_V2_DESIGN.md). Choix validés : design-tokens CSS maison (zéro dépendance, offline), palette turquoise Cultura ajustable, refonte complète desktop-first. Garde-fou : **aucune régression** (build + `tsc` + recette V1 48/48 à chaque lot).
+
+| Lot | Intitulé | Statut | Branche |
+|---|---|---|---|
+| D0 | Fondations : tokens, reset/global, primitives, vitrine `/design` | 🟦 En cours | `design/0-fondations` |
+| D1 | AppShell (sidebar + topbar + fil d'Ariane) + Connexion + Accueil | ⬜ | — |
+| D2 | Lots & ingestion (liste, FileDropzone, détail/progression) | ⬜ | — |
+| D3 | Résultats & exports (filtres chips, Table, Drawer) | ⬜ | — |
+| D4 | Revue humaine (mode focus + raccourcis) | ⬜ | — |
+| D5 | Tableaux de bord & dataviz (StatCards, charts, alertes seuils) | ⬜ | — |
+| D6 | Administration & comptes (Tabs, Dialogs, tables) | ⬜ | — |
+| D7 | Finition, accessibilité AA & recette UI | ⬜ | — |
+
 ---
 
 ## L0 — Socle projet & conteneurisation ✅ (validé PO le 2026-06-17 — accueil affiché, DB/Redis OK)
