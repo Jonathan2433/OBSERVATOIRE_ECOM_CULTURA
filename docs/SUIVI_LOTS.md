@@ -27,8 +27,8 @@ Réf. : [CHARTE_UI_V2.md](CHARTE_UI_V2.md) · [PLAN_V2_DESIGN.md](PLAN_V2_DESIGN
 |---|---|---|---|
 | D0 | Fondations : tokens, reset/global, primitives, vitrine `/design` | ✅ Fait (validé PO) | `design/0` (mergé) |
 | D1 | AppShell (sidebar + topbar + fil d'Ariane) + Connexion + Accueil | ✅ Fait (validé PO) | `design/1` (mergé) |
-| D2 | Lots & ingestion (liste, FileDropzone, détail/progression) | ⏸️ En attente de validation | `design/2-lots` |
-| D3 | Résultats & exports (filtres chips, Table, Drawer) | ⬜ | — |
+| D2 | Lots & ingestion (liste, FileDropzone, détail/progression) | ✅ Fait (validé PO) | `design/2` (mergé) |
+| D3 | Résultats & exports (filtres chips, Table, Drawer) | ⏸️ En attente de validation | `design/3-resultats` |
 | D4 | Revue humaine (mode focus + raccourcis) | ⬜ | — |
 | D5 | Tableaux de bord & dataviz (StatCards, charts, alertes seuils) | ⬜ | — |
 | D6 | Administration & comptes (Tabs, Dialogs, tables) | ⬜ | — |
