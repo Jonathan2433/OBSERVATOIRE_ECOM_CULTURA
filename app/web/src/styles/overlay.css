@@ -1,0 +1,52 @@
+/* =============================================================================
+ *  overlay.css — Drawer, chips de filtre, barre d'outils, liste descriptive.
+ * ========================================================================== */
+
+/* --- Barre d'outils de filtres --- */
+.ui-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); }
+.ui-toolbar__sep { width: 1px; align-self: stretch; background: var(--cu-border); margin: 0 var(--sp-1); }
+
+/* --- Chip / filtre activable --- */
+.ui-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border-radius: var(--r-pill);
+  border: 1px solid var(--cu-border-strong); background: var(--cu-surface);
+  color: var(--cu-text-muted); font-size: var(--fs-sm); cursor: pointer;
+  transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
+}
+.ui-chip:hover { border-color: var(--cu-primary-300); }
+.ui-chip.is-on { background: var(--cu-primary-50); border-color: var(--cu-primary-300); color: var(--cu-primary-700); font-weight: var(--fw-medium); }
+
+/* --- Drawer (panneau latéral) --- */
+.ui-overlay {
+  position: fixed; inset: 0; z-index: var(--z-drawer);
+  background: rgba(20, 24, 29, 0.4); display: flex; justify-content: flex-end;
+  animation: ui-fade 0.15s ease;
+}
+.ui-drawer {
+  width: min(520px, 94vw); height: 100%; background: var(--cu-surface);
+  box-shadow: var(--sh-3); display: flex; flex-direction: column;
+  animation: ui-slide-in 0.18s ease;
+}
+.ui-drawer__header {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--cu-border);
+}
+.ui-drawer__title { font-size: var(--fs-md); font-weight: var(--fw-semibold); flex: 1; }
+.ui-drawer__close {
+  border: none; background: transparent; color: var(--cu-text-muted);
+  font-size: 22px; line-height: 1; padding: 2px 8px; border-radius: var(--r-sm);
+}
+.ui-drawer__close:hover { background: var(--cu-neutral-100); color: var(--cu-text); }
+.ui-drawer__body { padding: var(--sp-5); overflow-y: auto; }
+@keyframes ui-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ui-slide-in { from { transform: translateX(24px); } to { transform: translateX(0); } }
+
+/* --- Liste descriptive (clé / valeur) --- */
+.ui-dl { display: grid; grid-template-columns: 140px 1fr; gap: var(--sp-2) var(--sp-4); }
+.ui-dl dt { color: var(--cu-text-muted); font-size: var(--fs-sm); }
+.ui-dl dd { margin: 0; }
+.ui-verbatim {
+  background: var(--cu-surface-alt); border: 1px solid var(--cu-border);
+  border-radius: var(--r-md); padding: var(--sp-3) var(--sp-4); line-height: var(--lh-base);
+}
