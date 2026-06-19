@@ -9,9 +9,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db import Base
 
-MODEL_KIND_STUB = "stub"       # classifieur heuristique (démonstration / avant entraînement)
-MODEL_KIND_REAL = "real"       # modèle CamemBERT entraîné, déposé dans /data/models
-MODEL_KIND_OLLAMA = "ollama"   # moteur LLM local servi par Ollama (V4)
+MODEL_KIND_STUB = "stub"           # classifieur heuristique (démonstration / avant entraînement)
+MODEL_KIND_REAL = "real"           # modèle CamemBERT entraîné, déposé dans /data/models
+MODEL_KIND_LMSTUDIO = "lmstudio"   # moteur LLM local servi par LM Studio (V4)
 
 
 class ModelVersion(Base):

@@ -69,7 +69,7 @@ Sortie attendue :
   aucun `docker pull`.
 - **Sauvegarde courante** : le même `package_app.sh` sert de **sauvegarde complète** datée.
   Voir aussi la sauvegarde DB seule dans [EXPLOITATION.md](EXPLOITATION.md) §5.
-- **Moteur Ollama (V4)** : c'est une **dépendance hôte hors bundle Docker**. Si le poste
-  cible doit l'utiliser, y installer Ollama et **`ollama pull <modèle>`** séparément
-  (cf. [EXPLOITATION.md](EXPLOITATION.md) §4 bis), puis `OLLAMA_ENABLED=true` dans `.env`.
-  Le bundle transféré fonctionne **sans** Ollama (moteur désactivé par défaut → CamemBERT/stub).
+- **Moteur LM Studio (V4)** : c'est une **dépendance hôte hors bundle Docker**. Si le poste
+  cible doit l'utiliser, y installer LM Studio, **charger un modèle** et démarrer le serveur
+  local (cf. [EXPLOITATION.md](EXPLOITATION.md) §4 bis), puis `LMSTUDIO_ENABLED=true` dans `.env`.
+  Le bundle transféré fonctionne **sans** LM Studio (moteur désactivé par défaut → CamemBERT/stub).

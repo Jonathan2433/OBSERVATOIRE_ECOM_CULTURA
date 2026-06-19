@@ -148,18 +148,18 @@ paths:
   eval_report: "data/processed/eval_report.json"
 
 # -----------------------------------------------------------------------------
-#  Moteur Ollama (V4) — second moteur LLM local, optionnel.
+#  Moteur LM Studio (V4) — second moteur LLM local, optionnel.
 #  Désactivé par défaut : si enabled=false, l'app se comporte exactement comme
-#  avant (moteurs CamemBERT/stub uniquement). Ollama tourne en NATIF sur l'hôte
-#  (GPU Metal) ; le worker l'appelle via host.docker.internal. La donnée reste
-#  sur la machine (anonymisée en amont). Voir docs/SPEC_V4_OLLAMA.md.
+#  avant (moteurs CamemBERT/stub uniquement). LM Studio tourne en NATIF sur l'hôte
+#  (GPU Metal) et expose une API compatible OpenAI ; le worker l'appelle via
+#  host.docker.internal:1234/v1. La donnée reste sur la machine (anonymisée en
+#  amont). Voir docs/SPEC_V4_LMSTUDIO.md.
 # -----------------------------------------------------------------------------
-ollama:
+lmstudio:
   enabled: false
-  base_url: "http://host.docker.internal:11434"
-  model: "qwen2.5:7b"            # modèle pré-pull (offline), bon FR + sortie structurée
+  base_url: "http://host.docker.internal:1234/v1"   # API compatible OpenAI de LM Studio
+  model: "local-model"           # id du modèle chargé dans LM Studio (cf. /v1/models)
   temperature: 0.1
-  num_ctx: 8192                  # doit contenir taxonomie + verbatim
   timeout_s: 120
   max_parallel: 4               # concurrence des appels (utilisée en O4)
   retries: 2

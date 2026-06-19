@@ -1,26 +1,26 @@
-"""Moteur de classification « Ollama » (LLM local) — V4.
+"""Moteur de classification « LM Studio » (LLM local) — V4.
 
 Troisième backend de prédiction, alternatif à CamemBERT (`VerbatimPredictor`) et
 au stub heuristique (`StubPredictor`). Expose **exactement la même interface**
 (`anonymizer`, `cleaner`, `batch_size`, `signal_thresholds`, `sentiment_labels`,
 `predict_cleaned_batch`) afin que la tâche worker reste agnostique du moteur.
 
-Principes (cf. docs/SPEC_V4_OLLAMA.md) :
-  - Appel HTTP local à Ollama (``host.docker.internal:11434``) via la **stdlib**
-    (``urllib``) — aucune dépendance supplémentaire, compatible offline strict.
+LM Studio sert une API **compatible OpenAI** (``/v1/chat/completions``,
+``/v1/models``) sur l'hôte (port 1234 par défaut), avec accélération GPU Metal.
+
+Principes (cf. docs/SPEC_V4_LMSTUDIO.md) :
+  - Appel HTTP local via la **stdlib** (``urllib``) — aucune dépendance ajoutée,
+    compatible offline strict ; le worker joint LM Studio sur ``host.docker.internal``.
   - Le texte transmis est **déjà anonymisé + nettoyé** (étapes amont inchangées).
-  - Sortie **JSON contrainte par schéma** puis **revalidée contre la taxonomie** :
-    jamais de couple niv1/niv2 hors référentiel.
+  - Sortie **JSON contrainte par schéma** (``response_format``) puis **revalidée
+    contre la taxonomie** : jamais de couple niv1/niv2 hors référentiel.
   - Repli : couple invalide → sentinelle ``fallback_theme`` (« Autre / Non classé »,
     label propre au moteur, **non ajouté** à la taxonomie partagée pour ne pas
     casser CamemBERT) + **revue humaine forcée**.
 
 NOTE testabilité : la logique de décision est isolée en fonctions PURES
-(``build_ollama_prompt``, ``map_ollama_response``) testables sans torch/spaCy.
+(``build_llm_prompt``, ``map_llm_response``) testables sans torch/spaCy.
 La classe ne fait que câbler ces fonctions au client HTTP et aux étapes amont.
-
-O1 = adaptateur + mapping de base. Le durcissement du prompt et des garde-fous
-de confiance est traité en O2.
 """
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from src.preprocessing import Anonymizer, TextCleaner
 from src.utils import Taxonomy, resolve_path
 
-logger = logging.getLogger("worker.ollama")
+logger = logging.getLogger("worker.lmstudio")
 
 # Gabarit de sortie — MIROIR de src.inference.predictor.OUTPUT_COLUMNS.
 # Répliqué ici volontairement pour rester torch-free (predictor.py importe torch).
@@ -50,10 +50,11 @@ OUTPUT_COLUMNS = [
 
 FALLBACK_THEME_DEFAULT = "Autre / Non classé"
 
-# Schéma JSON imposé à Ollama (sortie structurée). Garantit la forme ; la
-# validité métier (taxonomie) est vérifiée ensuite côté worker.
-OLLAMA_FORMAT_SCHEMA: Dict[str, Any] = {
+# Schéma JSON imposé au LLM (sortie structurée OpenAI/LM Studio). Garantit la
+# forme ; la validité métier (taxonomie) est vérifiée ensuite côté worker.
+LLM_OUTPUT_SCHEMA: Dict[str, Any] = {
     "type": "object",
+    "additionalProperties": False,
     "properties": {
         "themes": {
             "type": "array",
@@ -86,8 +87,8 @@ OLLAMA_FORMAT_SCHEMA: Dict[str, Any] = {
 }
 
 
-class OllamaError(RuntimeError):
-    """Échec d'appel au service Ollama (réseau, HTTP, timeout). Fait échouer le lot."""
+class LMStudioError(RuntimeError):
+    """Échec d'appel au service LM Studio (réseau, HTTP, timeout). Fait échouer le lot."""
 
 
 # --------------------------------------------------------------------------- #
@@ -109,7 +110,7 @@ def empty_output(cleaned_text: str) -> Dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
-#  PROMPT (pur) — versionné via cfg.ollama.prompt_version
+#  PROMPT (pur) — versionné via cfg.lmstudio.prompt_version
 # --------------------------------------------------------------------------- #
 PROMPT_VERSION_DEFAULT = "v1"
 
@@ -122,11 +123,11 @@ def _taxonomy_block(taxonomy: Taxonomy) -> str:
     return "\n".join(lines)
 
 
-def build_ollama_prompt(
+def build_llm_prompt(
     taxonomy: Taxonomy, cleaned_text: str, satisfaction: Optional[float],
     fallback_theme: str = FALLBACK_THEME_DEFAULT, version: str = PROMPT_VERSION_DEFAULT,
 ) -> Dict[str, str]:
-    """Construit (system, user) pour l'API /api/chat. Fonction pure et versionnée.
+    """Construit (system, user) pour /v1/chat/completions. Fonction pure et versionnée.
 
     Le numéro de version est tracé dans le system prompt pour reproductibilité.
     Pour faire évoluer la formulation, ajouter une branche ``version`` ici.
@@ -199,7 +200,7 @@ def _canon_map(labels: List[str]) -> Dict[str, str]:
     return {_norm(l): l for l in labels}
 
 
-def map_ollama_response(
+def map_llm_response(
     raw: Dict[str, Any],
     cleaned_text: str,
     satisfaction: Optional[float],
@@ -216,9 +217,9 @@ def map_ollama_response(
     if not cleaned_text or str(cleaned_text).strip() == "":
         return empty_output(cleaned_text)
 
-    oll = cfg.get("ollama", {}) or {}
-    guards = oll.get("guardrails", {}) or {}
-    fallback_theme = oll.get("fallback_theme", FALLBACK_THEME_DEFAULT)
+    engine = cfg.get("lmstudio", {}) or {}
+    guards = engine.get("guardrails", {}) or {}
+    fallback_theme = engine.get("fallback_theme", FALLBACK_THEME_DEFAULT)
     repli_cap = float(guards.get("repli_confidence_max", 0.40))
     bad_json_cap = float(guards.get("invalid_json_confidence_max", 0.30))
     review_on_conflict = bool(guards.get("review_on_sentiment_conflict", True))
@@ -334,13 +335,13 @@ def _assemble(
 
 
 # --------------------------------------------------------------------------- #
-#  Client HTTP (stdlib) — appel Ollama /api/chat
+#  Client HTTP (stdlib) — API compatible OpenAI de LM Studio
 # --------------------------------------------------------------------------- #
-def call_ollama_chat(
+def call_llm_chat(
     base_url: str, model: str, system: str, user: str,
-    temperature: float, num_ctx: int, timeout_s: float,
+    temperature: float, timeout_s: float,
 ) -> Dict[str, Any]:
-    """Appelle Ollama /api/chat en sortie structurée. Lève OllamaError sur échec."""
+    """Appelle LM Studio /v1/chat/completions en sortie structurée. Lève LMStudioError sur échec."""
     payload = {
         "model": model,
         "messages": [
@@ -348,10 +349,13 @@ def call_ollama_chat(
             {"role": "user", "content": user},
         ],
         "stream": False,
-        "format": OLLAMA_FORMAT_SCHEMA,
-        "options": {"temperature": temperature, "num_ctx": num_ctx},
+        "temperature": temperature,
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {"name": "verbatim_classification", "strict": False, "schema": LLM_OUTPUT_SCHEMA},
+        },
     }
-    url = base_url.rstrip("/") + "/api/chat"
+    url = base_url.rstrip("/") + "/chat/completions"
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         url, data=data, headers={"Content-Type": "application/json"}, method="POST")
@@ -359,44 +363,47 @@ def call_ollama_chat(
         with urllib.request.urlopen(req, timeout=timeout_s) as resp:  # noqa: S310 (URL locale)
             body = json.loads(resp.read().decode("utf-8"))
     except urllib.error.URLError as exc:
-        raise OllamaError(f"Ollama injoignable ({url}) : {exc}") from exc
+        raise LMStudioError(f"LM Studio injoignable ({url}) : {exc}") from exc
     except (TimeoutError, OSError) as exc:
-        raise OllamaError(f"Ollama timeout/erreur réseau ({url}) : {exc}") from exc
+        raise LMStudioError(f"LM Studio timeout/erreur réseau ({url}) : {exc}") from exc
 
-    content = (body.get("message") or {}).get("content", "")
+    try:
+        content = body["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError):
+        content = ""
     try:
         return json.loads(content)
     except (json.JSONDecodeError, TypeError) as exc:
         # JSON malformé malgré le schéma : la couche mapping appliquera le repli.
-        logger.warning("Réponse Ollama non-JSON : %s", exc)
+        logger.warning("Réponse LM Studio non-JSON : %s", exc)
         return {}
 
 
-def list_ollama_models(base_url: str, timeout_s: float = 5) -> List[str]:
-    """Liste les modèles installés sur Ollama (GET /api/tags). Lève OllamaError si injoignable."""
-    url = base_url.rstrip("/") + "/api/tags"
+def list_llm_models(base_url: str, timeout_s: float = 5) -> List[str]:
+    """Liste les modèles chargés sur LM Studio (GET /v1/models). Lève LMStudioError si injoignable."""
+    url = base_url.rstrip("/") + "/models"
     req = urllib.request.Request(url, method="GET")
     try:
         with urllib.request.urlopen(req, timeout=timeout_s) as resp:  # noqa: S310 (URL locale)
             body = json.loads(resp.read().decode("utf-8"))
     except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
-        raise OllamaError(f"Ollama injoignable ({url}) : {exc}") from exc
-    return [m.get("name", "") for m in body.get("models", []) if isinstance(m, dict)]
+        raise LMStudioError(f"LM Studio injoignable ({url}) : {exc}") from exc
+    return [m.get("id", "") for m in body.get("data", []) if isinstance(m, dict)]
 
 
 def model_is_installed(model: str, installed: List[str]) -> bool:
-    """Vrai si ``model`` figure parmi les tags installés (tolérant au suffixe :latest)."""
+    """Vrai si ``model`` figure parmi les modèles chargés (tolérant au suffixe)."""
     if model in installed:
         return True
     base = model.split(":")[0]
-    return any(n == base or n.startswith(base + ":") for n in installed)
+    return any(n == base or n.startswith(base) for n in installed)
 
 
 # --------------------------------------------------------------------------- #
 #  Prédicteur (orchestration)
 # --------------------------------------------------------------------------- #
-class OllamaPredictor:
-    """Backend LLM local — interface compatible VerbatimPredictor / StubPredictor."""
+class LMStudioPredictor:
+    """Backend LLM local (LM Studio) — interface compatible VerbatimPredictor / StubPredictor."""
 
     def __init__(self, cfg: Dict[str, Any]):
         self.cfg = cfg
@@ -410,42 +417,41 @@ class OllamaPredictor:
             "churn": cfg["thresholds"]["signal_churn"],
             "insatisfaction": cfg["thresholds"]["signal_insatisfaction"],
         }
-        oll = cfg.get("ollama", {}) or {}
-        self.base_url = oll.get("base_url", "http://host.docker.internal:11434")
-        self.model = oll.get("model", "qwen2.5:7b")
-        self.temperature = float(oll.get("temperature", 0.1))
-        self.num_ctx = int(oll.get("num_ctx", 8192))
-        self.timeout_s = float(oll.get("timeout_s", 120))
-        self.fallback_theme = oll.get("fallback_theme", FALLBACK_THEME_DEFAULT)
-        self.prompt_version = str(oll.get("prompt_version", PROMPT_VERSION_DEFAULT))
-        self.max_parallel = max(1, int(oll.get("max_parallel", 4)))
-        self.retries = max(0, int(oll.get("retries", 2)))
-        logger.info("Moteur Ollama : modèle=%s url=%s prompt=%s parallèle=%d",
+        engine = cfg.get("lmstudio", {}) or {}
+        self.base_url = engine.get("base_url", "http://host.docker.internal:1234/v1")
+        self.model = engine.get("model", "local-model")
+        self.temperature = float(engine.get("temperature", 0.1))
+        self.timeout_s = float(engine.get("timeout_s", 120))
+        self.fallback_theme = engine.get("fallback_theme", FALLBACK_THEME_DEFAULT)
+        self.prompt_version = str(engine.get("prompt_version", PROMPT_VERSION_DEFAULT))
+        self.max_parallel = max(1, int(engine.get("max_parallel", 4)))
+        self.retries = max(0, int(engine.get("retries", 2)))
+        logger.info("Moteur LM Studio : modèle=%s url=%s prompt=%s parallèle=%d",
                     self.model, self.base_url, self.prompt_version, self.max_parallel)
 
     def _predict_one(self, cleaned_text: str, satisfaction: Optional[float]) -> Dict[str, Any]:
-        """Prédit un verbatim, avec retries sur erreur transitoire Ollama.
+        """Prédit un verbatim, avec retries sur erreur transitoire LM Studio.
 
-        Une erreur de connexion persistante (après ``retries``) lève OllamaError :
+        Une erreur de connexion persistante (après ``retries``) lève LMStudioError :
         elle remonte jusqu'à la tâche worker qui marque le lot 'failed' (échec propre).
-        Une réponse JSON malformée n'est PAS une OllamaError (gérée par le repli).
+        Une réponse JSON malformée n'est PAS une LMStudioError (gérée par le repli).
         """
         if not cleaned_text or cleaned_text.strip() == "":
             return empty_output(cleaned_text)
-        prompt = build_ollama_prompt(
+        prompt = build_llm_prompt(
             self.taxonomy, cleaned_text, satisfaction, self.fallback_theme, self.prompt_version)
-        last_exc: Optional[OllamaError] = None
+        last_exc: Optional[LMStudioError] = None
         for attempt in range(self.retries + 1):
             try:
-                raw = call_ollama_chat(
+                raw = call_llm_chat(
                     self.base_url, self.model, prompt["system"], prompt["user"],
-                    self.temperature, self.num_ctx, self.timeout_s)
-                return map_ollama_response(
+                    self.temperature, self.timeout_s)
+                return map_llm_response(
                     raw, cleaned_text, satisfaction, self.taxonomy, self.cfg, self.sentiment_labels)
-            except OllamaError as exc:
+            except LMStudioError as exc:
                 last_exc = exc
                 if attempt < self.retries:
-                    logger.warning("Appel Ollama échoué (tentative %d/%d) : %s",
+                    logger.warning("Appel LM Studio échoué (tentative %d/%d) : %s",
                                    attempt + 1, self.retries + 1, exc)
         raise last_exc  # type: ignore[misc]
 
@@ -456,7 +462,7 @@ class OllamaPredictor:
 
         Concurrence BORNÉE (``max_parallel``) : appels I/O-bound parallélisés via
         un pool de threads (urllib relâche le GIL en attente réseau). L'ordre des
-        résultats est préservé. **Fail-fast** : la première OllamaError (Ollama
+        résultats est préservé. **Fail-fast** : la première LMStudioError (service
         injoignable) annule les appels en attente et est propagée -> lot 'failed'.
         """
         if satisfactions is None:
@@ -474,7 +480,7 @@ class OllamaPredictor:
             try:
                 for fut in as_completed(futures):
                     results[futures[fut]] = fut.result()
-            except OllamaError:
+            except LMStudioError:
                 for f in futures:           # échec propre : ne pas démarrer le reste
                     f.cancel()
                 raise

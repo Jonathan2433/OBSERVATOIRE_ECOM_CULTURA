@@ -200,28 +200,28 @@ Critères d'acceptation :
 
 ---
 
-## V4 — Second moteur « Ollama » (LLM local) ✅ *(développé, recette 50/50)*
+## V4 — Second moteur « LM Studio » (LLM local) ✅ *(développé, recette 50/50)*
 
-**Objectif** : ajouter un moteur de classification alternatif (LLM local via Ollama),
-sélectionnable côté admin, **sans rien changer** à l'app actuelle (analyste, API, schéma
-DB, moteurs CamemBERT/stub). Spec : [SPEC_V4_OLLAMA.md](SPEC_V4_OLLAMA.md).
+**Objectif** : ajouter un moteur de classification alternatif (LLM local via LM Studio,
+API compatible OpenAI), sélectionnable côté admin, **sans rien changer** à l'app actuelle
+(analyste, API, schéma DB, moteurs CamemBERT/stub). Spec : [SPEC_V4_LMSTUDIO.md](SPEC_V4_LMSTUDIO.md).
 
 | Lot | Contenu | État |
 |---|---|---|
-| **O1** | Adaptateur `OllamaPredictor` (interface commune, client `urllib`), dispatch `kind="ollama"`, `MODEL_KIND_OLLAMA`, bloc config `ollama:`, surcharge env, `extra_hosts` compose | ✅ |
-| **O2** | Prompt versionné + injection taxo + schéma `format` strict + **matching tolérant** (casse/accents) + repli sentinelle `Autre / Non classé` + garde-fous (2 plafonds, conflit de sentiment, dé-doublonnage) | ✅ |
-| **O3** | `_detect_ollama` (ping `/api/tags` + présence modèle), sync registre, `available` dynamique, onglet **Modèles** (badge, motif d'indisponibilité, Re-scanner = test de connexion) | ✅ |
-| **O4** | Concurrence bornée (`max_parallel`, pool de threads, ordre préservé), retries transitoires, **fail-fast / échec propre** si Ollama down, annulation coopérative respectée | ✅ |
+| **O1** | Adaptateur `LMStudioPredictor` (interface commune, client `urllib`), dispatch `kind="lmstudio"`, `MODEL_KIND_LMSTUDIO`, bloc config `lmstudio:`, surcharge env, `extra_hosts` compose | ✅ |
+| **O2** | Prompt versionné + injection taxo + `response_format` JSON schema + **matching tolérant** (casse/accents) + repli sentinelle `Autre / Non classé` + garde-fous (2 plafonds, conflit de sentiment, dé-doublonnage) | ✅ |
+| **O3** | `_detect_lmstudio` (ping `/v1/models` + présence modèle), sync registre, `available` dynamique, onglet **Modèles** (badge, motif d'indisponibilité, Re-scanner = test de connexion) | ✅ |
+| **O4** | Concurrence bornée (`max_parallel`, pool de threads, ordre préservé), retries transitoires, **fail-fast / échec propre** si LM Studio down, annulation coopérative respectée | ✅ |
 | **O5** | Doc (EXPLOITATION §4 bis, TRANSMISSION, guide), recette V4, tag `v4.0` | ✅ |
 
-**Garde-fous tenus** : `enabled: false` par défaut (app inchangée sans Ollama) ; **0 migration
+**Garde-fous tenus** : `enabled: false` par défaut (app inchangée sans LM Studio) ; **0 migration
 DB, 0 nouvelle route API, 0 changement front analyste/CamemBERT/stub** ; anonymisation amont
 conservée ; jamais hors taxonomie (revalidation + repli) ; aucun flux hors machine.
 
-**Validation automatisée** : `app/tests/recette_v4.py` **50/50 OK** (Ollama mocké, torch-free),
+**Validation automatisée** : `app/tests/recette_v4.py` **50/50 OK** (LM Studio mocké, torch-free),
 non-régression **V1 48/48** + **V3 13/13**, `tsc`/build front OK, `docker compose config` OK.
-**Reste (recette PO sur poste)** : installer Ollama natif + `ollama pull`, activer le moteur,
-traiter un lot et juger la qualité/latence vs CamemBERT (SLA détendue assumée).
+**Reste (recette PO sur poste)** : installer LM Studio, charger un modèle + démarrer le serveur
+local, activer le moteur, traiter un lot et juger la qualité/latence vs CamemBERT (SLA détendue).
 
 ---
 
@@ -237,7 +237,7 @@ traiter un lot et juger la qualité/latence vs CamemBERT (SLA détendue assumée
 | D6 | 2026-06-17 | `api` reste **léger (sans torch)** ; tout le ML est dans le `worker` | Démarrage rapide de l'API, séparation des responsabilités, image API petite |
 | D7 | 2026-06-17 | Package partagé `common` (DB + modèles ORM) + classifieur **stub** activé tant qu'aucun modèle réel n'est déposé | `api` et `worker` partagent le schéma sans duplication ; l'app est démontrable avant l'entraînement CamemBERT |
 | D8 | 2026-06-18 | Recette V1 = **script unique** `app/tests/recette_v1.py` (SQLite + stub, hors ligne), exécuté en venv de recette ; non embarqué dans les images | Reproductible et torch-free ; le code étant réparti api/worker, un venv de recette couvre les deux couches d'un coup (48/48) ; les sections skippent proprement selon l'environnement |
-| D9 | 2026-06-19 | V4 : moteur Ollama branché sur l'unique point `get_predictor` (3ᵉ `kind`), **additif**, derrière `ollama.enabled=false` | « Ne touche à rien » : 0 migration, 0 route, 0 changement analyste ; l'app reste identique sans Ollama |
-| D10 | 2026-06-19 | Ollama **natif sur l'hôte** (GPU Metal), worker via `host.docker.internal` ; client en **stdlib `urllib`** | Perf (Metal >> CPU-in-Docker) ; zéro dépendance ajoutée ; boucle locale → RGPD/offline préservés |
+| D9 | 2026-06-19 | V4 : moteur LM Studio branché sur l'unique point `get_predictor` (3ᵉ `kind`), **additif**, derrière `lmstudio.enabled=false` | « Ne touche à rien » : 0 migration, 0 route, 0 changement analyste ; l'app reste identique sans LM Studio |
+| D10 | 2026-06-19 | LM Studio **natif sur l'hôte** (GPU Metal, API compatible OpenAI `/v1`), worker via `host.docker.internal:1234/v1` ; client en **stdlib `urllib`** | Perf Metal ; zéro dépendance ajoutée ; boucle locale → RGPD/offline préservés. *(NB : choix initial Ollama corrigé en LM Studio — adaptateur générique, bascule à faible coût.)* |
 | D11 | 2026-06-19 | Confiance **auto-déclarée** par le LLM mais **durcie** par garde-fous déterministes (matching tolérant, 2 plafonds, repli `Autre / Non classé`, conflit de sentiment) | Pas de multi-échantillonnage (coûteux) ; routage revue fiable malgré une confiance LLM non calibrée ; jamais hors taxonomie |
-| D12 | 2026-06-19 | SLA perf **détendue** + **échec propre** si Ollama down (pas de repli silencieux) | LLM = 1 appel/verbatim (lent) assumé ; ne pas fausser la comparaison de qualité par un repli caché |
+| D12 | 2026-06-19 | SLA perf **détendue** + **échec propre** si LM Studio down (pas de repli silencieux) | LLM = 1 appel/verbatim (lent) assumé ; ne pas fausser la comparaison de qualité par un repli caché |

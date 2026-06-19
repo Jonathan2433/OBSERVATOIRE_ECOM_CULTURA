@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from common.db import SessionLocal
-from common.models import MODEL_KIND_OLLAMA, MODEL_KIND_REAL, MODEL_KIND_STUB, ModelVersion
+from common.models import MODEL_KIND_LMSTUDIO, MODEL_KIND_REAL, MODEL_KIND_STUB, ModelVersion
 
 logger = logging.getLogger("worker.registry")
 
@@ -61,29 +61,29 @@ def _detect_real(cfg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return {"label": label, "path": str(resolve_path(cfg, cfg["paths"]["models"])), "metrics": metrics}
 
 
-def _detect_ollama(cfg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Sonde le moteur Ollama (V4). None si le moteur est désactivé en config.
+def _detect_lmstudio(cfg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Sonde le moteur LM Studio (V4). None si le moteur est désactivé en config.
 
     Si activé, renvoie toujours une entrée (pour que l'admin la voie) avec un drapeau
-    ``available`` dynamique : vrai uniquement si Ollama répond ET que le modèle est
-    installé. Le « test de connexion » côté UI = relancer cette synchro (Re-scanner).
+    ``available`` dynamique : vrai uniquement si LM Studio répond ET que le modèle est
+    chargé. Le « test de connexion » côté UI = relancer cette synchro (Re-scanner).
     """
-    oll = cfg.get("ollama", {}) or {}
-    if not oll.get("enabled"):
+    lms = cfg.get("lmstudio", {}) or {}
+    if not lms.get("enabled"):
         return None
 
-    model = oll.get("model", "qwen2.5:7b")
-    base_url = oll.get("base_url", "http://host.docker.internal:11434")
-    label = f"ollama:{model}"
+    model = lms.get("model", "local-model")
+    base_url = lms.get("base_url", "http://host.docker.internal:1234/v1")
+    label = f"lmstudio:{model}"
     reachable, present = False, False
     try:
-        from .ollama_predictor import list_ollama_models, model_is_installed
+        from .lmstudio_predictor import list_llm_models, model_is_installed
 
-        installed = list_ollama_models(base_url, timeout_s=5)  # ping court (test de connexion)
+        installed = list_llm_models(base_url, timeout_s=5)  # ping court (test de connexion)
         reachable = True
         present = model_is_installed(model, installed)
-    except Exception as exc:  # OllamaError ou import : injoignable
-        logger.info("Ollama non disponible (%s) : %s", base_url, exc)
+    except Exception as exc:  # LMStudioError ou import : injoignable
+        logger.info("LM Studio non disponible (%s) : %s", base_url, exc)
 
     return {
         "label": label,
@@ -94,7 +94,7 @@ def _detect_ollama(cfg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 
 def sync_registry(cfg: Dict[str, Any]) -> None:
-    """Met à jour le registre en base : stub + modèle réel + moteur Ollama (si activé)."""
+    """Met à jour le registre en base : stub + modèle réel + moteur LM Studio (si activé)."""
     with SessionLocal() as db:
         stub = db.query(ModelVersion).filter_by(label=STUB_LABEL).one_or_none()
         if stub is None:
@@ -125,23 +125,23 @@ def sync_registry(cfg: Dict[str, Any]) -> None:
         else:
             logger.info("Aucun modèle CamemBERT détecté -> mode stub.")
 
-        # --- Moteur Ollama (V4) : enregistré uniquement si activé en config -----
-        ollama = _detect_ollama(cfg)
-        if ollama:
-            existing = db.query(ModelVersion).filter_by(label=ollama["label"]).one_or_none()
+        # --- Moteur LM Studio (V4) : enregistré uniquement si activé en config --
+        lmstudio = _detect_lmstudio(cfg)
+        if lmstudio:
+            existing = db.query(ModelVersion).filter_by(label=lmstudio["label"]).one_or_none()
             if existing is None:
                 db.add(ModelVersion(
-                    kind=MODEL_KIND_OLLAMA, label=ollama["label"], path=ollama["path"],
-                    metrics=ollama["metrics"], available=ollama["available"],
+                    kind=MODEL_KIND_LMSTUDIO, label=lmstudio["label"], path=lmstudio["path"],
+                    metrics=lmstudio["metrics"], available=lmstudio["available"],
                 ))
             else:
-                existing.available = ollama["available"]
-                existing.path = ollama["path"]
-                existing.metrics = ollama["metrics"]
-            logger.info("Moteur Ollama %s : disponible=%s", ollama["label"], ollama["available"])
+                existing.available = lmstudio["available"]
+                existing.path = lmstudio["path"]
+                existing.metrics = lmstudio["metrics"]
+            logger.info("Moteur LM Studio %s : disponible=%s", lmstudio["label"], lmstudio["available"])
         else:
-            # Moteur désactivé : neutraliser toute entrée Ollama résiduelle.
-            for row in db.query(ModelVersion).filter_by(kind=MODEL_KIND_OLLAMA).all():
+            # Moteur désactivé : neutraliser toute entrée LM Studio résiduelle.
+            for row in db.query(ModelVersion).filter_by(kind=MODEL_KIND_LMSTUDIO).all():
                 row.available = False
 
         # Garantir au moins un modèle actif.

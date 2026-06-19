@@ -105,14 +105,14 @@ class StubPredictor:
 
 
 def get_predictor(active_model, cfg: Dict[str, Any]):
-    """Fabrique le bon backend selon le modèle actif (réel CamemBERT, Ollama, ou stub)."""
+    """Fabrique le bon backend selon le modèle actif (réel CamemBERT, LM Studio, ou stub)."""
     kind = getattr(active_model, "kind", None)
     if kind == "real":
         from src.inference.predictor import VerbatimPredictor
 
         return VerbatimPredictor(cfg)
-    if kind == "ollama":
-        from .ollama_predictor import OllamaPredictor
+    if kind == "lmstudio":
+        from .lmstudio_predictor import LMStudioPredictor
 
-        return OllamaPredictor(cfg)
+        return LMStudioPredictor(cfg)
     return StubPredictor(cfg)

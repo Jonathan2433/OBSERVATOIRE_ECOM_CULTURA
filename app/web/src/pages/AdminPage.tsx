@@ -14,15 +14,15 @@ function fmtBytes(n: number): string {
   return `${(n / 1024 ** i).toFixed(i ? 1 : 0)} ${u[i]}`;
 }
 
-const KIND_LABEL: Record<string, string> = { real: "CamemBERT", ollama: "Ollama (LLM)", stub: "Démo" };
-const kindTone = (k: string) => (k === "real" ? "success" : k === "ollama" ? "info" : "neutral");
+const KIND_LABEL: Record<string, string> = { real: "CamemBERT", lmstudio: "LM Studio (LLM)", stub: "Démo" };
+const kindTone = (k: string) => (k === "real" ? "success" : k === "lmstudio" ? "info" : "neutral");
 
-/** Motif d'indisponibilité d'un moteur Ollama (sinon null). */
-function ollamaReason(m: ModelVersion): string | null {
-  if (m.kind !== "ollama" || m.available) return null;
+/** Motif d'indisponibilité d'un moteur LM Studio (sinon null). */
+function lmStudioReason(m: ModelVersion): string | null {
+  if (m.kind !== "lmstudio" || m.available) return null;
   const r = (m.metrics ?? {}) as { reachable?: boolean; model_present?: boolean };
-  if (!r.reachable) return "Ollama injoignable";
-  if (!r.model_present) return "modèle non installé (ollama pull)";
+  if (!r.reachable) return "LM Studio injoignable";
+  if (!r.model_present) return "modèle non chargé dans LM Studio";
   return "indisponible";
 }
 
@@ -120,8 +120,8 @@ export default function AdminPage() {
         <Card title="Modèles" actions={<Button variant="secondary" size="sm" onClick={rescan}>Re-scanner</Button>}>
           <p className="ui-muted" style={{ marginBottom: "var(--sp-3)" }}>
             Après avoir déposé un modèle entraîné dans <code>data/models</code> et redémarré le worker,
-            re-scannez puis activez la version souhaitée. Le moteur <b>Ollama (LLM)</b> n'apparaît que
-            s'il est activé en configuration ; pour lui, <b>Re-scanner</b> teste la connexion à Ollama.
+            re-scannez puis activez la version souhaitée. Le moteur <b>LM Studio (LLM)</b> n'apparaît que
+            s'il est activé en configuration ; pour lui, <b>Re-scanner</b> teste la connexion à LM Studio.
           </p>
           {models.length === 0 ? (
             <EmptyState title="Aucun modèle détecté" description="Déposez un modèle puis re-scannez." />
@@ -138,7 +138,7 @@ export default function AdminPage() {
                       <td><Badge tone={kindTone(m.kind)}>{KIND_LABEL[m.kind] ?? m.kind}</Badge></td>
                       <td>
                         {m.available ? <Badge tone="success" dot>oui</Badge> : <Badge tone="danger">non</Badge>}
-                        {ollamaReason(m) && <span className="ui-muted" style={{ marginLeft: 6 }}>{ollamaReason(m)}</span>}
+                        {lmStudioReason(m) && <span className="ui-muted" style={{ marginLeft: 6 }}>{lmStudioReason(m)}</span>}
                       </td>
                       <td>{m.is_active ? <Badge tone="primary" dot>actif</Badge> : <span className="ui-muted">—</span>}</td>
                       <td>{m.metrics && Object.keys(m.metrics).length > 0 ? <Badge tone="info">disponibles</Badge> : <span className="ui-muted">—</span>}</td>

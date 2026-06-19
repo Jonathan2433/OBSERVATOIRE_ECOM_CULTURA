@@ -26,11 +26,11 @@ def build_worker_cfg() -> Dict[str, Any]:
     cfg["paths"]["eval_report"] = f"{processed}/eval_report.json"
     cfg["model"]["local_model_dir"] = os.environ.get("CAMEMBERT_DIR", f"{models}/camembert-base")
 
-    # --- Moteur Ollama (V4) : surcharge env du bloc ollama de config.yaml -------
-    oll = cfg.setdefault("ollama", {})
-    enabled_env = os.environ.get("OLLAMA_ENABLED")
+    # --- Moteur LM Studio (V4) : surcharge env du bloc lmstudio de config.yaml --
+    lms = cfg.setdefault("lmstudio", {})
+    enabled_env = os.environ.get("LMSTUDIO_ENABLED")
     if enabled_env is not None:
-        oll["enabled"] = enabled_env.strip().lower() in ("1", "true", "yes", "on")
-    oll["base_url"] = os.environ.get("OLLAMA_BASE_URL", oll.get("base_url", "http://host.docker.internal:11434"))
-    oll["model"] = os.environ.get("OLLAMA_MODEL", oll.get("model", "qwen2.5:7b"))
+        lms["enabled"] = enabled_env.strip().lower() in ("1", "true", "yes", "on")
+    lms["base_url"] = os.environ.get("LMSTUDIO_BASE_URL", lms.get("base_url", "http://host.docker.internal:1234/v1"))
+    lms["model"] = os.environ.get("LMSTUDIO_MODEL", lms.get("model", "local-model"))
     return cfg
