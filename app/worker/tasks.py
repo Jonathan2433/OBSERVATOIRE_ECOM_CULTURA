@@ -24,6 +24,9 @@ from .model_registry import get_active, sync_registry
 logger = logging.getLogger("worker.tasks")
 
 PROGRESS_CHUNK = 250  # nb de verbatims entre deux mises à jour de progression
+# Moteur LM Studio : appels LLM lents (~1/verbatim) -> commits plus fréquents pour
+# une progression visible et une annulation réactive.
+LMSTUDIO_PROGRESS_CHUNK = 20
 
 
 def ping() -> dict:
@@ -154,6 +157,8 @@ def process_batch_job(batch_id: int) -> dict:
 
         try:
             predictor = get_predictor(active, cfg)
+            # Granularité de progression selon le moteur (LLM = commits fréquents).
+            chunk = LMSTUDIO_PROGRESS_CHUNK if (active is not None and active.kind == "lmstudio") else PROGRESS_CHUNK
             files = batch.source_files or {}
             df = load_for_batch(files.get("mdtc"), files.get("mopinion"), cfg)
             total = len(df)
@@ -168,7 +173,7 @@ def process_batch_job(batch_id: int) -> dict:
             n_review = 0
             n_err = 0
 
-            for start in range(0, total, PROGRESS_CHUNK):
+            for start in range(0, total, chunk):
                 # Annulation coopérative : l'API a pu passer le lot en 'canceled'
                 # (requête fraîche, hors cache de session).
                 if db.query(Batch.status).filter(Batch.id == batch_id).scalar() == "canceled":
@@ -181,9 +186,9 @@ def process_batch_job(batch_id: int) -> dict:
                     db.commit()
                     logger.info("Lot %s annulé en cours (%d/%d traités).", batch_id, start, total)
                     return {"status": "canceled", "n_processed": start}
-                rows = df.iloc[start:start + PROGRESS_CHUNK]
-                raw_chunk = texts[start:start + PROGRESS_CHUNK]
-                sat_chunk = sats[start:start + PROGRESS_CHUNK]
+                rows = df.iloc[start:start + chunk]
+                raw_chunk = texts[start:start + chunk]
+                sat_chunk = sats[start:start + chunk]
 
                 cleaned = []
                 for raw in raw_chunk:
@@ -205,7 +210,7 @@ def process_batch_job(batch_id: int) -> dict:
                     if pred.get("revue_humaine_requise"):
                         n_review += 1
 
-                batch.n_processed = min(start + PROGRESS_CHUNK, total)
+                batch.n_processed = min(start + chunk, total)
                 db.commit()
 
             finished = _now()
