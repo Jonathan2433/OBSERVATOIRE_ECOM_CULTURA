@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from common.db import SessionLocal
-from common.models import MODEL_KIND_REAL, MODEL_KIND_STUB, ModelVersion
+from common.models import MODEL_KIND_OLLAMA, MODEL_KIND_REAL, MODEL_KIND_STUB, ModelVersion
 
 logger = logging.getLogger("worker.registry")
 
@@ -61,8 +61,40 @@ def _detect_real(cfg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return {"label": label, "path": str(resolve_path(cfg, cfg["paths"]["models"])), "metrics": metrics}
 
 
+def _detect_ollama(cfg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Sonde le moteur Ollama (V4). None si le moteur est désactivé en config.
+
+    Si activé, renvoie toujours une entrée (pour que l'admin la voie) avec un drapeau
+    ``available`` dynamique : vrai uniquement si Ollama répond ET que le modèle est
+    installé. Le « test de connexion » côté UI = relancer cette synchro (Re-scanner).
+    """
+    oll = cfg.get("ollama", {}) or {}
+    if not oll.get("enabled"):
+        return None
+
+    model = oll.get("model", "qwen2.5:7b")
+    base_url = oll.get("base_url", "http://host.docker.internal:11434")
+    label = f"ollama:{model}"
+    reachable, present = False, False
+    try:
+        from .ollama_predictor import list_ollama_models, model_is_installed
+
+        installed = list_ollama_models(base_url, timeout_s=5)  # ping court (test de connexion)
+        reachable = True
+        present = model_is_installed(model, installed)
+    except Exception as exc:  # OllamaError ou import : injoignable
+        logger.info("Ollama non disponible (%s) : %s", base_url, exc)
+
+    return {
+        "label": label,
+        "available": bool(reachable and present),
+        "path": f"{model} @ {base_url}",
+        "metrics": {"reachable": reachable, "model_present": present, "model": model},
+    }
+
+
 def sync_registry(cfg: Dict[str, Any]) -> None:
-    """Met à jour le registre en base : stub + modèle réel détecté."""
+    """Met à jour le registre en base : stub + modèle réel + moteur Ollama (si activé)."""
     with SessionLocal() as db:
         stub = db.query(ModelVersion).filter_by(label=STUB_LABEL).one_or_none()
         if stub is None:
@@ -92,6 +124,25 @@ def sync_registry(cfg: Dict[str, Any]) -> None:
             logger.info("Modèle réel détecté : %s", real["label"])
         else:
             logger.info("Aucun modèle CamemBERT détecté -> mode stub.")
+
+        # --- Moteur Ollama (V4) : enregistré uniquement si activé en config -----
+        ollama = _detect_ollama(cfg)
+        if ollama:
+            existing = db.query(ModelVersion).filter_by(label=ollama["label"]).one_or_none()
+            if existing is None:
+                db.add(ModelVersion(
+                    kind=MODEL_KIND_OLLAMA, label=ollama["label"], path=ollama["path"],
+                    metrics=ollama["metrics"], available=ollama["available"],
+                ))
+            else:
+                existing.available = ollama["available"]
+                existing.path = ollama["path"]
+                existing.metrics = ollama["metrics"]
+            logger.info("Moteur Ollama %s : disponible=%s", ollama["label"], ollama["available"])
+        else:
+            # Moteur désactivé : neutraliser toute entrée Ollama résiduelle.
+            for row in db.query(ModelVersion).filter_by(kind=MODEL_KIND_OLLAMA).all():
+                row.available = False
 
         # Garantir au moins un modèle actif.
         if db.query(ModelVersion).filter_by(is_active=True).count() == 0:

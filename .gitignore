@@ -55,3 +55,7 @@ data/demo/
 
 # Bundles de transmission générés (scripts/package_app.sh)
 transmission/
+
+# Environnement ML local + log d entrainement (hors VCS)
+.venv_ml/
+training.log

@@ -148,6 +148,29 @@ paths:
   eval_report: "data/processed/eval_report.json"
 
 # -----------------------------------------------------------------------------
+#  Moteur Ollama (V4) — second moteur LLM local, optionnel.
+#  Désactivé par défaut : si enabled=false, l'app se comporte exactement comme
+#  avant (moteurs CamemBERT/stub uniquement). Ollama tourne en NATIF sur l'hôte
+#  (GPU Metal) ; le worker l'appelle via host.docker.internal. La donnée reste
+#  sur la machine (anonymisée en amont). Voir docs/SPEC_V4_OLLAMA.md.
+# -----------------------------------------------------------------------------
+ollama:
+  enabled: false
+  base_url: "http://host.docker.internal:11434"
+  model: "qwen2.5:7b"            # modèle pré-pull (offline), bon FR + sortie structurée
+  temperature: 0.1
+  num_ctx: 8192                  # doit contenir taxonomie + verbatim
+  timeout_s: 120
+  max_parallel: 4               # concurrence des appels (utilisée en O4)
+  retries: 2
+  prompt_version: "v1"
+  fallback_theme: "Autre / Non classé"   # sentinelle moteur (NON ajoutée à la taxo CamemBERT)
+  guardrails:
+    repli_confidence_max: 0.40           # plafond confiance si couple/sentiment hors taxo
+    invalid_json_confidence_max: 0.30    # plafond confiance si réponse JSON hors-forme
+    review_on_sentiment_conflict: true   # 2 thèmes au sentiment divergent (dont Négatif) -> revue
+
+# -----------------------------------------------------------------------------
 #  Export ONNX + quantization int8 (optimisation CPU)
 # -----------------------------------------------------------------------------
 onnx:
