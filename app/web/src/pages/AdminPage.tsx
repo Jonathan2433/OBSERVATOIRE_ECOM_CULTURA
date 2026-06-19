@@ -1,11 +1,11 @@
 import { useEffect, useState, type FormEvent } from "react";
 import {
-  getAudit, getConfig, getOps, patchConfig, purgeData,
-  type AppConfigValues, type AuditEntry, type OpsKpi,
+  activateModel, getAudit, getConfig, getOps, listModels, patchConfig, purgeData, rescanModels,
+  type AppConfigValues, type AuditEntry, type ModelVersion, type OpsKpi,
 } from "../api";
-import { Button, Card, Dialog, EmptyState, Input, StatCard } from "../ui";
+import { Badge, Button, Card, Dialog, EmptyState, Input, StatCard } from "../ui";
 
-type Tab = "config" | "ops" | "retention" | "audit";
+type Tab = "config" | "modeles" | "ops" | "retention" | "audit";
 
 function fmtBytes(n: number): string {
   if (!n) return "0 o";
@@ -18,6 +18,7 @@ export default function AdminPage() {
   const [tab, setTab] = useState<Tab>("config");
   const [cfg, setCfg] = useState<AppConfigValues | null>(null);
   const [ops, setOps] = useState<OpsKpi | null>(null);
+  const [models, setModels] = useState<ModelVersion[]>([]);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [retention, setRetention] = useState("13");
   const [seuil, setSeuil] = useState("0.50");
@@ -31,6 +32,18 @@ export default function AdminPage() {
       .catch((e) => setError(String(e.message ?? e)));
     getAudit(100).then(setAudit).catch(() => setAudit([]));
     getOps().then(setOps).catch(() => setOps(null));
+    listModels().then(setModels).catch(() => setModels([]));
+  };
+
+  const activate = async (id: number) => {
+    setMsg(null); setError(null);
+    try { await activateModel(id); setMsg("Modèle activé."); refresh(); }
+    catch (err: any) { setError(err?.message ?? "Erreur"); }
+  };
+  const rescan = async () => {
+    setMsg(null); setError(null);
+    try { await rescanModels(); setMsg("Re-scan demandé : le worker détecte les modèles déposés. Rafraîchissez dans quelques secondes."); }
+    catch (err: any) { setError(err?.message ?? "Erreur"); }
   };
   useEffect(() => { refresh(); }, []);
 
@@ -70,6 +83,7 @@ export default function AdminPage() {
 
       <nav className="ui-tabs" aria-label="Sections d'administration">
         {tabBtn("config", "Configuration")}
+        {tabBtn("modeles", "Modèles")}
         {tabBtn("ops", "Exploitation")}
         {tabBtn("retention", "Rétention")}
         {tabBtn("audit", "Journal d'audit")}
@@ -86,6 +100,42 @@ export default function AdminPage() {
                      hint="S'applique aux nouveaux lots ; les lots passés conservent leur seuil." />
               <div><Button type="submit" variant="primary">Enregistrer</Button></div>
             </form>
+          )}
+        </Card>
+      )}
+
+      {tab === "modeles" && (
+        <Card title="Modèles" actions={<Button variant="secondary" size="sm" onClick={rescan}>Re-scanner</Button>}>
+          <p className="ui-muted" style={{ marginBottom: "var(--sp-3)" }}>
+            Après avoir déposé un modèle entraîné dans <code>data/models</code> et redémarré le worker,
+            re-scannez puis activez la version souhaitée.
+          </p>
+          {models.length === 0 ? (
+            <EmptyState title="Aucun modèle détecté" description="Déposez un modèle puis re-scannez." />
+          ) : (
+            <div className="ui-table-wrap">
+              <table className="ui-table">
+                <thead>
+                  <tr><th>Version</th><th>Type</th><th>Disponible</th><th>État</th><th>KPI</th><th></th></tr>
+                </thead>
+                <tbody>
+                  {models.map((m) => (
+                    <tr key={m.id}>
+                      <td>{m.label}</td>
+                      <td><Badge tone={m.kind === "real" ? "success" : "neutral"}>{m.kind}</Badge></td>
+                      <td>{m.available ? <Badge tone="success" dot>oui</Badge> : <Badge tone="danger">non</Badge>}</td>
+                      <td>{m.is_active ? <Badge tone="primary" dot>actif</Badge> : <span className="ui-muted">—</span>}</td>
+                      <td>{m.metrics && Object.keys(m.metrics).length > 0 ? <Badge tone="info">disponibles</Badge> : <span className="ui-muted">—</span>}</td>
+                      <td style={{ textAlign: "right" }}>
+                        {!m.is_active && m.available && (
+                          <Button variant="primary" size="sm" onClick={() => activate(m.id)}>Activer</Button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </Card>
       )}
