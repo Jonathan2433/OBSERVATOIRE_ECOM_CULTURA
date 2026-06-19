@@ -33,4 +33,10 @@ def build_worker_cfg() -> Dict[str, Any]:
         lms["enabled"] = enabled_env.strip().lower() in ("1", "true", "yes", "on")
     lms["base_url"] = os.environ.get("LMSTUDIO_BASE_URL", lms.get("base_url", "http://host.docker.internal:1234/v1"))
     lms["model"] = os.environ.get("LMSTUDIO_MODEL", lms.get("model", "local-model"))
+    mp = os.environ.get("LMSTUDIO_MAX_PARALLEL")
+    if mp:
+        try:
+            lms["max_parallel"] = max(1, int(mp))
+        except ValueError:
+            pass
     return cfg
