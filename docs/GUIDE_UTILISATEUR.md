@@ -107,7 +107,9 @@ n'enregistre rien.
 - **Administration → Journal d'audit** : qui a fait quoi, quand (connexions,
   création de lot, corrections, config, purge, gestion des comptes, activation de modèle).
 - **Modèles** : déposer une nouvelle version dans le volume `data/models` puis
-  l'**activer en un clic** (voir le guide d'exploitation).
+  l'**activer en un clic** (voir le guide d'exploitation). Un **second moteur optionnel**
+  (*Ollama (LLM)*) peut y être activé s'il est configuré : **rien ne change côté analyste**,
+  seules les prédictions des **nouveaux** lots sont produites par le moteur choisi.
 
 ---
 

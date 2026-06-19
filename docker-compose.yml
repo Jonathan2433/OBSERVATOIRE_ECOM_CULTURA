@@ -84,6 +84,12 @@ services:
       UPLOADS_DIR: /data/uploads
       CONFIG_PATH: /app/config/config.yaml
       OMP_NUM_THREADS: ${WORKER_THREADS:-4}
+      # --- Moteur Ollama (V4), optionnel. Défaut : désactivé -> app inchangée. ---
+      OLLAMA_ENABLED: ${OLLAMA_ENABLED:-false}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # joindre Ollama natif sur l'hôte
     depends_on:
       db:
         condition: service_healthy
