@@ -94,13 +94,42 @@ cultura-verbatim-classifier/
 
 ## 5. Démarrage rapide (Docker)
 
+**Prérequis** : [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+(allouer ≥ 8 Go RAM / 4 cœurs) et `git`. Aucune connexion réseau requise après le
+premier `build`.
+
 ```bash
-cp .env.example .env          # éditer SECRET_KEY, ADMIN_PASSWORD, POSTGRES_PASSWORD
-docker compose up --build
+git clone <URL_DU_DEPOT>.git
+cd cultura-verbatim-classifier
+cp .env.example .env          # PUIS éditer .env (voir ci-dessous) ⚠️ obligatoire
+docker compose up --build     # 1re fois : build des images (quelques minutes)
 ```
-→ **http://localhost:8080** (admin initial créé depuis `.env`). Détails et dépannage :
+→ Ouvrir **http://localhost:8080** (exposé **uniquement** sur `127.0.0.1`).
+
+### À éditer dans `.env` avant le 1er démarrage
+| Variable | Rôle |
+|---|---|
+| `POSTGRES_PASSWORD` | Mot de passe de la base — **à figer une fois** (le changer après coup oblige à réinitialiser le volume). |
+| `SECRET_KEY` | Clé de signature des sessions. Générer : `python -c "import secrets; print(secrets.token_urlsafe(48))"`. |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | **Compte administrateur initial** (≥ 12 caractères), créé automatiquement au 1er démarrage. |
+
+### Connexion
+Se connecter avec `ADMIN_USERNAME` / `ADMIN_PASSWORD`. L'admin peut ensuite créer
+d'autres comptes (Analyste / Admin) dans **Utilisateurs** et changer son mot de passe
+dans **Mon compte**.
+
+### Quel moteur de classification ?
+- **Par défaut** : aucun modèle entraîné n'est livré dans le dépôt → l'app tourne en
+  **mode démonstration** (classifieur heuristique *stub*, thèmes approximatifs). Suffisant
+  pour valider l'installation et l'interface.
+- **CamemBERT** (qualité) : entraîner le modèle (§6) puis l'activer (Administration → Modèles).
+- **LM Studio** (LLM local, V4) : installer LM Studio sur l'hôte, charger un modèle,
+  passer `LMSTUDIO_ENABLED=true` dans `.env` ; voir [`docs/EXPLOITATION.md`](docs/EXPLOITATION.md) §4 bis.
+
+Arrêt : `Ctrl+C` puis `docker compose down` (les données persistent). Détails et dépannage :
 [`docs/EXPLOITATION.md`](docs/EXPLOITATION.md). Guide utilisateur :
-[`docs/GUIDE_UTILISATEUR.md`](docs/GUIDE_UTILISATEUR.md).
+[`docs/GUIDE_UTILISATEUR.md`](docs/GUIDE_UTILISATEUR.md). **Transmission via GitHub** :
+[`docs/TRANSMISSION_GITHUB.md`](docs/TRANSMISSION_GITHUB.md).
 
 ## 6. Le moteur ML (entraînement)
 
@@ -167,6 +196,7 @@ transmission), charte UI, recettes, suivi des lots.
 - **V1** — application fonctionnelle (auth, ingestion, traitement async, résultats/exports, revue, dashboards, admin/RGPD).
 - **V2** — couche design UI/UX (design system turquoise Cultura, navigation latérale, vue lot à onglets).
 - **V3** (`v3.0`) — « POC avancée » : moteur ML prouvé, transmission avec historique, robustesse (annulation/reprise), exploitation, passation.
+- **V4** (`v4.0`) — second moteur **LM Studio** (LLM local, API compatible OpenAI), sélectionnable côté admin, additif et désactivé par défaut. Voir [`docs/SPEC_V4_LMSTUDIO.md`](docs/SPEC_V4_LMSTUDIO.md).
 - **Reste** : run d'entraînement réel + mesure d'un lot ~11k **< 1 h** (DoD §11). Trajectoire : V1.1 (SSO Entra ID, serveur multi-utilisateur), V2 (MLOps depuis l'UI).
 
 ---
