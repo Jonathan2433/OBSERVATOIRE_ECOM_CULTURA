@@ -20,7 +20,7 @@ export default function AdminPage() {
   const [ops, setOps] = useState<OpsKpi | null>(null);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [retention, setRetention] = useState("13");
-  const [seuil, setSeuil] = useState("0.70");
+  const [seuil, setSeuil] = useState("0.50");
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmPurge, setConfirmPurge] = useState(false);

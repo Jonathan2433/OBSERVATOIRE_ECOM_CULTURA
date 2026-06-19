@@ -26,7 +26,7 @@ L'écran d'accueil résume l'activité (derniers lots, KPI modèle).
    - **Mopinion** (`.xlsx`) — formulaire du site.
    > Au moins un des deux est requis. Les colonnes obligatoires sont vérifiées :
    > un fichier au mauvais format est **refusé avec un message explicite**.
-3. Régler éventuellement le **seuil de revue** (défaut **0,70**) : en dessous de
+3. Régler éventuellement le **seuil de revue** (défaut **0,50**) : en dessous de
    ce score de confiance, un verbatim part en file de revue.
 4. **Lancer**. Le traitement est **asynchrone** : la barre de progression avance
    (anonymisation → nettoyage → classification), l'interface reste libre.
