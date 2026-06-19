@@ -51,30 +51,29 @@ OUTPUT_COLUMNS = [
 FALLBACK_THEME_DEFAULT = "Autre / Non classé"
 
 # Schéma JSON imposé au LLM (sortie structurée OpenAI/LM Studio). Garantit la
-# forme ; la validité métier (taxonomie) est vérifiée ensuite côté worker.
+# forme ; la validité métier (taxonomie), la limite à 2 thèmes et le plafonnement
+# de confiance sont assurés ENSUITE côté worker (map_llm_response). On reste donc
+# sur le sous-ensemble de JSON-schema supporté par la grammaire de LM Studio
+# (llama.cpp) : type / enum / required / properties — SANS minItems/maxItems/
+# minimum/maximum, qui provoquent un HTTP 500 « grammar » sur LM Studio.
 LLM_OUTPUT_SCHEMA: Dict[str, Any] = {
     "type": "object",
-    "additionalProperties": False,
     "properties": {
         "themes": {
             "type": "array",
-            "minItems": 1,
-            "maxItems": 2,
             "items": {
                 "type": "object",
-                "additionalProperties": False,
                 "properties": {
                     "niv1": {"type": "string"},
                     "niv2": {"type": "string"},
                     "sentiment": {"type": "string", "enum": ["Négatif", "Neutre", "Positif"]},
-                    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                    "confidence": {"type": "number"},
                 },
                 "required": ["niv1", "niv2", "sentiment", "confidence"],
             },
         },
         "signaux": {
             "type": "object",
-            "additionalProperties": False,
             "properties": {
                 "rupture": {"type": "boolean"},
                 "churn": {"type": "boolean"},
@@ -362,6 +361,12 @@ def call_llm_chat(
     try:
         with urllib.request.urlopen(req, timeout=timeout_s) as resp:  # noqa: S310 (URL locale)
             body = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:  # serveur joignable mais erreur (ex. 500 grammaire)
+        try:
+            detail = exc.read().decode("utf-8", "replace")[:300]
+        except Exception:
+            detail = ""
+        raise LMStudioError(f"LM Studio a renvoyé HTTP {exc.code} ({url}) : {detail}") from exc
     except urllib.error.URLError as exc:
         raise LMStudioError(f"LM Studio injoignable ({url}) : {exc}") from exc
     except (TimeoutError, OSError) as exc:
