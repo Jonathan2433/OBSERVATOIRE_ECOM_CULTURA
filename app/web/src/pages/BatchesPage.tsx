@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { createBatch, listBatches, type Batch } from "../api";
+import { createBatch, getMeta, listBatches, type Batch } from "../api";
 import StatusBadge from "../components/StatusBadge";
 import { Button, Card, FileDropzone, InfoTip, Input, ProgressBar } from "../ui";
 
@@ -10,13 +10,15 @@ export default function BatchesPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [label, setLabel] = useState("");
-  const [seuil, setSeuil] = useState(0.7);
+  const [seuil, setSeuil] = useState(0.5);  // remplacé par la valeur de config au montage
   const [mdtc, setMdtc] = useState<File | null>(null);
   const [mopinion, setMopinion] = useState<File | null>(null);
 
   const refresh = () => listBatches().then(setBatches).catch((e) => setError(String(e.message ?? e)));
 
   useEffect(() => {
+    // Seuil par défaut piloté par la config (Administration), pas codé en dur.
+    getMeta().then((m) => setSeuil(m.default_seuil_revue)).catch(() => {});
     refresh();
     const t = setInterval(() => {
       setBatches((prev) => {

@@ -11,7 +11,7 @@ from common.models import AppConfig
 
 DEFAULTS = {
     "retention_months": "13",       # purge RGPD des lots au-delà
-    "default_seuil_revue": "0.70",  # seuil de revue par défaut d'un nouveau lot
+    "default_seuil_revue": "0.50",  # seuil de revue par défaut (calibré sur le modèle réel)
 }
 
 
@@ -45,4 +45,4 @@ def default_seuil_revue(db: Session) -> float:
     try:
         return float(get_value(db, "default_seuil_revue"))
     except (TypeError, ValueError):
-        return 0.70
+        return 0.50

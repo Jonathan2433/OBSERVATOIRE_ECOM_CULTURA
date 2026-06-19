@@ -45,7 +45,7 @@ thresholds:
   signal_rupture: 0.60             # Seuil détection rupture client
   signal_churn: 0.50               # Seuil détection churn
   signal_insatisfaction: 0.50      # Seuil détection insatisfaction forte
-  revue_humaine: 0.70              # confidence_globale < seuil -> revue humaine
+  revue_humaine: 0.50              # confidence_globale < seuil -> revue humaine (calibré sur le modèle réel)
   max_themes: 2                    # Nb max de thèmes retournés par verbatim (scope POC)
 
 # -----------------------------------------------------------------------------
