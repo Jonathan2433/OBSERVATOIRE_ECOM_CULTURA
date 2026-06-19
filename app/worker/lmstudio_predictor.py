@@ -341,11 +341,14 @@ def call_llm_chat(
     temperature: float, timeout_s: float,
 ) -> Dict[str, Any]:
     """Appelle LM Studio /v1/chat/completions en sortie structurée. Lève LMStudioError sur échec."""
+    # Certains modèles (ex. Mistral 7B Instruct) ont un template de chat qui
+    # n'accepte PAS le rôle "system" (« Only user and assistant roles are
+    # supported »). On fusionne donc les consignes dans le message "user" :
+    # universel, compatible avec ou sans support du rôle system.
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
+            {"role": "user", "content": f"{system}\n\n{user}"},
         ],
         "stream": False,
         "temperature": temperature,
