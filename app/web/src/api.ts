@@ -208,8 +208,11 @@ export interface Prediction {
   revue_humaine_requise: boolean;
   model_label?: string | null;
 }
-export const predict = (text: string, satisfaction?: number | null) =>
-  request<Prediction>("/api/predict", { method: "POST", body: JSON.stringify({ text, satisfaction: satisfaction ?? null }) });
+export const predict = (text: string, satisfaction?: number | null, modelId?: number | null) =>
+  request<Prediction>("/api/predict", {
+    method: "POST",
+    body: JSON.stringify({ text, satisfaction: satisfaction ?? null, model_id: modelId ?? null }),
+  });
 
 // --- Revue humaine ---
 export interface TaxonomyTheme { niv1: string; niv2: string[] }

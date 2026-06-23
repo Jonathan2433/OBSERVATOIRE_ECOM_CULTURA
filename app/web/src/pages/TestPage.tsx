@@ -1,24 +1,42 @@
-import { useState, type FormEvent } from "react";
-import { predict, type Prediction } from "../api";
-import { Badge, type BadgeTone, Button, Card, Input, Textarea } from "../ui";
+import { useEffect, useState, type FormEvent } from "react";
+import { listModels, predict, type ModelVersion, type Prediction } from "../api";
+import { Badge, type BadgeTone, Button, Card, Input, Select, Textarea } from "../ui";
 
 function sentimentTone(s?: string | null): BadgeTone {
   return s === "Négatif" ? "danger" : s === "Positif" ? "success" : "neutral";
 }
 
+const KIND_LABEL: Record<string, string> = {
+  real: "CamemBERT", lmstudio: "LM Studio", stub: "Démo", claude: "Claude",
+};
+
+/** Libellé d'une option du sélecteur de moteur (marque Claude « comparaison »). */
+function engineOptionLabel(m: ModelVersion): string {
+  const kind = KIND_LABEL[m.kind] ?? m.kind;
+  const tag = m.kind === "claude" ? " · comparaison" : m.is_active ? " · actif" : "";
+  return `${m.label} (${kind})${tag}`;
+}
+
 export default function TestPage() {
   const [text, setText] = useState("");
   const [sat, setSat] = useState("");
+  const [modelId, setModelId] = useState("");          // "" = modèle actif (auto)
+  const [models, setModels] = useState<ModelVersion[]>([]);
   const [res, setRes] = useState<Prediction | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    listModels().then((m) => setModels(m.filter((x) => x.available))).catch(() => setModels([]));
+  }, []);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null); setRes(null); setBusy(true);
     try {
       const satNum = sat.trim() === "" ? null : Number(sat);
-      setRes(await predict(text.trim(), satNum));
+      const mid = modelId === "" ? null : Number(modelId);
+      setRes(await predict(text.trim(), satNum, mid));
     } catch (err: any) {
       setError(err?.message ?? "Erreur");
     } finally {
@@ -36,7 +54,7 @@ export default function TestPage() {
     <div>
       <div className="page-header">
         <h1 className="page-header__title">Test à la volée</h1>
-        <p className="page-header__sub">Classez un verbatim isolé avec le modèle actif (diagnostic / démonstration). Rien n'est enregistré.</p>
+        <p className="page-header__sub">Classez un verbatim isolé avec le moteur de votre choix (diagnostic / comparaison). Rien n'est enregistré.</p>
       </div>
 
       <div className="ui-stack" style={{ maxWidth: 680 }}>
@@ -44,8 +62,18 @@ export default function TestPage() {
           <form onSubmit={onSubmit} className="ui-stack">
             <Textarea value={text} onChange={(e) => setText(e.target.value)} required rows={4}
                       placeholder="Saisissez un verbatim client…" />
-            <Input label="Note de satisfaction (1–10, optionnel)" type="number" min={1} max={10}
-                   value={sat} onChange={(e) => setSat(e.target.value)} style={{ maxWidth: 120 }} />
+            <div className="ui-row ui-row--wrap" style={{ gap: "var(--sp-3)", alignItems: "flex-end" }}>
+              <Input label="Note de satisfaction (1–10, optionnel)" type="number" min={1} max={10}
+                     value={sat} onChange={(e) => setSat(e.target.value)} style={{ maxWidth: 120 }} />
+              <Select label="Moteur" value={modelId} onChange={(e) => setModelId(e.target.value)}
+                      hint="« Claude » est un moteur de comparaison (non utilisable en production)."
+                      style={{ maxWidth: 320 }}>
+                <option value="">Modèle actif (par défaut)</option>
+                {models.map((m) => (
+                  <option key={m.id} value={String(m.id)}>{engineOptionLabel(m)}</option>
+                ))}
+              </Select>
+            </div>
             <div>
               <Button type="submit" variant="primary" loading={busy} disabled={!text.trim()}>
                 {busy ? "Analyse…" : "Analyser"}
