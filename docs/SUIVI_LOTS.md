@@ -225,6 +225,32 @@ local, activer le moteur, traiter un lot et juger la qualité/latence vs CamemBE
 
 ---
 
+## V5 — Multi-moteurs, Claude (comparaison), cascade & juge 🚧 *(en cours)*
+
+**Objectif** : enrichir l'app de trois capacités **additives et conditionnelles** — moteur
+**Claude** (API, comparaison/test **uniquement**, jamais en prod), orchestration **en cascade**
+(proposeur → raffineur LLM) et **page Comparaison jugée** — **sans dégrader l'offline strict de
+production**. `refiner_label = NULL` ⇒ pipeline V4 strictement inchangé.
+Spec : [SPEC_V5_MULTI_MOTEUR.md](SPEC_V5_MULTI_MOTEUR.md) (fichier `SPEC_V5_MULTI_MOTEUR_1.md`).
+
+| Lot | Contenu | État | Branche |
+|---|---|---|---|
+| **C1** | Refactor `llm_common` (verrou) : extraction iso-comportement des fonctions pures depuis `lmstudio_predictor` (prompt proposeur, `map_llm_response`, garde-fous, normalisation), **ré-exports** pour rétrocompat, **mode prompt raffineur** (`build_refiner_prompt`) + signature `refine_cleaned_batch(cleaned, satisfactions, proposals)` | ✅ Développé — **en attente validation PO** | `v5/1-llm-common` |
+| **C2** | Moteur Claude (`/v1/messages`, proposeur+raffineur), `kind="claude"`, `_detect_claude`, refus d'activation, bloc config + `ANTHROPIC_API_KEY`, sélecteur *Test à la volée*, ligne « comparaison uniquement » | ⬜ À faire | — |
+| **C3** | Cascade prod : migration `0006` (`engine_predictions`, `batches.refiner_label`, `chain_disagreements`), cascade dans `process_batch_job`, désaccord `theme1_niv1` → revue forcée, UI création/détail | ⬜ À faire | — |
+| **C4** | Comparaison objective : `comparison_runs`, `run_comparison_job`, endpoints, page Comparaison (mode dégradé) | ⬜ À faire | — |
+| **C5** | Juge Claude aveuglé + permuté, `judge_verdicts`, win-rate + exemples commentés | ⬜ À faire | — |
+| **C6** | Doc (EXPLOITATION/TRANSMISSION/guide), `recette_v5` consolidée, tag `v5.0` | ⬜ À faire | — |
+
+**Garde-fous tenus (C1)** : comportement `lmstudio` **strictement identique** (transport HTTP
+inchangé, fonctions pures déplacées sans modification) ; aucun moteur/route/migration touché ;
+`refine_cleaned_batch` revalide par `map_llm_response` (**jamais hors taxonomie**).
+
+**Validation automatisée (C1)** : `app/tests/recette_v5.py` **25/25 OK** (LLM mocké, torch-free) ;
+non-régression **V1 48/48 · V3 13/13 · V4 50/50** ; `tsc --noEmit` OK ; `docker compose config` OK.
+
+---
+
 ## Journal de décisions (ADR-lite)
 
 | # | Date | Décision | Justification |
@@ -241,3 +267,5 @@ local, activer le moteur, traiter un lot et juger la qualité/latence vs CamemBE
 | D10 | 2026-06-19 | LM Studio **natif sur l'hôte** (GPU Metal, API compatible OpenAI `/v1`), worker via `host.docker.internal:1234/v1` ; client en **stdlib `urllib`** | Perf Metal ; zéro dépendance ajoutée ; boucle locale → RGPD/offline préservés. *(NB : choix initial Ollama corrigé en LM Studio — adaptateur générique, bascule à faible coût.)* |
 | D11 | 2026-06-19 | Confiance **auto-déclarée** par le LLM mais **durcie** par garde-fous déterministes (matching tolérant, 2 plafonds, repli `Autre / Non classé`, conflit de sentiment) | Pas de multi-échantillonnage (coûteux) ; routage revue fiable malgré une confiance LLM non calibrée ; jamais hors taxonomie |
 | D12 | 2026-06-19 | SLA perf **détendue** + **échec propre** si LM Studio down (pas de repli silencieux) | LLM = 1 appel/verbatim (lent) assumé ; ne pas fausser la comparaison de qualité par un repli caché |
+| D13 | 2026-06-23 | V5/C1 : logique de décision LLM extraite en `app/worker/llm_common.py` (pur, torch-free) **partagée** par les moteurs LLM ; transport HTTP **propre à chaque moteur** ; `lmstudio_predictor` **ré-exporte** les symboles déplacés (verrou anti-régression) | Préparer le moteur Claude (C2) sans dupliquer prompt/validation/garde-fous ; iso-comportement LM Studio garanti par `recette_v4` 50/50 + parité d'objet `op.X is llm_common.X` testée en `recette_v5` |
+| D14 | 2026-06-23 | V5/C1 : raffineur = relecture de la proposition du moteur 1 (`build_refiner_prompt`), sortie **revalidée par `map_llm_response`** ; signature `refine_cleaned_batch(cleaned, satisfactions, proposals)` conforme SPEC_V5 §4.1 | Cascade (V5-D4) : le 2ᵉ moteur valide/corrige ; réutiliser le garde-fou taxo existant plutôt qu'un nouveau ; signature alignée sur la spec pour C3 |
