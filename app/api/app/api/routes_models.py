@@ -11,7 +11,7 @@ from ..core.db import get_db
 from ..core.security import get_current_user, require_admin
 from ..schemas.model import ModelVersionOut
 from ..services.jobs import enqueue_registry_sync
-from common.models import ModelVersion
+from common.models import MODEL_KIND_CLAUDE, ModelVersion
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/models", tags=["models"])
@@ -27,6 +27,11 @@ def activate_model(model_id: int, db: Session = Depends(get_db), admin=Depends(r
     model = db.get(ModelVersion, model_id)
     if model is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Modèle introuvable")
+    if model.kind == MODEL_KIND_CLAUDE:
+        # Garde-fou offline strict (V5-D1) : Claude est un moteur de comparaison/test,
+        # JAMAIS utilisable en production -> refus serveur à l'activation.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Moteur Claude : comparaison/test uniquement, non activable en production.")
     if not model.available:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Modèle indisponible (artefacts absents)")
     db.query(ModelVersion).update({ModelVersion.is_active: False})
