@@ -39,4 +39,15 @@ def build_worker_cfg() -> Dict[str, Any]:
             lms["max_parallel"] = max(1, int(mp))
         except ValueError:
             pass
+
+    # --- Moteur Claude (V5) : surcharge env du bloc claude de config.yaml ----------
+    # Comparaison/test uniquement. La CLÉ n'entre JAMAIS dans la config : on n'expose
+    # que le booléen ``api_key_present`` (dérivé de l'env) pour la détection.
+    cl = cfg.setdefault("claude", {})
+    claude_enabled_env = os.environ.get("CLAUDE_ENABLED")
+    if claude_enabled_env is not None:
+        cl["enabled"] = claude_enabled_env.strip().lower() in ("1", "true", "yes", "on")
+    cl["model"] = os.environ.get("CLAUDE_MODEL", cl.get("model", "claude-opus-4-8"))
+    cl["base_url"] = os.environ.get("CLAUDE_BASE_URL", cl.get("base_url", "https://api.anthropic.com"))
+    cl["api_key_present"] = bool(os.environ.get("ANTHROPIC_API_KEY"))
     return cfg

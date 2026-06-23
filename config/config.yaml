@@ -171,6 +171,25 @@ lmstudio:
     review_on_sentiment_conflict: true   # 2 thèmes au sentiment divergent (dont Négatif) -> revue
 
 # -----------------------------------------------------------------------------
+#  Moteur Claude (V5) — API Anthropic, COMPARAISON / TEST UNIQUEMENT.
+#  JAMAIS sélectionnable en production (refus serveur à l'activation et au job).
+#  Désactivé par défaut : si enabled=false, l'app se comporte exactement comme en V4.
+#  La CLÉ se met dans .env (ANTHROPIC_API_KEY) — JAMAIS ici, jamais en base, jamais en UI.
+#  Voir docs/SPEC_V5_MULTI_MOTEUR.md (V5-D1, V5-D2, V5-D15).
+# -----------------------------------------------------------------------------
+claude:
+  enabled: false
+  base_url: "https://api.anthropic.com"   # API native Anthropic (/v1/messages)
+  model: "claude-opus-4-8"                 # modèle de comparaison (id API) ; surchargeable via CLAUDE_MODEL
+  timeout_s: 60
+  max_tokens: 1024                         # sortie structurée (tool use) : réponse JSON courte
+  max_parallel: 4                          # concurrence des appels
+  retries: 2
+  prompt_version: "v1"                     # mêmes prompts proposeur/raffineur que LM Studio
+  fallback_theme: "Autre / Non classé"     # sentinelle moteur (NON ajoutée à la taxo CamemBERT)
+  # NB : temperature non envoyée (rejetée par Opus 4.7+/Fable) ; clé via ANTHROPIC_API_KEY (.env)
+
+# -----------------------------------------------------------------------------
 #  Export ONNX + quantization int8 (optimisation CPU)
 # -----------------------------------------------------------------------------
 onnx:
