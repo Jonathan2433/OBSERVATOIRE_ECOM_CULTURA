@@ -88,6 +88,12 @@ services:
       LMSTUDIO_ENABLED: ${LMSTUDIO_ENABLED:-false}
       LMSTUDIO_BASE_URL: ${LMSTUDIO_BASE_URL:-http://host.docker.internal:1234/v1}
       LMSTUDIO_MODEL: ${LMSTUDIO_MODEL:-local-model}
+      # --- Moteur Claude (V5), COMPARAISON/TEST uniquement. Défaut : désactivé. ---
+      # Clé via .env (jamais en base/UI). Sans clé -> moteur indisponible (mode dégradé).
+      # Seul flux sortant possible : worker -> api.anthropic.com, et seulement en test/comparaison.
+      CLAUDE_ENABLED: ${CLAUDE_ENABLED:-false}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-opus-4-8}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"   # joindre LM Studio natif sur l'hôte
     depends_on:
