@@ -18,6 +18,8 @@ class BatchOut(BaseModel):
     finished_at: Optional[datetime] = None
     model_label: Optional[str] = None
     seuil_revue: float
+    refiner_label: Optional[str] = None        # cascade V5 (None = lot mono-moteur)
+    chain_disagreements: Optional[int] = None  # nb de désaccords proposeur/raffineur
     n_total: int
     n_processed: int
     n_review: int
