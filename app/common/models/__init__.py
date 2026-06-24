@@ -3,6 +3,9 @@
 from .user import ROLE_ADMIN, ROLE_ANALYSTE, ROLES, User
 from .batch import Batch, BATCH_STATUSES
 from .result import Result
+from .engine_prediction import (
+    EnginePrediction, ENGINE_ROLE_COMPARE, ENGINE_ROLE_PROPOSER, ENGINE_ROLE_REFINER, ENGINE_ROLES,
+)
 from .correction import Correction
 from .model_version import (
     ModelVersion, MODEL_KIND_CLAUDE, MODEL_KIND_LMSTUDIO, MODEL_KIND_REAL, MODEL_KIND_STUB,
@@ -14,6 +17,7 @@ __all__ = [
     "User", "ROLE_ADMIN", "ROLE_ANALYSTE", "ROLES",
     "Batch", "BATCH_STATUSES",
     "Result",
+    "EnginePrediction", "ENGINE_ROLE_COMPARE", "ENGINE_ROLE_PROPOSER", "ENGINE_ROLE_REFINER", "ENGINE_ROLES",
     "Correction",
     "ModelVersion", "MODEL_KIND_CLAUDE", "MODEL_KIND_LMSTUDIO", "MODEL_KIND_REAL", "MODEL_KIND_STUB",
     "AuditLog",
