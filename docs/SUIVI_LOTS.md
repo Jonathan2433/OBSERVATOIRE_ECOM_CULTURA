@@ -238,7 +238,7 @@ Spec : [SPEC_V5_MULTI_MOTEUR.md](SPEC_V5_MULTI_MOTEUR.md) (fichier `SPEC_V5_MULT
 | **C1** | Refactor `llm_common` (verrou) : extraction iso-comportement des fonctions pures depuis `lmstudio_predictor` (prompt proposeur, `map_llm_response`, garde-fous, normalisation), **ré-exports** pour rétrocompat, **mode prompt raffineur** (`build_refiner_prompt`) + signature `refine_cleaned_batch(cleaned, satisfactions, proposals)` | ✅ Développé — **en attente validation PO** | `v5/1-llm-common` |
 | **C2** | Moteur Claude (`claude_predictor.py`, client `/v1/messages` stdlib + tool use, proposeur+raffineur revalidés), `kind="claude"` dans `get_predictor`, `MODEL_KIND_CLAUDE`, `_detect_claude` + sync (jamais auto-activé), **refus d'activation 400** (`routes_models`), bloc config `claude:` + env `ANTHROPIC_API_KEY`/`CLAUDE_*`, sélecteur moteur *Test à la volée* (`/predict` `model_id`), ligne « comparaison uniquement » dans Modèles | ✅ Développé — **en attente validation PO** | `v5/2-moteur-claude` |
 | **C3** | Cascade prod : migration `0006` (`engine_predictions` + `batches.refiner_label`/`chain_disagreements`), cascade dans `process_batch_job` (proposeur → raffineur LLM, `merge_cascade`, 2 prédictions tracées), désaccord `theme1_niv1` → revue forcée, `resolve_refiner` (LLM local seul ; Claude/CamemBERT/stub refusés), `model_label` enrichi « ▶ », UI création (sélecteur raffineur) + détail (badge cascade, désaccords) | ✅ Développé — **en attente validation PO** | `v5/3-cascade` |
-| **C4** | Comparaison objective : `comparison_runs`, `run_comparison_job`, endpoints, page Comparaison (mode dégradé) | ⬜ À faire | — |
+| **C4** | Comparaison objective : migration `0007` (`comparison_runs` + FK `engine_predictions.comparison_run_id`), `comparison.py` (échantillon graine + métriques pures), `run_comparison_job` (replay 2-3 moteurs sur `verbatim_analyse`, rôle `compare`), endpoints (`POST /batches/{id}/comparisons` admin, `GET /comparisons[...]`, export CSV), **page Comparaison** (accord/confiance/latence/sentiment, mode dégradé sans juge) | ✅ Développé — **en attente validation PO** | `v5/4-comparaison` |
 | **C5** | Juge Claude aveuglé + permuté, `judge_verdicts`, win-rate + exemples commentés | ⬜ À faire | — |
 | **C6** | Doc (EXPLOITATION/TRANSMISSION/guide), `recette_v5` consolidée, tag `v5.0` | ⬜ À faire | — |
 
@@ -267,6 +267,17 @@ en bout en process, moteurs mockés) ; **migration 0006 appliquée en réel** (P
 = 0006…`, table `engine_predictions` + colonnes `batches` vérifiées) ; non-régression **V1 48/48 · V3
 13/13 · V4 50/50** ; `tsc --noEmit` OK ; `docker compose config` OK.
 
+**Garde-fous tenus (C4)** : replay sur **`results.verbatim_analyse`** (déjà anonymisé → aucune nouvelle
+anonymisation) ; **lancer = admin** (RBAC), consulter = analyste+ ; Claude utilisable comme moteur de
+**comparaison** seulement (jamais en prod) ; échantillon **plafonné 200** ; migration additive ;
+**juge non inclus** (mode dégradé, arrive en C5) ; recettes V1/V3/V4 inchangées.
+
+**Validation automatisée (C1+C2+C3+C4)** : `app/tests/recette_v5.py` **95/95 OK** (métriques pures +
+`run_comparison_job` end-to-end mocké + routes via TestClient) ; **migration 0007 appliquée en réel**
+(Postgres : `alembic_version = 0007…`, table `comparison_runs` + FK vérifiées) ; **run de comparaison
+réel** stub vs CamemBERT (n=50 : accord 20 %, 40 divergences, latence 0,05 vs 307 ms/verbatim) ;
+non-régression **V1 48/48 · V3 13/13 · V4 50/50** ; `tsc --noEmit` OK ; `docker compose config` OK.
+
 ---
 
 ## Journal de décisions (ADR-lite)
@@ -291,3 +302,5 @@ en bout en process, moteurs mockés) ; **migration 0006 appliquée en réel** (P
 | D16 | 2026-06-23 | V5/C2 : modèle Claude par défaut `claude-opus-4-8` ; détection **offline** (`available` = clé présente, sans ping réseau) ; refus d'activation **400** côté serveur + jamais auto-activé | Claude = classifieur LLM de référence (qualité) pour la comparaison ; ne jamais contacter Anthropic hors test/comparaison explicite ; garde-fou offline strict de prod (V5-D1) appliqué au niveau API |
 | D17 | 2026-06-24 | V5/C3 : cascade branchée **en parallèle** du pipeline V4 dans `process_batch_job` (branche `if refiner_predictor is None: …V4… else: …cascade…`) ; la sortie raffineur fait foi, désaccord `theme1_niv1` → revue forcée (`merge_cascade`) ; les **2** prédictions tracées dans `engine_predictions` (rôles proposer/refiner, rattachées au `result`) | Garantit `refiner_label=NULL ⇒ V4 strictement identique` (chemin éprouvé non modifié) ; traçabilité d'audit/analyse sans nouvelle colonne sur `results` (réutilise `revue_requise`) |
 | D18 | 2026-06-24 | V5/C3 : `engine_predictions.comparison_run_id` créée **nullable sans FK** en 0006 ; latence stockée en **moyenne par verbatim sur le chunk** (proposeur/raffineur séparés) | La table `comparison_runs` arrive en C4 (FK ajoutée alors) → migration C3 autonome ; pas de mesure par-verbatim disponible sans surcoût, l'approximation chunk suffit pour comparer les moteurs |
+| D19 | 2026-06-24 | V5/C4 : métriques de comparaison isolées en fonctions **pures** (`worker/comparison.py`) ; le replay rejoue `verbatim_analyse` **sans satisfaction** (best-effort depuis `original_columns`, sinon None) | Testabilité (recette torch-free) + risque §14 assumé (satisfaction non stockée en colonne) ; n'affecte pas la prod, écart documenté |
+| D20 | 2026-06-24 | V5/C4 : page Comparaison = **onglet du lot** (`/lots/:id/comparaison`) ; juge affiché en **mode dégradé** (EmptyState « lot C5 ») ; bornes (défaut 50 / max 200) en dur dans la route API (pas d'import du worker) | Réutilise le shell de détail de lot et ses composants (BarList/StackedSentimentBar) ; l'API n'importe pas le code worker (images séparées) ; juge = C5 |

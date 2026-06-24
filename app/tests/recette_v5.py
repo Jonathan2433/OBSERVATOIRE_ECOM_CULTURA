@@ -18,6 +18,9 @@ Sections :
   revue forcée), `_to_engine_pred`, migration 0006, `resolve_refiner` (LLM local seul ;
   Claude/CamemBERT/stub refusés), et `process_batch_job` en cascade de bout en bout
   (2 prédictions tracées, `chain_disagreements`, `model_label` enrichi « ▶ »).
+- C4 : comparaison objective — fonctions pures (`sample_indices` reproductible, accord/
+  confiance/latence/sentiment, `build_metrics` juge=None), migration 0007, `run_comparison_job`
+  end-to-end (rôle `compare`, métriques), routes (RBAC admin, validations, GET/export).
 
 Usage :  python app/tests/recette_v5.py   (code de sortie 0 si aucun ÉCHEC)
 """
@@ -517,6 +520,126 @@ def run() -> None:
     finally:
         _tasks.get_active, _tasks.get_predictor, _tasks.build_worker_cfg, _loader.load_for_batch = _saved
 
+    # ============== C4 : comparaison objective de moteurs =====================
+    from worker import comparison as cmp
+    from common.models import ComparisonRun, ENGINE_ROLE_COMPARE
+
+    # --- C4.1 Fonctions pures (échantillonnage + métriques) ------------------
+    check("C4 : clamp_sample_size (0->défaut, 999->borne)",
+          cmp.clamp_sample_size(0) == 50 and cmp.clamp_sample_size(999) == 200)
+    s1 = cmp.sample_indices(100, 10, seed=42)
+    s2 = cmp.sample_indices(100, 10, seed=42)
+    s3 = cmp.sample_indices(100, 10, seed=7)
+    check("C4 : sample_indices reproductible (même graine -> même tirage)", s1 == s2 and s1 != s3)
+    check("C4 : sample_indices borné + trié + dans [0,N)",
+          len(s1) == 10 and s1 == sorted(s1) and max(s1) < 100)
+    check("C4 : sample_indices couvre tout si n>=population", cmp.sample_indices(3, 10, 0) == [0, 1, 2])
+    am = cmp.agreement_matrix({"A": [N1, N1, N1, N1], "B": [N1, N1b, N1, N1b]})
+    check("C4 : agreement_matrix (2/4 = 0.5)", am.get("A vs B") == 0.5, am)
+    cs = cmp.confidence_summary({"A": [0.8, 0.6, None, "x"]})
+    check("C4 : confidence_summary (moyenne sur valides)", cs["A"]["moyenne"] == 0.7 and cs["A"]["n"] == 2, cs)
+    sd = cmp.sentiment_distribution({"A": ["Négatif", "Négatif", "Positif", "?"]})
+    check("C4 : sentiment_distribution", sd["A"] == {"Négatif": 2, "Neutre": 0, "Positif": 1}, sd)
+    dv = cmp.divergent_indices({"A": [N1, N1, N1], "B": [N1, N1b, N1]})
+    check("C4 : divergent_indices (1 divergence à l'index 1)", dv == [1], dv)
+    metrics = cmp.build_metrics({"A": [N1, N1], "B": [N1, N1b]}, {"A": [0.9, 0.8], "B": [0.5, 0.4]},
+                                {"A": ["Négatif", "Positif"], "B": ["Neutre", "Neutre"]},
+                                {"A": 12.0, "B": 800.0}, 2)
+    check("C4 : build_metrics — clés complètes + juge None (mode dégradé)",
+          all(k in metrics for k in ["engines", "agreement", "confidence", "latency_ms", "sentiment", "n_divergences"])
+          and metrics["judge"] is None and metrics["n_divergences"] == 1, list(metrics))
+
+    # --- C4.2 Migration 0007 + ORM ------------------------------------------
+    _m7 = (ROOT / "app/api/migrations/versions/0007_comparison_runs.py").read_text(encoding="utf-8")
+    check("C4 : migration 0007 chaînée sur 0006",
+          'revision = "0007_comparison_runs"' in _m7 and 'down_revision = "0006_cascade_engine_predictions"' in _m7)
+    check("C4 : migration 0007 crée comparison_runs + FK comparison_run_id",
+          '"comparison_runs"' in _m7 and "create_foreign_key" in _m7 and "comparison_run_id" in _m7)
+    check("C4 : table comparison_runs dans Base.metadata", "comparison_runs" in _Base.metadata.tables)
+
+    # --- C4.3 run_comparison_job de bout en bout (moteurs mockés) ------------
+    class _CmpEngine:
+        def __init__(self, theme_fn):
+            self._t = theme_fn
+        def predict_cleaned_batch(self, texts, sats=None):
+            return [_mk(texts[i], self._t(i)) for i in range(len(texts))]
+
+    with _SL() as db:
+        cb = _Batch(label="cmp-src", status="done", seuil_revue=0.5)
+        db.add(cb); db.flush()
+        for i in range(4):
+            db.add(_Result(batch_id=cb.id, row_index=i, verbatim_analyse=f"verbatim {i}", nb_themes=1))
+        db.commit(); cmp_bid = cb.id
+        crun = ComparisonRun(batch_id=cmp_bid, status="pending",
+                             engine_labels=["stub-heuristique", "lmstudio:r1"], sample_size=10, seed=1)
+        db.add(crun); db.commit(); crun_id = crun.id
+
+    _saved2 = (_tasks.get_predictor, _tasks.build_worker_cfg)
+    try:
+        _tasks.build_worker_cfg = lambda: {"thresholds": {"revue_humaine": 0.5}}
+        _tasks.get_predictor = lambda model, cfg: (
+            _CmpEngine(lambda i: N1 if i % 2 == 0 else N1b) if getattr(model, "kind", None) == _KL
+            else _CmpEngine(lambda i: N1))
+        res = _tasks.run_comparison_job(crun_id)
+        check("C4 : run_comparison_job -> done", res.get("status") == "done", res)
+        with _SL() as db:
+            run = db.get(ComparisonRun, crun_id)
+            eps = db.query(EnginePrediction).filter_by(comparison_run_id=crun_id).all()
+            check("C4 : engine_predictions rôle 'compare' = échantillon × moteurs (4×2=8)",
+                  len(eps) == 8 and all(e.role == ENGINE_ROLE_COMPARE for e in eps), len(eps))
+            check("C4 : metrics calculées (accord 0.5, 2 divergences)",
+                  run.metrics and run.metrics["agreement"].get("stub-heuristique vs lmstudio:r1") == 0.5
+                  and run.metrics["n_divergences"] == 2, run.metrics and run.metrics.get("agreement"))
+            check("C4 : metrics — latence + confiance + sentiment par moteur",
+                  set(run.metrics["latency_ms"]) == {"stub-heuristique", "lmstudio:r1"}
+                  and "stub-heuristique" in run.metrics["confidence"]
+                  and "lmstudio:r1" in run.metrics["sentiment"])
+    finally:
+        _tasks.get_predictor, _tasks.build_worker_cfg = _saved2
+
+    # --- C4.4 Routes (RBAC + validations + GET) via TestClient ---------------
+    try:
+        from fastapi.testclient import TestClient
+        from app.main import app as _app
+
+        admin = TestClient(_app)
+        admin.post("/api/auth/login", json={"username": "admin", "password": "MotDePasseAdmin123!"})
+        # analyste pour le test RBAC
+        admin.post("/api/users", json={"username": "ana5", "password": "Analyste123!", "role": "analyste"})
+        ana = TestClient(_app)
+        ana.post("/api/auth/login", json={"username": "ana5", "password": "Analyste123!"})
+
+        check("C4 : lancer une comparaison interdit à l'analyste -> 403",
+              ana.post(f"/api/batches/{cmp_bid}/comparisons",
+                       json={"engines": ["stub-heuristique", "lmstudio:r1"], "sample_size": 10}).status_code == 403)
+        # lot non terminé -> 400
+        with _SL() as db:
+            pend = _Batch(label="pending-cmp", status="pending", seuil_revue=0.5)
+            db.add(pend); db.commit(); pend_id = pend.id
+        check("C4 : comparaison sur lot non terminé -> 400",
+              admin.post(f"/api/batches/{pend_id}/comparisons",
+                         json={"engines": ["stub-heuristique", "lmstudio:r1"]}).status_code == 400)
+        check("C4 : moteurs en double (< 2 distincts) -> 400",
+              admin.post(f"/api/batches/{cmp_bid}/comparisons",
+                         json={"engines": ["stub-heuristique", "stub-heuristique"]}).status_code == 400)
+        check("C4 : moteur indisponible -> 400",
+              admin.post(f"/api/batches/{cmp_bid}/comparisons",
+                         json={"engines": ["stub-heuristique", "nope:404"]}).status_code == 400)
+
+        # GET (consultation analyste+) : on s'appuie sur le run déjà calculé (crun_id)
+        rget = ana.get(f"/api/comparisons/{crun_id}")
+        check("C4 : GET /comparisons/{id} (analyste) -> 200 + metrics",
+              rget.status_code == 200 and rget.json().get("metrics") is not None)
+        check("C4 : GET /comparisons?batch_id liste le run",
+              any(r["id"] == crun_id for r in ana.get(f"/api/comparisons?batch_id={cmp_bid}").json()))
+        rv = ana.get(f"/api/comparisons/{crun_id}/verdicts")
+        check("C4 : GET verdicts -> mode dégradé (total 0)", rv.status_code == 200 and rv.json().get("total") == 0)
+        rexp = ana.get(f"/api/comparisons/{crun_id}/export")
+        check("C4 : export CSV -> 200 + en-tête + lignes",
+              rexp.status_code == 200 and "engine_label" in rexp.text and "stub-heuristique" in rexp.text)
+    except ImportError as exc:
+        check("C4 : (skip) routes comparaison — fastapi indisponible", True, str(exc))
+
 
 if __name__ == "__main__":
     run()
@@ -527,5 +650,5 @@ if __name__ == "__main__":
         if status == "ÉCHEC" and detail:
             line += f"  -> {detail}"
         print(line)
-    print(f"\nRecette V5 (C1+C2+C3) : {len(_RESULTS) - len(fails)}/{len(_RESULTS)} OK")
+    print(f"\nRecette V5 (C1+C2+C3+C4) : {len(_RESULTS) - len(fails)}/{len(_RESULTS)} OK")
     sys.exit(1 if fails else 0)
