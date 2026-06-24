@@ -190,6 +190,14 @@ claude:
   # NB : temperature non envoyée (rejetée par Opus 4.7+/Fable) ; clé via ANTHROPIC_API_KEY (.env)
 
 # -----------------------------------------------------------------------------
+#  Orchestration en cascade (V5) — proposeur -> raffineur LLM, opt-in par lot.
+#  Si un lot n'a pas de raffineur (refiner_label NULL), le pipeline est celui de V4.
+# -----------------------------------------------------------------------------
+orchestration:
+  cascade_enabled: true            # autorise la sélection d'un raffineur à la création de lot
+  disagreement_field: "theme1_niv1"   # champ d'arbitrage du désaccord (V5-D6)
+
+# -----------------------------------------------------------------------------
 #  Export ONNX + quantization int8 (optimisation CPU)
 # -----------------------------------------------------------------------------
 onnx:
