@@ -8,6 +8,7 @@ import BatchesPage from "./pages/BatchesPage";
 import BatchDetailPage from "./pages/BatchDetailPage";
 import ResultsPage from "./pages/ResultsPage";
 import ReviewPage from "./pages/ReviewPage";
+import ComparisonPage from "./pages/ComparisonPage";
 import BatchKpiPage from "./pages/BatchKpiPage";
 import DashboardsPage from "./pages/DashboardsPage";
 import AdminPage from "./pages/AdminPage";
@@ -54,6 +55,7 @@ export default function App() {
             <Route index element={<BatchKpiPage />} />
             <Route path="resultats" element={<ResultsPage />} />
             <Route path="revue" element={<ReviewPage />} />
+            <Route path="comparaison" element={<ComparisonPage />} />
             <Route path="kpi" element={<Navigate to=".." replace />} />
           </Route>
           <Route path="tableaux-de-bord" element={<DashboardsPage />} />
