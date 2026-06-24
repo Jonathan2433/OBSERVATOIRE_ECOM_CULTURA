@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet, useParams } from "react-router-dom";
 import { cancelBatch, getBatch, type Batch } from "../api";
 import StatusBadge from "../components/StatusBadge";
-import { Button, Card, Dialog, EmptyState, ProgressBar, Spinner, StatCard } from "../ui";
+import { Badge, Button, Card, Dialog, EmptyState, ProgressBar, Spinner, StatCard } from "../ui";
 
 export default function BatchDetailPage() {
   const { id } = useParams();
@@ -57,6 +57,7 @@ export default function BatchDetailPage() {
         <div className="ui-row">
           <h1 className="page-header__title">Lot #{batch.id} — {batch.label}</h1>
           <StatusBadge status={batch.status} />
+          {batch.refiner_label && <Badge tone="info" dot>cascade</Badge>}
         </div>
         <p className="page-header__sub">{batch.model_label ? `Modèle : ${batch.model_label}` : "Modèle non renseigné"}</p>
       </div>
@@ -92,6 +93,10 @@ export default function BatchDetailPage() {
           <StatCard label="Verbatims" value={batch.n_total || "—"} />
           <StatCard label="En revue" value={batch.n_review} hint={`${reviewPct} %`} />
           <StatCard label="Erreurs" value={batch.n_errors} />
+          {batch.refiner_label && (
+            <StatCard label="Désaccords cascade" value={batch.chain_disagreements ?? 0}
+                      hint="proposeur ≠ raffineur (revue forcée)" />
+          )}
         </div>
       )}
 

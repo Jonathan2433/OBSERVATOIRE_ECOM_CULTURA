@@ -77,6 +77,8 @@ export interface Batch {
   finished_at?: string | null;
   model_label?: string | null;
   seuil_revue: number;
+  refiner_label?: string | null;          // cascade V5 (null = mono-moteur)
+  chain_disagreements?: number | null;    // nb de désaccords proposeur/raffineur
   n_total: number;
   n_processed: number;
   n_review: number;
@@ -101,12 +103,14 @@ export const cancelBatch = (id: number) => request<Batch>(`/api/batches/${id}/ca
 export async function createBatch(opts: {
   label?: string;
   seuilRevue: number;
+  refinerLabel?: string | null;   // cascade V5 (LLM local) — optionnel
   mdtc?: File | null;
   mopinion?: File | null;
 }): Promise<Batch> {
   const form = new FormData();
   if (opts.label) form.append("label", opts.label);
   form.append("seuil_revue", String(opts.seuilRevue));
+  if (opts.refinerLabel) form.append("refiner_label", opts.refinerLabel);
   if (opts.mdtc) form.append("mdtc", opts.mdtc);
   if (opts.mopinion) form.append("mopinion", opts.mopinion);
   // Pas de Content-Type manuel : le navigateur pose le boundary multipart.
