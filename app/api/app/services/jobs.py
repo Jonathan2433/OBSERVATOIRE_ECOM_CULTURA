@@ -31,3 +31,11 @@ def enqueue_batch(batch_id: int) -> str:
 def enqueue_registry_sync() -> str:
     job = get_queue().enqueue("worker.tasks.sync_registry_job", job_timeout=600)
     return job.id
+
+
+def enqueue_comparison(run_id: int) -> str:
+    job = get_queue().enqueue(
+        "worker.tasks.run_comparison_job", run_id, job_timeout=settings.job_timeout_seconds
+    )
+    logger.info("Comparaison %s enfilée (job %s)", run_id, job.id)
+    return job.id
