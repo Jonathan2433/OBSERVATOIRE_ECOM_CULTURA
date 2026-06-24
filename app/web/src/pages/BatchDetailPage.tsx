@@ -60,6 +60,11 @@ export default function BatchDetailPage() {
           {batch.refiner_label && <Badge tone="info" dot>cascade</Badge>}
         </div>
         <p className="page-header__sub">{batch.model_label ? `Modèle : ${batch.model_label}` : "Modèle non renseigné"}</p>
+        {batch.refiner_label && batch.chain_disagreements != null && (
+          <p className="page-header__sub">
+            Cascade : <b>{batch.chain_disagreements}</b> désaccord(s) proposeur/raffineur sur <code>theme1_niv1</code> → revue forcée.
+          </p>
+        )}
       </div>
 
       {running && (
