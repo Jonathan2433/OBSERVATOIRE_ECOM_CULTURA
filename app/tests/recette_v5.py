@@ -14,6 +14,10 @@ Sections :
   pas de temperature, échec propre), `ClaudePredictor` (proposeur+raffineur revalidés,
   ordre/fail-fast, clé absente -> ClaudeError), `_detect_claude`, dispatch `kind=claude`,
   sync registre (jamais auto-activé) et **refus d'activation serveur** (V5-D1).
+- C3 : cascade prod — `merge_cascade` (raffineur fait foi, désaccord `theme1_niv1` ->
+  revue forcée), `_to_engine_pred`, migration 0006, `resolve_refiner` (LLM local seul ;
+  Claude/CamemBERT/stub refusés), et `process_batch_job` en cascade de bout en bout
+  (2 prédictions tracées, `chain_disagreements`, `model_label` enrichi « ▶ »).
 
 Usage :  python app/tests/recette_v5.py   (code de sortie 0 si aucun ÉCHEC)
 """
@@ -391,6 +395,128 @@ def run() -> None:
     except ImportError as exc:  # fastapi indisponible : section route skippée proprement
         check("C2 : (skip) refus d'activation — fastapi indisponible", True, str(exc))
 
+    # ============== C3 : orchestration cascade (production) ==================
+    from types import SimpleNamespace as _NS
+
+    import pandas as _pd
+    import src.preprocessing.loader as _loader
+    from common.db import Base as _Base, SessionLocal as _SL, engine as _eng
+    from common.models import (
+        Batch as _Batch, ENGINE_ROLE_PROPOSER, ENGINE_ROLE_REFINER, EnginePrediction,
+        MODEL_KIND_CLAUDE as _KC, MODEL_KIND_LMSTUDIO as _KL, MODEL_KIND_REAL as _KR,
+        MODEL_KIND_STUB as _KS, ModelVersion, Result as _Result,
+    )
+    from worker import tasks as _tasks
+    _Base.metadata.create_all(_eng)
+
+    # --- C3.1 merge_cascade (pur) : raffineur fait foi, désaccord -> revue forcée
+    _prop = {"theme1_niv1": N1, "theme1_sentiment": "Neutre", "revue_humaine_requise": False}
+    _same = {"theme1_niv1": N1, "theme1_sentiment": "Positif", "revue_humaine_requise": False}
+    _diff = {"theme1_niv1": N1b, "theme1_sentiment": "Négatif", "revue_humaine_requise": False}
+    o_ok, d_ok = _tasks.merge_cascade(_prop, _same)
+    check("C3 : cascade accord -> pas de revue forcée + sortie raffineur prévaut",
+          d_ok is False and o_ok["revue_humaine_requise"] is False and o_ok["theme1_sentiment"] == "Positif")
+    o_ko, d_ko = _tasks.merge_cascade(_prop, _diff)
+    check("C3 : cascade désaccord theme1_niv1 -> revue FORCÉE + flag",
+          d_ko is True and o_ko["revue_humaine_requise"] is True and o_ko["theme1_niv1"] == N1b)
+
+    # --- C3.2 _to_engine_pred : mapping vers la ligne engine_predictions ------
+    _ep = _tasks._to_engine_pred(1, 2, 3, "lmstudio:x", ENGINE_ROLE_REFINER, {
+        "theme1_niv1": N1, "theme1_niv2": N2, "theme1_sentiment": "Négatif",
+        "confidence_globale": 0.7, "signal_churn": True}, 12.5)
+    check("C3 : _to_engine_pred mappe rôle/thème/signaux/latence",
+          _ep.role == ENGINE_ROLE_REFINER and _ep.theme1_niv1 == N1 and _ep.signal_churn is True
+          and _ep.latency_ms == 12.5)
+
+    # --- C3.3 Migration 0006 (chaîne + contenu) ; alembic absent du venv recette
+    _mig = (ROOT / "app/api/migrations/versions/0006_cascade_engine_predictions.py").read_text(encoding="utf-8")
+    check("C3 : migration 0006 chaînée sur 0005",
+          'revision = "0006_cascade_engine_predictions"' in _mig and 'down_revision = "0005_audit_config"' in _mig)
+    check("C3 : migration 0006 crée engine_predictions + colonnes batches",
+          '"engine_predictions"' in _mig and "refiner_label" in _mig and "chain_disagreements" in _mig)
+    check("C3 : table engine_predictions dans Base.metadata", "engine_predictions" in _Base.metadata.tables)
+
+    # --- C3.4 resolve_refiner (garde-fous : LLM local seul accepté) -----------
+    from app.api.routes_batches import resolve_refiner
+    from fastapi import HTTPException as _HTTPExc
+    with _SL() as db:
+        for lbl, kind, av in [("lmstudio:r1", _KL, True), ("claude:c", _KC, True),
+                              ("camembert-x", _KR, True), ("lmstudio:down", _KL, False)]:
+            if db.query(ModelVersion).filter_by(label=lbl).first() is None:
+                db.add(ModelVersion(kind=kind, label=lbl, available=av))
+        db.commit()
+
+        def _refused(lbl):
+            try:
+                resolve_refiner(db, lbl)
+                return False
+            except _HTTPExc as e:
+                return e.status_code == 400
+        check("C3 : resolve_refiner accepte un LLM local dispo",
+              resolve_refiner(db, "lmstudio:r1").kind == _KL)
+        check("C3 : raffineur Claude refusé (offline strict)", _refused("claude:c"))
+        check("C3 : raffineur CamemBERT refusé (pas de refine_cleaned_batch)", _refused("camembert-x"))
+        check("C3 : raffineur indisponible refusé", _refused("lmstudio:down"))
+        check("C3 : raffineur inconnu refusé", _refused("nope:404"))
+
+    # --- C3.5 process_batch_job : cascade de bout en bout (moteurs mockés) ----
+    COL_T, COL_SA, COL_SR = _loader.COL_TEXT, _loader.COL_SATISFACTION, _loader.COL_SOURCE
+
+    def _mk(text, niv1, rev=False):
+        o = lc.empty_output(text)
+        o.update({"nb_themes": 1, "theme1_niv1": niv1, "theme1_niv2": N2, "theme1_sentiment": "Neutre",
+                  "theme1_score_confiance": 0.9, "confidence_globale": 0.9, "revue_humaine_requise": rev})
+        return o
+
+    class _Anon:
+        def anonymize(self, raw):
+            return raw, {}
+
+    class _Clean:
+        def clean(self, x):
+            return x or ""
+
+    class _FakeProposer:
+        anonymizer = _Anon(); cleaner = _Clean()
+        def predict_cleaned_batch(self, cleaned, sats=None):
+            return [_mk(c, N1) for c in cleaned]            # propose toujours N1
+
+    class _FakeRefiner:
+        def refine_cleaned_batch(self, cleaned, sats, proposals):
+            return [_mk(cleaned[0], N1), _mk(cleaned[1], N1b)]  # 0 = accord, 1 = désaccord
+
+    _saved = (_tasks.get_active, _tasks.get_predictor, _tasks.build_worker_cfg, _loader.load_for_batch)
+    try:
+        _tasks.get_active = lambda db: _NS(label="stub-heuristique", kind=_KS)
+        _tasks.build_worker_cfg = lambda: {"thresholds": {"revue_humaine": 0.5}}
+        _loader.load_for_batch = lambda a, b, cfg: _pd.DataFrame(
+            {COL_T: ["colis cassé", "site lent"], COL_SA: [2, 5], COL_SR: ["MDTC", "Mopinion"]})
+        _tasks.get_predictor = lambda model, cfg: (
+            _FakeRefiner() if getattr(model, "kind", None) == _KL else _FakeProposer())
+
+        with _SL() as db:
+            b = _Batch(label="cascade-test", status="pending", seuil_revue=0.5, refiner_label="lmstudio:r1")
+            db.add(b); db.commit(); bid = b.id
+        res = _tasks.process_batch_job(bid)
+        check("C3 : process_batch_job cascade -> done", res.get("status") == "done", res)
+        with _SL() as db:
+            b = db.get(_Batch, bid)
+            results = {r.row_index: r for r in db.query(_Result).filter_by(batch_id=bid).all()}
+            eps = db.query(EnginePrediction).filter_by(batch_id=bid).all()
+            check("C3 : 2 résultats + 4 engine_predictions (proposer+refiner x2)",
+                  len(results) == 2 and len(eps) == 4, (len(results), len(eps)))
+            check("C3 : model_label reflète la chaîne (▶)", " ▶ lmstudio:r1" in (b.model_label or ""), b.model_label)
+            check("C3 : chain_disagreements = 1", b.chain_disagreements == 1, b.chain_disagreements)
+            check("C3 : verbatim en désaccord -> sortie raffineur (N1b) + revue forcée",
+                  results[1].theme1_niv1 == N1b and results[1].revue_requise is True)
+            check("C3 : verbatim en accord -> pas de revue forcée", results[0].revue_requise is False)
+            check("C3 : rôles proposer + refiner tracés",
+                  sorted({e.role for e in eps}) == sorted([ENGINE_ROLE_PROPOSER, ENGINE_ROLE_REFINER]))
+            check("C3 : engine_predictions rattachées au result (result_id non nul)",
+                  all(e.result_id is not None for e in eps))
+    finally:
+        _tasks.get_active, _tasks.get_predictor, _tasks.build_worker_cfg, _loader.load_for_batch = _saved
+
 
 if __name__ == "__main__":
     run()
@@ -401,5 +527,5 @@ if __name__ == "__main__":
         if status == "ÉCHEC" and detail:
             line += f"  -> {detail}"
         print(line)
-    print(f"\nRecette V5 (C1+C2) : {len(_RESULTS) - len(fails)}/{len(_RESULTS)} OK")
+    print(f"\nRecette V5 (C1+C2+C3) : {len(_RESULTS) - len(fails)}/{len(_RESULTS)} OK")
     sys.exit(1 if fails else 0)
