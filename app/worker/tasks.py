@@ -17,10 +17,11 @@ from datetime import datetime, timezone
 
 from common.db import SessionLocal
 from common.models import (
-    Batch, ENGINE_ROLE_PROPOSER, ENGINE_ROLE_REFINER, EnginePrediction,
-    MODEL_KIND_LMSTUDIO, ModelVersion, Result,
+    Batch, ComparisonRun, ENGINE_ROLE_COMPARE, ENGINE_ROLE_PROPOSER, ENGINE_ROLE_REFINER,
+    EnginePrediction, MODEL_KIND_LMSTUDIO, ModelVersion, Result,
 )
 
+from . import comparison as comparison_lib
 from .classifiers import get_predictor
 from .config_worker import build_worker_cfg
 from .model_registry import get_active, sync_registry
@@ -330,5 +331,97 @@ def process_batch_job(batch_id: int) -> dict:
                 batch.status = "failed"
                 batch.error_message = str(exc)[:1000]
                 batch.finished_at = _now()
+                db.commit()
+            return {"status": "failed", "error": str(exc)}
+
+
+# --------------------------------------------------------------------------- #
+#  Comparaison de moteurs (V5, lot C4) — replay objectif d'un échantillon
+# --------------------------------------------------------------------------- #
+def _satisfaction_from_original(original) -> "float | None":
+    """Best-effort : récupère la satisfaction depuis original_columns (clé ~ 'satisf').
+
+    La satisfaction n'est pas stockée en colonne dédiée (SPEC_V5 §14) : on tente une
+    clé d'origine contenant « satisf », sinon None (n'affecte pas la prod).
+    """
+    if not isinstance(original, dict):
+        return None
+    for k, v in original.items():
+        if "satisf" in str(k).lower():
+            return v
+    return None
+
+
+def _to_engine_pred_compare(run_id, result_id, row_index, engine_label, pred, latency_ms):
+    """Ligne engine_predictions pour un run de comparaison (rôle 'compare')."""
+    ep = _to_engine_pred(None, result_id, row_index, engine_label, ENGINE_ROLE_COMPARE, pred, latency_ms)
+    ep.comparison_run_id = run_id
+    return ep
+
+
+def run_comparison_job(run_id: int) -> dict:
+    """Rejoue un échantillon d'un lot à travers 2-3 moteurs et calcule les métriques.
+
+    Objectif uniquement (accord/confiance/latence) ; le juge Claude est ajouté en C5.
+    Asynchrone, annulation coopérative (comme un lot). Rejoue ``verbatim_analyse``
+    (déjà anonymisé + nettoyé) -> aucune nouvelle anonymisation.
+    """
+    cfg = build_worker_cfg()
+    with SessionLocal() as db:
+        run = db.get(ComparisonRun, run_id)
+        if run is None:
+            logger.error("Run de comparaison %s introuvable.", run_id)
+            return {"status": "missing"}
+        if run.status == "canceled":
+            return {"status": "canceled"}
+        run.status = "running"
+        db.commit()
+        engines = list(run.engine_labels or [])
+        logger.info("Comparaison %s : lot=%s moteurs=%s n=%s", run_id, run.batch_id, engines, run.sample_size)
+
+        try:
+            results = (db.query(Result).filter_by(batch_id=run.batch_id)
+                       .order_by(Result.row_index).all())
+            if not results:
+                raise RuntimeError("Lot sans résultats à comparer.")
+            idx = comparison_lib.sample_indices(len(results), run.sample_size, run.seed)
+            sample = [results[i] for i in idx]
+            texts = [r.verbatim_analyse or "" for r in sample]
+            sats = [_satisfaction_from_original(r.original_columns) for r in sample]
+
+            theme_by, conf_by, sent_by, lat_by = {}, {}, {}, {}
+            for label in engines:
+                if db.query(ComparisonRun.status).filter(ComparisonRun.id == run_id).scalar() == "canceled":
+                    run.status = "canceled"
+                    db.commit()
+                    logger.info("Comparaison %s annulée en cours.", run_id)
+                    return {"status": "canceled"}
+                model = db.query(ModelVersion).filter_by(label=label).one_or_none()
+                if model is None or not model.available:
+                    raise RuntimeError(f"Moteur indisponible pour la comparaison : {label}")
+                predictor = get_predictor(model, cfg)
+                t0 = time.monotonic()
+                preds = predictor.predict_cleaned_batch(texts, sats)
+                lat_by[label] = (time.monotonic() - t0) * 1000 / max(1, len(texts))
+                theme_by[label] = [p.get("theme1_niv1") or "" for p in preds]
+                conf_by[label] = [p.get("confidence_globale") for p in preds]
+                sent_by[label] = [p.get("theme1_sentiment") or "" for p in preds]
+                for i, p in enumerate(preds):
+                    db.add(_to_engine_pred_compare(run_id, sample[i].id, sample[i].row_index, label, p, lat_by[label]))
+                db.commit()
+
+            run.metrics = comparison_lib.build_metrics(theme_by, conf_by, sent_by, lat_by, len(sample))
+            run.status = "done"
+            db.commit()
+            logger.info("Comparaison %s terminée (%d verbatims, %d moteurs).", run_id, len(sample), len(engines))
+            return {"status": "done", "sample": len(sample), "engines": engines}
+
+        except Exception as exc:
+            logger.exception("Comparaison %s en échec : %s", run_id, exc)
+            db.rollback()
+            run = db.get(ComparisonRun, run_id)
+            if run:
+                run.status = "failed"
+                run.error_message = str(exc)[:1000]
                 db.commit()
             return {"status": "failed", "error": str(exc)}
