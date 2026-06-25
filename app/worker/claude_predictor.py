@@ -51,6 +51,17 @@ logger = logging.getLogger("worker.claude")
 
 ANTHROPIC_VERSION = "2023-06-01"
 CLASSIFY_TOOL_NAME = "classer_verbatim"
+JUDGE_TOOL_NAME = "rendre_verdict"
+
+# Schéma de sortie du juge (V5-D9/D11) : pairwise aveuglé -> A / B / égalité + justification.
+JUDGE_OUTPUT_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "winner": {"type": "string", "enum": ["A", "B", "tie"]},
+        "rationale": {"type": "string"},
+    },
+    "required": ["winner", "rationale"],
+}
 
 
 class ClaudeError(RuntimeError):
@@ -63,20 +74,24 @@ class ClaudeError(RuntimeError):
 def call_claude_messages(
     base_url: str, api_key: str, model: str, system: str, user: str,
     max_tokens: int, timeout_s: float,
+    tool_name: str = CLASSIFY_TOOL_NAME, input_schema: Optional[Dict[str, Any]] = None,
+    tool_description: str = "Renvoie la classification du verbatim, strictement dans la taxonomie imposée.",
 ) -> Dict[str, Any]:
     """Appelle ``/v1/messages`` en sortie structurée (tool use forcé). Lève ClaudeError sur échec.
 
-    La sortie est contrainte par un outil dont ``input_schema`` == LLM_OUTPUT_SCHEMA
-    (même forme que LM Studio) ; on lit le bloc ``tool_use`` de la réponse. Si aucun
-    bloc exploitable, renvoie {} -> repli appliqué par ``map_llm_response``.
+    La sortie est contrainte par un outil (``tool_name`` + ``input_schema``) et
+    ``tool_choice`` forcé ; on lit le bloc ``tool_use`` correspondant. Par défaut, outil
+    de **classification** (schéma LLM_OUTPUT_SCHEMA, revalidé ensuite par map_llm_response) ;
+    le **juge** (C5) passe ``tool_name=JUDGE_TOOL_NAME`` + ``input_schema=JUDGE_OUTPUT_SCHEMA``.
+    Si aucun bloc exploitable, renvoie {}.
     NB : ``temperature``/``top_p`` ne sont PAS envoyés (rejetés par Opus 4.7+/Fable).
     """
     if not api_key:
         raise ClaudeError("ANTHROPIC_API_KEY absente : moteur Claude indisponible.")
     tool = {
-        "name": CLASSIFY_TOOL_NAME,
-        "description": "Renvoie la classification du verbatim, strictement dans la taxonomie imposée.",
-        "input_schema": LLM_OUTPUT_SCHEMA,
+        "name": tool_name,
+        "description": tool_description,
+        "input_schema": input_schema or LLM_OUTPUT_SCHEMA,
     }
     payload = {
         "model": model,
@@ -84,7 +99,7 @@ def call_claude_messages(
         "system": system,
         "messages": [{"role": "user", "content": user}],
         "tools": [tool],
-        "tool_choice": {"type": "tool", "name": CLASSIFY_TOOL_NAME},
+        "tool_choice": {"type": "tool", "name": tool_name},
     }
     url = base_url.rstrip("/") + "/v1/messages"
     data = json.dumps(payload).encode("utf-8")
@@ -109,12 +124,35 @@ def call_claude_messages(
 
     content = body.get("content", []) if isinstance(body, dict) else []
     for block in content:
-        if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("name") == CLASSIFY_TOOL_NAME:
+        if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("name") == tool_name:
             inp = block.get("input")
             return inp if isinstance(inp, dict) else {}
     # Pas de tool_use exploitable (cas rare) : le mapping appliquera le repli.
     logger.warning("Réponse Anthropic sans bloc tool_use exploitable.")
     return {}
+
+
+def build_judge_prompt(verbatim: str, classif_a: str, classif_b: str) -> Dict[str, str]:
+    """Prompt du juge **aveuglé** (V5-D11) : deux classifications « A » / « B » anonymes.
+
+    Aucun nom de moteur n'apparaît : le juge ne sait pas qui a produit A ou B (et l'ordre
+    A/B est permuté côté worker). Pairwise, sans vérité terrain (V5-D9).
+    """
+    system = (
+        "Tu es un évaluateur expert de la classification de verbatims clients e-commerce "
+        "(enseigne Cultura). On te présente un verbatim et DEUX classifications anonymes, "
+        "« A » et « B », produites par deux systèmes que tu ne connais pas. Choisis la "
+        "classification la PLUS PERTINENTE au regard du verbatim (grand thème, sous-thème, "
+        "sentiment), ou « tie » si elles se valent. Tu réponds UNIQUEMENT via l'outil, avec "
+        "une justification courte et factuelle (sans nommer A/B comme un système)."
+    )
+    user = (
+        f"Verbatim :\n\"\"\"\n{verbatim}\n\"\"\"\n\n"
+        f"Classification A : {classif_a}\n"
+        f"Classification B : {classif_b}\n\n"
+        "Quelle classification est la plus pertinente ? Réponds par A, B ou tie."
+    )
+    return {"system": system, "user": user}
 
 
 # --------------------------------------------------------------------------- #
@@ -224,3 +262,31 @@ class ClaudePredictor:
             satisfactions = [None] * n
         return self._run_pool(n,
                               lambda i: self._refine_one(cleaned[i], satisfactions[i], proposals[i]))
+
+    def judge_pairwise(self, verbatim: str, classif_a: str, classif_b: str) -> Dict[str, Any]:
+        """Juge Claude (C5) : tranche entre les classifications A et B (aveuglé).
+
+        Renvoie {"winner": "A"|"B"|"tie", "rationale": str}. L'aveuglement et la
+        permutation A/B sont gérés par l'appelant (worker) ; ici on ne fait que juger.
+        Échec propre (ClaudeError) après retries ; réponse hors-forme -> "tie" (neutre).
+        """
+        prompt = build_judge_prompt(verbatim, classif_a, classif_b)
+        last_exc: Optional[ClaudeError] = None
+        for attempt in range(self.retries + 1):
+            try:
+                raw = call_claude_messages(
+                    self.base_url, self.api_key, self.model, prompt["system"], prompt["user"],
+                    self.max_tokens, self.timeout_s,
+                    tool_name=JUDGE_TOOL_NAME, input_schema=JUDGE_OUTPUT_SCHEMA,
+                    tool_description="Rends un verdict pairwise entre les classifications A et B.")
+                winner = raw.get("winner") if isinstance(raw, dict) else None
+                if winner not in ("A", "B", "tie"):
+                    winner = "tie"
+                rationale = str(raw.get("rationale", "") if isinstance(raw, dict) else "")[:1000]
+                return {"winner": winner, "rationale": rationale}
+            except ClaudeError as exc:
+                last_exc = exc
+                if attempt < self.retries:
+                    logger.warning("Appel juge Claude échoué (tentative %d/%d) : %s",
+                                   attempt + 1, self.retries + 1, exc)
+        raise last_exc  # type: ignore[misc]
