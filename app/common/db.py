@@ -13,8 +13,16 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+psycopg://oes:oes@db:5432/oes")
 
-# check_same_thread=False utile uniquement pour SQLite (tests).
-_connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+if DATABASE_URL.startswith("sqlite"):
+    # check_same_thread=False utile uniquement pour SQLite (tests/recettes).
+    _connect_args = {"check_same_thread": False}
+else:
+    # psycopg3 : désactiver les *prepared statements* côté serveur.
+    # Le worker RQ fork un process par job ; une connexion héritée du parent peut
+    # déjà porter un statement « _pg3_N » préparé par un job précédent, d'où
+    # « DuplicatePreparedStatement "_pg3_0" already exists » au job suivant
+    # (observé au 2e run de comparaison). prepare_threshold=None les désactive.
+    _connect_args = {"prepare_threshold": None}
 engine = create_engine(DATABASE_URL, pool_pre_ping=True, future=True, connect_args=_connect_args)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
