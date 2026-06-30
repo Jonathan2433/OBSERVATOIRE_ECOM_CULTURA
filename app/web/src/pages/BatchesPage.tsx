@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { createBatch, getMeta, listBatches, type Batch } from "../api";
+import { createBatch, getMeta, listBatches, listModels, type Batch, type ModelVersion } from "../api";
 import StatusBadge from "../components/StatusBadge";
-import { Button, Card, FileDropzone, InfoTip, Input, ProgressBar } from "../ui";
+import { Button, Card, FileDropzone, InfoTip, Input, ProgressBar, Select } from "../ui";
 
 export default function BatchesPage() {
   const navigate = useNavigate();
@@ -13,12 +13,17 @@ export default function BatchesPage() {
   const [seuil, setSeuil] = useState(0.5);  // remplacé par la valeur de config au montage
   const [mdtc, setMdtc] = useState<File | null>(null);
   const [mopinion, setMopinion] = useState<File | null>(null);
+  const [refiner, setRefiner] = useState("");                 // "" = aucun (1 seul moteur)
+  const [refiners, setRefiners] = useState<ModelVersion[]>([]); // raffineurs LLM locaux dispo
 
   const refresh = () => listBatches().then(setBatches).catch((e) => setError(String(e.message ?? e)));
 
   useEffect(() => {
     // Seuil par défaut piloté par la config (Administration), pas codé en dur.
     getMeta().then((m) => setSeuil(m.default_seuil_revue)).catch(() => {});
+    // Raffineurs possibles = moteurs LLM LOCAUX disponibles (lmstudio). Claude exclu (offline).
+    listModels().then((ms) => setRefiners(ms.filter((m) => m.available && m.kind === "lmstudio")))
+      .catch(() => setRefiners([]));
     refresh();
     const t = setInterval(() => {
       setBatches((prev) => {
@@ -38,7 +43,10 @@ export default function BatchesPage() {
     }
     setBusy(true);
     try {
-      const b = await createBatch({ label: label.trim() || undefined, seuilRevue: seuil, mdtc, mopinion });
+      const b = await createBatch({
+        label: label.trim() || undefined, seuilRevue: seuil,
+        refinerLabel: refiner || undefined, mdtc, mopinion,
+      });
       navigate(`/lots/${b.id}`);
     } catch (err: any) {
       setError(err?.message ?? "Erreur lors de la création du lot");
@@ -72,6 +80,17 @@ export default function BatchesPage() {
                      onChange={(e) => setSeuil(parseFloat(e.target.value))} />
               <span className="ui-field__hint">En dessous de ce score de confiance, un verbatim part en revue.</span>
             </label>
+            <Select label="Raffinement — 2ᵉ moteur (optionnel)" value={refiner}
+                    onChange={(e) => setRefiner(e.target.value)} style={{ maxWidth: 360 }}
+                    hint={refiners.length
+                      ? "Le modèle actif propose, puis ce moteur LLM relit et corrige. Désaccord sur le grand thème → revue forcée."
+                      : "Aucun moteur LLM local disponible (active LM Studio dans Administration → Modèles)."}
+                    disabled={refiners.length === 0}>
+              <option value="">Aucun (1 seul moteur)</option>
+              {refiners.map((m) => (
+                <option key={m.id} value={m.label}>{m.label}</option>
+              ))}
+            </Select>
             <div>
               <Button type="submit" variant="primary" loading={busy}>
                 {busy ? "Lancement…" : "Lancer le traitement"}

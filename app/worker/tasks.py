@@ -11,11 +11,15 @@ import logging
 import math
 import os
 import platform
+import time
 from collections import Counter
 from datetime import datetime, timezone
 
 from common.db import SessionLocal
-from common.models import Batch, Result
+from common.models import (
+    Batch, ENGINE_ROLE_PROPOSER, ENGINE_ROLE_REFINER, EnginePrediction,
+    MODEL_KIND_LMSTUDIO, ModelVersion, Result,
+)
 
 from .classifiers import get_predictor
 from .config_worker import build_worker_cfg
@@ -145,6 +149,35 @@ def _to_result(batch_id: int, gidx: int, source, pred: dict, original: dict) -> 
     )
 
 
+def merge_cascade(proposal: dict, refined: dict) -> tuple[dict, bool]:
+    """Cascade V5 : la sortie du raffineur FAIT FOI ; désaccord theme1_niv1 -> revue forcée.
+
+    Renvoie (sortie_finale, désaccord). Fonction pure (cf. SPEC_V5 §6, V5-D5/D6) :
+    le critère de désaccord est le grand thème ``theme1_niv1`` uniquement (V5-D6).
+    """
+    disagree = (proposal.get("theme1_niv1") or "") != (refined.get("theme1_niv1") or "")
+    out = dict(refined)
+    if disagree:
+        out["revue_humaine_requise"] = True   # revue humaine forcée (le 2e moteur arbitre, l'humain tranche)
+    return out, disagree
+
+
+def _to_engine_pred(batch_id, result_id, row_index, engine_label, role, pred, latency_ms):
+    """Construit une ligne engine_predictions à partir d'un dict de sortie (OUTPUT_COLUMNS)."""
+    return EnginePrediction(
+        batch_id=batch_id, result_id=result_id, row_index=int(row_index),
+        engine_label=engine_label, role=role,
+        theme1_niv1=pred.get("theme1_niv1") or None,
+        theme1_niv2=pred.get("theme1_niv2") or None,
+        theme1_sentiment=pred.get("theme1_sentiment") or None,
+        confidence_globale=pred.get("confidence_globale"),
+        signal_rupture=bool(pred.get("signal_rupture_client", False)),
+        signal_churn=bool(pred.get("signal_churn", False)),
+        signal_insatisfaction=bool(pred.get("signal_insatisfaction_forte", False)),
+        latency_ms=latency_ms,
+    )
+
+
 def process_batch_job(batch_id: int) -> dict:
     """Traite un lot complet et persiste les résultats. Renvoie un résumé."""
     from src.preprocessing.loader import COL_SATISFACTION, COL_SOURCE, COL_TEXT, load_for_batch
@@ -170,8 +203,29 @@ def process_batch_job(batch_id: int) -> dict:
 
         try:
             predictor = get_predictor(active, cfg)
-            # Granularité de progression selon le moteur (LLM = commits fréquents).
-            chunk = LMSTUDIO_PROGRESS_CHUNK if (active is not None and active.kind == "lmstudio") else PROGRESS_CHUNK
+
+            # --- Cascade V5 (opt-in) : résolution du raffineur (2e moteur LLM) -----
+            # refiner_label = NULL -> pipeline V4 strictement inchangé (branche else plus bas).
+            refiner_predictor = None
+            refiner_label = batch.refiner_label
+            if refiner_label:
+                refiner_model = db.query(ModelVersion).filter_by(label=refiner_label).one_or_none()
+                # Garde-fou (défense en profondeur, déjà validé à la création) : le raffineur
+                # DOIT être un moteur LLM local. Claude (offline strict) et real/stub (pas de
+                # refine_cleaned_batch) sont exclus -> échec propre du lot.
+                if refiner_model is None or not refiner_model.available or refiner_model.kind != MODEL_KIND_LMSTUDIO:
+                    raise RuntimeError(
+                        f"Raffineur invalide ({refiner_label}) : un moteur LLM local (LM Studio) "
+                        "disponible est requis (Claude et CamemBERT/stub sont exclus de la cascade).")
+                refiner_predictor = get_predictor(refiner_model, cfg)
+                batch.model_label = f"{batch.model_label} ▶ {refiner_model.label}"
+                batch.chain_disagreements = 0
+                db.commit()
+                logger.info("Lot %s : cascade %s ▶ %s", batch_id, active.label if active else "?", refiner_label)
+
+            # Granularité de progression : LLM (proposeur OU raffineur) = commits fréquents.
+            llm_in_chain = (active is not None and active.kind == "lmstudio") or (refiner_predictor is not None)
+            chunk = LMSTUDIO_PROGRESS_CHUNK if llm_in_chain else PROGRESS_CHUNK
             files = batch.source_files or {}
             df = load_for_batch(files.get("mdtc"), files.get("mopinion"), cfg)
             total = len(df)
@@ -214,14 +268,45 @@ def process_batch_job(batch_id: int) -> dict:
                         cleaned.append("")
                         n_err += 1
 
-                preds = predictor.predict_cleaned_batch(cleaned, sat_chunk)
-                for i, pred in enumerate(preds):
-                    gidx = start + i
-                    row = rows.iloc[i]
-                    original = {c: _jsonable(row[c]) for c in orig_cols}
-                    db.add(_to_result(batch_id, gidx, _jsonable(row.get(COL_SOURCE)), pred, original))
-                    if pred.get("revue_humaine_requise"):
-                        n_review += 1
+                if refiner_predictor is None:
+                    # --- Pipeline V4 (mono-moteur) : INCHANGÉ ------------------------
+                    preds = predictor.predict_cleaned_batch(cleaned, sat_chunk)
+                    for i, pred in enumerate(preds):
+                        gidx = start + i
+                        row = rows.iloc[i]
+                        original = {c: _jsonable(row[c]) for c in orig_cols}
+                        db.add(_to_result(batch_id, gidx, _jsonable(row.get(COL_SOURCE)), pred, original))
+                        if pred.get("revue_humaine_requise"):
+                            n_review += 1
+                else:
+                    # --- Cascade V5 : proposeur -> raffineur (sortie raffineur = foi) -
+                    t0 = time.monotonic()
+                    proposals = predictor.predict_cleaned_batch(cleaned, sat_chunk)
+                    prop_ms = (time.monotonic() - t0) * 1000 / max(1, len(cleaned))
+                    t1 = time.monotonic()
+                    refined = refiner_predictor.refine_cleaned_batch(cleaned, sat_chunk, proposals)
+                    ref_ms = (time.monotonic() - t1) * 1000 / max(1, len(cleaned))
+
+                    proposer_label = (batch.model_label or "").split(" ▶ ")[0]
+                    chunk_meta = []   # (result, proposal, refiner_pred, gidx)
+                    for i, prop in enumerate(proposals):
+                        gidx = start + i
+                        row = rows.iloc[i]
+                        original = {c: _jsonable(row[c]) for c in orig_cols}
+                        final, disagree = merge_cascade(prop, refined[i])
+                        if disagree:
+                            batch.chain_disagreements = (batch.chain_disagreements or 0) + 1
+                        result = _to_result(batch_id, gidx, _jsonable(row.get(COL_SOURCE)), final, original)
+                        db.add(result)
+                        if final.get("revue_humaine_requise"):
+                            n_review += 1
+                        chunk_meta.append((result, prop, refined[i], gidx))
+                    db.flush()   # assigne les result.id pour rattacher les engine_predictions
+                    for result, prop, ref_pred, gidx in chunk_meta:
+                        db.add(_to_engine_pred(batch_id, result.id, gidx, proposer_label,
+                                               ENGINE_ROLE_PROPOSER, prop, prop_ms))
+                        db.add(_to_engine_pred(batch_id, result.id, gidx, refiner_label,
+                                               ENGINE_ROLE_REFINER, ref_pred, ref_ms))
 
                 batch.n_processed = min(start + chunk, total)
                 db.commit()

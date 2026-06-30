@@ -27,6 +27,12 @@ class Batch(Base):
     model_label: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     seuil_revue: Mapped[float] = mapped_column(Float, default=0.70, nullable=False)
 
+    # Cascade V5 (opt-in). NULL = lot mono-moteur (comportement V4 strictement inchangé).
+    # refiner_label = libellé du 2e moteur LLM (raffineur) ; chain_disagreements = nb de
+    # verbatims où theme1_niv1 diffère entre proposeur et raffineur (revue forcée).
+    refiner_label: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    chain_disagreements: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
     n_total: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     n_processed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     n_review: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

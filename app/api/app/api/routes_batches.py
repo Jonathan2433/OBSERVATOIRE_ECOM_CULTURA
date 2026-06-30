@@ -17,12 +17,32 @@ from ..core.security import get_current_user
 from ..models.user import User
 from ..schemas.batch import BatchOut, BatchProgress
 from ..services.jobs import enqueue_batch
-from common.models import Batch
+from common.models import Batch, MODEL_KIND_CLAUDE, MODEL_KIND_LMSTUDIO, ModelVersion
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/batches", tags=["batches"], dependencies=[Depends(get_current_user)])
 
 _ALLOWED_SUFFIX = ".xlsx"
+
+
+def resolve_refiner(db: Session, refiner_label: str) -> ModelVersion:
+    """Valide le 2e moteur d'une cascade (V5). Retourne le ModelVersion ou lève 400.
+
+    Garde-fous : le raffineur DOIT être un moteur **LLM local** (`lmstudio`) disponible.
+    **Claude est exclu** (offline strict de prod, V5-D1) ; **CamemBERT/stub** aussi
+    (ils n'implémentent pas `refine_cleaned_batch`).
+    """
+    m = db.query(ModelVersion).filter_by(label=refiner_label).one_or_none()
+    if m is None or not m.available:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Raffineur introuvable ou indisponible : {refiner_label}")
+    if m.kind == MODEL_KIND_CLAUDE:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Claude ne peut pas être raffineur en production (comparaison/test uniquement).")
+    if m.kind != MODEL_KIND_LMSTUDIO:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Le raffineur doit être un moteur LLM local (LM Studio).")
+    return m
 
 
 async def _save_upload(upload: UploadFile, dest_dir: Path, name: str) -> str:
@@ -43,6 +63,7 @@ async def _save_upload(upload: UploadFile, dest_dir: Path, name: str) -> str:
 async def create_batch(
     label: Optional[str] = Form(None),
     seuil_revue: float = Form(0.70),
+    refiner_label: Optional[str] = Form(None),
     mdtc: Optional[UploadFile] = File(None),
     mopinion: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
@@ -54,8 +75,14 @@ async def create_batch(
     if not (0.0 <= seuil_revue <= 1.0):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="seuil_revue doit être entre 0 et 1.")
 
+    # Cascade V5 (opt-in) : valide le raffineur AVANT toute création (refus si non LLM/indispo).
+    refiner = (refiner_label or "").strip() or None
+    if refiner is not None:
+        resolve_refiner(db, refiner)
+
     # Crée d'abord le lot pour obtenir un id, puis range les fichiers sous cet id.
-    batch = Batch(label=label or "lot", status="pending", seuil_revue=seuil_revue, created_by=current_user.id)
+    batch = Batch(label=label or "lot", status="pending", seuil_revue=seuil_revue,
+                  created_by=current_user.id, refiner_label=refiner)
     db.add(batch)
     db.flush()  # -> batch.id
     if not label:
@@ -79,8 +106,9 @@ async def create_batch(
         db.commit()
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                             detail="File de traitement indisponible.")
+    _cascade = f" ▶ raffineur={refiner}" if refiner else ""
     record_audit(db, action="batch.create", user=current_user, entity="batch", entity_id=batch.id,
-                 details=f"{batch.label} (seuil={seuil_revue})")
+                 details=f"{batch.label} (seuil={seuil_revue}){_cascade}")
     logger.info("Lot %s créé par %s", batch.id, current_user.username)
     return batch
 
