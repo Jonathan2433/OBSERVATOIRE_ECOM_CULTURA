@@ -115,4 +115,9 @@ def get_predictor(active_model, cfg: Dict[str, Any]):
         from .lmstudio_predictor import LMStudioPredictor
 
         return LMStudioPredictor(cfg)
+    if kind == "claude":
+        # Moteur de COMPARAISON/TEST uniquement (jamais activable comme modèle de lot).
+        from .claude_predictor import ClaudePredictor
+
+        return ClaudePredictor(cfg)
     return StubPredictor(cfg)

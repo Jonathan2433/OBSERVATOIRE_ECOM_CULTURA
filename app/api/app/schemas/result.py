@@ -50,6 +50,9 @@ class CorrectionRequest(BaseModel):
 class PredictRequest(BaseModel):
     text: str = Field(min_length=1)
     satisfaction: Optional[int] = None
+    # Test à la volée (V5) : moteur à utiliser ; None = modèle actif. Permet de
+    # tester un moteur de comparaison (ex. Claude) sans changer le modèle de prod.
+    model_id: Optional[int] = None
 
 
 class PredictResponse(BaseModel):

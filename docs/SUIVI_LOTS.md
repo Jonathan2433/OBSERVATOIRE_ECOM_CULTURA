@@ -236,7 +236,7 @@ Spec : [SPEC_V5_MULTI_MOTEUR.md](SPEC_V5_MULTI_MOTEUR.md) (fichier `SPEC_V5_MULT
 | Lot | Contenu | État | Branche |
 |---|---|---|---|
 | **C1** | Refactor `llm_common` (verrou) : extraction iso-comportement des fonctions pures depuis `lmstudio_predictor` (prompt proposeur, `map_llm_response`, garde-fous, normalisation), **ré-exports** pour rétrocompat, **mode prompt raffineur** (`build_refiner_prompt`) + signature `refine_cleaned_batch(cleaned, satisfactions, proposals)` | ✅ Développé — **en attente validation PO** | `v5/1-llm-common` |
-| **C2** | Moteur Claude (`/v1/messages`, proposeur+raffineur), `kind="claude"`, `_detect_claude`, refus d'activation, bloc config + `ANTHROPIC_API_KEY`, sélecteur *Test à la volée*, ligne « comparaison uniquement » | ⬜ À faire | — |
+| **C2** | Moteur Claude (`claude_predictor.py`, client `/v1/messages` stdlib + tool use, proposeur+raffineur revalidés), `kind="claude"` dans `get_predictor`, `MODEL_KIND_CLAUDE`, `_detect_claude` + sync (jamais auto-activé), **refus d'activation 400** (`routes_models`), bloc config `claude:` + env `ANTHROPIC_API_KEY`/`CLAUDE_*`, sélecteur moteur *Test à la volée* (`/predict` `model_id`), ligne « comparaison uniquement » dans Modèles | ✅ Développé — **en attente validation PO** | `v5/2-moteur-claude` |
 | **C3** | Cascade prod : migration `0006` (`engine_predictions`, `batches.refiner_label`, `chain_disagreements`), cascade dans `process_batch_job`, désaccord `theme1_niv1` → revue forcée, UI création/détail | ⬜ À faire | — |
 | **C4** | Comparaison objective : `comparison_runs`, `run_comparison_job`, endpoints, page Comparaison (mode dégradé) | ⬜ À faire | — |
 | **C5** | Juge Claude aveuglé + permuté, `judge_verdicts`, win-rate + exemples commentés | ⬜ À faire | — |
@@ -246,8 +246,15 @@ Spec : [SPEC_V5_MULTI_MOTEUR.md](SPEC_V5_MULTI_MOTEUR.md) (fichier `SPEC_V5_MULT
 inchangé, fonctions pures déplacées sans modification) ; aucun moteur/route/migration touché ;
 `refine_cleaned_batch` revalide par `map_llm_response` (**jamais hors taxonomie**).
 
-**Validation automatisée (C1)** : `app/tests/recette_v5.py` **25/25 OK** (LLM mocké, torch-free) ;
-non-régression **V1 48/48 · V3 13/13 · V4 50/50** ; `tsc --noEmit` OK ; `docker compose config` OK.
+**Garde-fous tenus (C2)** : offline strict de PROD intact — Claude **refusé à l'activation** (400)
+et jamais auto-activé → ne peut pas devenir le modèle d'un lot ; clé `ANTHROPIC_API_KEY` en `.env`
+uniquement (jamais base/UI/config) ; sortie Claude revalidée par `map_llm_response` (**jamais hors
+taxonomie**) ; `temperature` non envoyée (Opus 4.7+/Fable) ; échec propre (ClaudeError, pas de repli
+silencieux) ; aucune dépendance ajoutée (stdlib `urllib`) ; moteurs `real`/`stub`/`lmstudio` inchangés.
+
+**Validation automatisée (C1+C2)** : `app/tests/recette_v5.py` **52/52 OK** (Claude/LLM mockés,
+torch-free ; refus d'activation testé via TestClient) ; non-régression **V1 48/48 · V3 13/13 · V4 50/50** ;
+`tsc --noEmit` OK ; `docker compose config` OK.
 
 ---
 
@@ -269,3 +276,5 @@ non-régression **V1 48/48 · V3 13/13 · V4 50/50** ; `tsc --noEmit` OK ; `dock
 | D12 | 2026-06-19 | SLA perf **détendue** + **échec propre** si LM Studio down (pas de repli silencieux) | LLM = 1 appel/verbatim (lent) assumé ; ne pas fausser la comparaison de qualité par un repli caché |
 | D13 | 2026-06-23 | V5/C1 : logique de décision LLM extraite en `app/worker/llm_common.py` (pur, torch-free) **partagée** par les moteurs LLM ; transport HTTP **propre à chaque moteur** ; `lmstudio_predictor` **ré-exporte** les symboles déplacés (verrou anti-régression) | Préparer le moteur Claude (C2) sans dupliquer prompt/validation/garde-fous ; iso-comportement LM Studio garanti par `recette_v4` 50/50 + parité d'objet `op.X is llm_common.X` testée en `recette_v5` |
 | D14 | 2026-06-23 | V5/C1 : raffineur = relecture de la proposition du moteur 1 (`build_refiner_prompt`), sortie **revalidée par `map_llm_response`** ; signature `refine_cleaned_batch(cleaned, satisfactions, proposals)` conforme SPEC_V5 §4.1 | Cascade (V5-D4) : le 2ᵉ moteur valide/corrige ; réutiliser le garde-fou taxo existant plutôt qu'un nouveau ; signature alignée sur la spec pour C3 |
+| D15 | 2026-06-23 | V5/C2 : client Claude en **stdlib `urllib`** (et non le SDK `anthropic`), API Messages `/v1/messages` + **tool use forcé** ; `temperature` non envoyée | Cohérence avec le moteur LM Studio de référence (V4-D10), **zéro dépendance ajoutée**, `recette_v5` sans dépendance/torch-free ; `temperature`/`top_p` sont rejetés (400) par Opus 4.7+/Fable. La skill `claude-api` recommande le SDK : bascule possible si le PO le souhaite (ajout `anthropic` au worker + venv recette) |
+| D16 | 2026-06-23 | V5/C2 : modèle Claude par défaut `claude-opus-4-8` ; détection **offline** (`available` = clé présente, sans ping réseau) ; refus d'activation **400** côté serveur + jamais auto-activé | Claude = classifieur LLM de référence (qualité) pour la comparaison ; ne jamais contacter Anthropic hors test/comparaison explicite ; garde-fou offline strict de prod (V5-D1) appliqué au niveau API |

@@ -4,7 +4,9 @@ from .user import ROLE_ADMIN, ROLE_ANALYSTE, ROLES, User
 from .batch import Batch, BATCH_STATUSES
 from .result import Result
 from .correction import Correction
-from .model_version import ModelVersion, MODEL_KIND_LMSTUDIO, MODEL_KIND_REAL, MODEL_KIND_STUB
+from .model_version import (
+    ModelVersion, MODEL_KIND_CLAUDE, MODEL_KIND_LMSTUDIO, MODEL_KIND_REAL, MODEL_KIND_STUB,
+)
 from .audit import AuditLog
 from .app_config import AppConfig
 
@@ -13,7 +15,7 @@ __all__ = [
     "Batch", "BATCH_STATUSES",
     "Result",
     "Correction",
-    "ModelVersion", "MODEL_KIND_LMSTUDIO", "MODEL_KIND_REAL", "MODEL_KIND_STUB",
+    "ModelVersion", "MODEL_KIND_CLAUDE", "MODEL_KIND_LMSTUDIO", "MODEL_KIND_REAL", "MODEL_KIND_STUB",
     "AuditLog",
     "AppConfig",
 ]

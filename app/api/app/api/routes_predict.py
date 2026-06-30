@@ -22,7 +22,8 @@ def predict(payload: PredictRequest):
     """Enfile une prédiction unitaire et attend (court) son résultat."""
     queue = get_queue()
     try:
-        job = queue.enqueue("worker.tasks.predict_one_job", payload.text, payload.satisfaction, job_timeout=120)
+        job = queue.enqueue("worker.tasks.predict_one_job", payload.text, payload.satisfaction,
+                            payload.model_id, job_timeout=120)
     except Exception as exc:  # Redis indisponible
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                             detail=f"File de traitement indisponible : {exc}")

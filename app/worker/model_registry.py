@@ -15,7 +15,9 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from common.db import SessionLocal
-from common.models import MODEL_KIND_LMSTUDIO, MODEL_KIND_REAL, MODEL_KIND_STUB, ModelVersion
+from common.models import (
+    MODEL_KIND_CLAUDE, MODEL_KIND_LMSTUDIO, MODEL_KIND_REAL, MODEL_KIND_STUB, ModelVersion,
+)
 
 logger = logging.getLogger("worker.registry")
 
@@ -93,8 +95,33 @@ def _detect_lmstudio(cfg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     }
 
 
+def _detect_claude(cfg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Décrit le moteur Claude (V5). None si désactivé en config.
+
+    **Comparaison/test uniquement** : l'entrée n'est jamais auto-activée et son
+    activation est refusée côté serveur. ``available`` = vrai ssi une clé
+    ``ANTHROPIC_API_KEY`` est présente — détection **offline** (aucun ping réseau :
+    on ne contacte Anthropic que lors d'un test/comparaison explicite). La présence
+    de la clé est transmise par ``config_worker`` via ``api_key_present`` (le secret
+    lui-même n'entre jamais dans la config).
+    """
+    cl = cfg.get("claude", {}) or {}
+    if not cl.get("enabled"):
+        return None
+
+    model = cl.get("model", "claude-opus-4-8")
+    base_url = cl.get("base_url", "https://api.anthropic.com")
+    key_present = bool(cl.get("api_key_present"))
+    return {
+        "label": f"claude:{model}",
+        "available": key_present,
+        "path": f"{model} @ {base_url}",
+        "metrics": {"api_key_present": key_present, "model": model, "comparison_only": True},
+    }
+
+
 def sync_registry(cfg: Dict[str, Any]) -> None:
-    """Met à jour le registre en base : stub + modèle réel + moteur LM Studio (si activé)."""
+    """Met à jour le registre : stub + modèle réel + LM Studio (si activé) + Claude (si activé)."""
     with SessionLocal() as db:
         stub = db.query(ModelVersion).filter_by(label=STUB_LABEL).one_or_none()
         if stub is None:
@@ -144,7 +171,27 @@ def sync_registry(cfg: Dict[str, Any]) -> None:
             for row in db.query(ModelVersion).filter_by(kind=MODEL_KIND_LMSTUDIO).all():
                 row.available = False
 
-        # Garantir au moins un modèle actif.
+        # --- Moteur Claude (V5) : comparaison/test uniquement, JAMAIS auto-activé --
+        claude = _detect_claude(cfg)
+        if claude:
+            existing = db.query(ModelVersion).filter_by(label=claude["label"]).one_or_none()
+            if existing is None:
+                db.add(ModelVersion(
+                    kind=MODEL_KIND_CLAUDE, label=claude["label"], path=claude["path"],
+                    metrics=claude["metrics"], available=claude["available"],
+                ))
+            else:
+                existing.available = claude["available"]
+                existing.path = claude["path"]
+                existing.metrics = claude["metrics"]
+            logger.info("Moteur Claude %s : disponible=%s (comparaison uniquement)",
+                        claude["label"], claude["available"])
+        else:
+            # Moteur désactivé : neutraliser toute entrée Claude résiduelle.
+            for row in db.query(ModelVersion).filter_by(kind=MODEL_KIND_CLAUDE).all():
+                row.available = False
+
+        # Garantir au moins un modèle actif (jamais Claude : non activable).
         if db.query(ModelVersion).filter_by(is_active=True).count() == 0:
             stub.is_active = True
         db.commit()

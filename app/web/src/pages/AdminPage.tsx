@@ -14,15 +14,21 @@ function fmtBytes(n: number): string {
   return `${(n / 1024 ** i).toFixed(i ? 1 : 0)} ${u[i]}`;
 }
 
-const KIND_LABEL: Record<string, string> = { real: "CamemBERT", lmstudio: "LM Studio (LLM)", stub: "Démo" };
-const kindTone = (k: string) => (k === "real" ? "success" : k === "lmstudio" ? "info" : "neutral");
+const KIND_LABEL: Record<string, string> = {
+  real: "CamemBERT", lmstudio: "LM Studio (LLM)", stub: "Démo", claude: "Claude (API, comparaison)",
+};
+const kindTone = (k: string) =>
+  (k === "real" ? "success" : k === "lmstudio" ? "info" : k === "claude" ? "warning" : "neutral");
 
-/** Motif d'indisponibilité d'un moteur LM Studio (sinon null). */
-function lmStudioReason(m: ModelVersion): string | null {
-  if (m.kind !== "lmstudio" || m.available) return null;
-  const r = (m.metrics ?? {}) as { reachable?: boolean; model_present?: boolean };
-  if (!r.reachable) return "LM Studio injoignable";
-  if (!r.model_present) return "modèle non chargé dans LM Studio";
+/** Motif d'indisponibilité d'un moteur LLM (LM Studio / Claude), sinon null. */
+function unavailableReason(m: ModelVersion): string | null {
+  if (m.available) return null;
+  if (m.kind === "lmstudio") {
+    const r = (m.metrics ?? {}) as { reachable?: boolean; model_present?: boolean };
+    if (!r.reachable) return "LM Studio injoignable";
+    if (!r.model_present) return "modèle non chargé dans LM Studio";
+  }
+  if (m.kind === "claude") return "clé API absente";
   return "indisponible";
 }
 
@@ -122,6 +128,8 @@ export default function AdminPage() {
             Après avoir déposé un modèle entraîné dans <code>data/models</code> et redémarré le worker,
             re-scannez puis activez la version souhaitée. Le moteur <b>LM Studio (LLM)</b> n'apparaît que
             s'il est activé en configuration ; pour lui, <b>Re-scanner</b> teste la connexion à LM Studio.
+            Le moteur <b>Claude (API)</b> est un moteur de <b>comparaison/test uniquement</b> : il
+            n'est <b>jamais activable en production</b> (disponible si une clé <code>ANTHROPIC_API_KEY</code> est configurée).
           </p>
           {models.length === 0 ? (
             <EmptyState title="Aucun modèle détecté" description="Déposez un modèle puis re-scannez." />
@@ -138,14 +146,16 @@ export default function AdminPage() {
                       <td><Badge tone={kindTone(m.kind)}>{KIND_LABEL[m.kind] ?? m.kind}</Badge></td>
                       <td>
                         {m.available ? <Badge tone="success" dot>oui</Badge> : <Badge tone="danger">non</Badge>}
-                        {lmStudioReason(m) && <span className="ui-muted" style={{ marginLeft: 6 }}>{lmStudioReason(m)}</span>}
+                        {unavailableReason(m) && <span className="ui-muted" style={{ marginLeft: 6 }}>{unavailableReason(m)}</span>}
                       </td>
                       <td>{m.is_active ? <Badge tone="primary" dot>actif</Badge> : <span className="ui-muted">—</span>}</td>
                       <td>{m.metrics && Object.keys(m.metrics).length > 0 ? <Badge tone="info">disponibles</Badge> : <span className="ui-muted">—</span>}</td>
                       <td style={{ textAlign: "right" }}>
-                        {!m.is_active && m.available && (
+                        {m.kind === "claude" ? (
+                          <Badge tone="warning">comparaison uniquement</Badge>
+                        ) : (!m.is_active && m.available && (
                           <Button variant="primary" size="sm" onClick={() => activate(m.id)}>Activer</Button>
-                        )}
+                        ))}
                       </td>
                     </tr>
                   ))}

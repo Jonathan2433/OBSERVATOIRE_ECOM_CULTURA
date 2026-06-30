@@ -67,13 +67,26 @@ def reconcile_orphan_batches() -> dict:
         return {"reconciled": n}
 
 
-def predict_one_job(text: str, satisfaction=None) -> dict:
-    """Prédiction unitaire (test à la volée) avec le modèle actif. Renvoie le dict de sortie."""
+def predict_one_job(text: str, satisfaction=None, model_id=None) -> dict:
+    """Prédiction unitaire (test à la volée). Renvoie le dict de sortie.
+
+    ``model_id`` (V5) : moteur explicite à utiliser (sélecteur du Test à la volée) ;
+    None -> modèle actif. Permet de tester un moteur de comparaison (ex. Claude)
+    sans changer le modèle de production. Un moteur indisponible retombe sur l'actif.
+    """
+    from common.models import ModelVersion
+
     cfg = build_worker_cfg()
     with SessionLocal() as db:
-        active = get_active(db)
-        label = active.label if active else None
-    predictor = get_predictor(active, cfg)
+        chosen = None
+        if model_id is not None:
+            chosen = db.get(ModelVersion, int(model_id))
+            if chosen is not None and not chosen.available:
+                chosen = None                      # moteur indisponible -> repli sur l'actif
+        if chosen is None:
+            chosen = get_active(db)
+        label = chosen.label if chosen else None
+    predictor = get_predictor(chosen, cfg)
     masked, _ = predictor.anonymizer.anonymize(text or "")
     cleaned = predictor.cleaner.clean(masked)
     result = predictor.predict_cleaned_batch([cleaned], [satisfaction])[0]
