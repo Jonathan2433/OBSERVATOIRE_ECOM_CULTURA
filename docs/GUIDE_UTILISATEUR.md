@@ -28,6 +28,10 @@ L'écran d'accueil résume l'activité (derniers lots, KPI modèle).
    > un fichier au mauvais format est **refusé avec un message explicite**.
 3. Régler éventuellement le **seuil de revue** (défaut **0,50**) : en dessous de
    ce score de confiance, un verbatim part en file de revue.
+   > 🔗 **Raffinement (optionnel, V5)** : le champ **« 2ᵉ moteur »** permet de chaîner un
+   > second moteur LLM local (LM Studio) qui **relit et corrige** la classification du
+   > modèle actif. En cas de **désaccord sur le grand thème**, le verbatim part **en revue
+   > forcée**. Laisser « Aucun » = traitement classique à un seul moteur.
 4. **Lancer**. Le traitement est **asynchrone** : la barre de progression avance
    (anonymisation → nettoyage → classification), l'interface reste libre.
 5. À la fin : nombre de verbatims traités, **% en revue**, durée. 
@@ -90,7 +94,32 @@ Menu **Tableaux de bord** (global) et **Lots → (un lot) → Tableau de bord**.
 
 Menu **Test à la volée** : saisir un verbatim (et un score de satisfaction
 facultatif) pour voir la prédiction immédiate. Outil de diagnostic/démonstration —
-n'enregistre rien.
+n'enregistre rien. Un **sélecteur de moteur** (V5) permet d'essayer un moteur précis
+— y compris **Claude (comparaison)** si une clé est configurée — sans changer le modèle
+de production.
+
+---
+
+## 6 bis. Comparer les moteurs (V5)
+
+Menu **Lots → (un lot terminé) → Comparaison**. Permet de **mettre en regard 2-3 moteurs**
+sur un échantillon du lot, pour décider lequel garder.
+
+1. *(Admin)* Choisir les **moteurs** à comparer, la **taille d'échantillon** (max 200) et
+   une **graine** (rejouer à l'identique). Cocher **« Juge Claude »** pour faire arbitrer
+   les désaccords (si une clé Claude est configurée).
+2. **Comparer** → le système rejoue l'échantillon (texte déjà anonymisé) et affiche :
+   - **Accord entre moteurs** : part des verbatims classés dans le **même grand thème** ;
+   - **Assurance moyenne** : la confiance que **chaque moteur s'attribue** — ⚠️ c'est son
+     assurance, **pas sa justesse** ;
+   - **Vitesse** (ms/verbatim, plus bas = plus rapide) et **répartition des sentiments** ;
+   - si le juge a tourné : **win-rate** (qui gagne les désaccords) + **exemples arbitrés**
+     (verbatim, classifications A/B, gagnant et justification de Claude).
+3. **Exporter (CSV)** le détail des prédictions rejouées.
+
+> 👥 **Lancer** une comparaison = **admin** ; tout le monde (analyste+) peut **consulter**.
+> Le juge Claude envoie les verbatims **divergents** (anonymisés) à l'API Anthropic
+> (consomme du crédit) ; **sans clé**, la page reste utile en **mode dégradé** (sans juge).
 
 ---
 
@@ -110,6 +139,9 @@ n'enregistre rien.
   l'**activer en un clic** (voir le guide d'exploitation). Un **second moteur optionnel**
   (*LM Studio (LLM)*) peut y être activé s'il est configuré : **rien ne change côté analyste**,
   seules les prédictions des **nouveaux** lots sont produites par le moteur choisi.
+  Le moteur **Claude (API)** y apparaît (si une clé est configurée) avec la mention
+  **« comparaison uniquement »** et **aucun bouton Activer** : il sert au *Test à la volée*
+  et à la *Comparaison*, **jamais** au traitement d'un lot de production.
 
 ---
 
