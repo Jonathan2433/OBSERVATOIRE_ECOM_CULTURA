@@ -90,6 +90,7 @@ export default function BatchDetailPage() {
             <NavLink to="revue" className={tabClass}>
               Revue {batch.n_review > 0 && <span className="ui-tab__count">{batch.n_review}</span>}
             </NavLink>
+            <NavLink to="comparaison" className={tabClass}>Comparaison</NavLink>
           </nav>
           <Outlet />
         </>

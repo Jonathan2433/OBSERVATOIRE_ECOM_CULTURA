@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import APP_NAME, __version__
 from .api.routes_auth import router as auth_router
 from .api.routes_batches import router as batches_router
+from .api.routes_comparisons import router as comparisons_router
 from .api.routes_admin import router as admin_router
 from .api.routes_health import router as health_router
 from .api.routes_kpi import router as kpi_router
@@ -59,6 +60,7 @@ app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(batches_router)
+app.include_router(comparisons_router)
 app.include_router(results_router)
 app.include_router(review_router)
 app.include_router(predict_router)

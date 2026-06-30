@@ -6,6 +6,7 @@ from .result import Result
 from .engine_prediction import (
     EnginePrediction, ENGINE_ROLE_COMPARE, ENGINE_ROLE_PROPOSER, ENGINE_ROLE_REFINER, ENGINE_ROLES,
 )
+from .comparison_run import ComparisonRun, COMPARISON_STATUSES
 from .correction import Correction
 from .model_version import (
     ModelVersion, MODEL_KIND_CLAUDE, MODEL_KIND_LMSTUDIO, MODEL_KIND_REAL, MODEL_KIND_STUB,
@@ -18,6 +19,7 @@ __all__ = [
     "Batch", "BATCH_STATUSES",
     "Result",
     "EnginePrediction", "ENGINE_ROLE_COMPARE", "ENGINE_ROLE_PROPOSER", "ENGINE_ROLE_REFINER", "ENGINE_ROLES",
+    "ComparisonRun", "COMPARISON_STATUSES",
     "Correction",
     "ModelVersion", "MODEL_KIND_CLAUDE", "MODEL_KIND_LMSTUDIO", "MODEL_KIND_REAL", "MODEL_KIND_STUB",
     "AuditLog",

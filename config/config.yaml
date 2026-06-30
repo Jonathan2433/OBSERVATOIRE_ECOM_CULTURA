@@ -198,6 +198,14 @@ orchestration:
   disagreement_field: "theme1_niv1"   # champ d'arbitrage du désaccord (V5-D6)
 
 # -----------------------------------------------------------------------------
+#  Comparaison de moteurs (V5) — rejoue un échantillon d'un lot sur 2-3 moteurs.
+# -----------------------------------------------------------------------------
+comparison:
+  default_sample_size: 50          # taille d'échantillon par défaut
+  max_sample_size: 200             # borne dure (maîtrise coût/latence des appels)
+  judge_enabled: true              # juge Claude (lot C5) ; ignoré si pas de clé (mode dégradé)
+
+# -----------------------------------------------------------------------------
 #  Export ONNX + quantization int8 (optimisation CPU)
 # -----------------------------------------------------------------------------
 onnx:

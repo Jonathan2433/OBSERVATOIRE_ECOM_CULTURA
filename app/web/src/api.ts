@@ -140,6 +140,38 @@ export const listModels = () => request<ModelVersion[]>("/api/models");
 export const activateModel = (id: number) => request<ModelVersion>(`/api/models/${id}/activate`, { method: "POST" });
 export const rescanModels = () => request<{ status: string }>("/api/models/rescan", { method: "POST" });
 
+// --- Comparaison de moteurs (V5) ---
+export interface ComparisonMetrics {
+  engines: string[];
+  sample_size: number;
+  agreement: Record<string, number>;            // "A vs B" -> part d'accord [0,1]
+  confidence: Record<string, { moyenne: number; min: number; max: number; n: number }>;
+  latency_ms: Record<string, number>;
+  sentiment: Record<string, Record<string, number>>;
+  n_divergences: number;
+  judge: unknown | null;                         // rempli au lot C5
+}
+export interface ComparisonRun {
+  id: number;
+  batch_id: number;
+  status: string;                                // pending | running | done | failed | canceled
+  created_at?: string | null;
+  engine_labels: string[];
+  sample_size: number;
+  seed: number;
+  judge_enabled: boolean;
+  metrics?: ComparisonMetrics | null;
+  error_message?: string | null;
+}
+export const listComparisons = (batchId: number) =>
+  request<ComparisonRun[]>(`/api/comparisons?batch_id=${batchId}`);
+export const getComparison = (id: number) => request<ComparisonRun>(`/api/comparisons/${id}`);
+export const createComparison = (
+  batchId: number,
+  body: { engines: string[]; sample_size: number; seed: number; judge_enabled: boolean },
+) => request<ComparisonRun>(`/api/batches/${batchId}/comparisons`, { method: "POST", body: JSON.stringify(body) });
+export const comparisonExportUrl = (id: number) => `/api/comparisons/${id}/export`;
+
 // --- Résultats ---
 export interface ResultRow {
   id: number;
