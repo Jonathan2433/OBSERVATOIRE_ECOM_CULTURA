@@ -73,3 +73,9 @@ Sortie attendue :
   cible doit l'utiliser, y installer LM Studio, **charger un modèle** et démarrer le serveur
   local (cf. [EXPLOITATION.md](EXPLOITATION.md) §4 bis), puis `LMSTUDIO_ENABLED=true` dans `.env`.
   Le bundle transféré fonctionne **sans** LM Studio (moteur désactivé par défaut → CamemBERT/stub).
+- **Moteur Claude (V5)** : la clé **`ANTHROPIC_API_KEY` n'est JAMAIS dans le bundle** (comme tout
+  secret, elle n'est ni en base, ni en image, ni commitée). Un poste cible **sans clé** fonctionne
+  normalement en **mode dégradé** (comparaison objective sans juge ; Claude indisponible). Pour
+  l'activer sur la cible : renseigner `ANTHROPIC_API_KEY` + `CLAUDE_ENABLED=true` dans le `.env`
+  (cf. [EXPLOITATION.md](EXPLOITATION.md) §4 ter). Rappel : Claude reste **comparaison/test
+  uniquement** (jamais en production) et c'est le **seul** flux réseau sortant possible.

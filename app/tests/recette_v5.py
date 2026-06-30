@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Recette V5 — orchestration multi-moteurs, Claude (comparaison), cascade & juge.
 
-Recette **incrémentale** : chaque lot V5 (C1→C6) ajoute sa section ; elle sera
-consolidée au lot C6. Tourne **hors ligne** (LLM mocké) et **torch-free** (logique
-de décision pure). cf. docs/SPEC_V5_MULTI_MOTEUR.md.
+Recette **consolidée** (lot C6) couvrant les lots C1→C5 : chaque section vérifie un
+lot. Tourne **hors ligne** (Claude/LLM mockés) et **torch-free** (logique de décision
+pure ; routes via TestClient). cf. docs/SPEC_V5_MULTI_MOTEUR.md.
 
 Sections :
 - C1 : refactor `llm_common` (verrou) — extraction iso-comportement des fonctions

@@ -231,7 +231,7 @@ local, activer le moteur, traiter un lot et juger la qualité/latence vs CamemBE
 **Claude** (API, comparaison/test **uniquement**, jamais en prod), orchestration **en cascade**
 (proposeur → raffineur LLM) et **page Comparaison jugée** — **sans dégrader l'offline strict de
 production**. `refiner_label = NULL` ⇒ pipeline V4 strictement inchangé.
-Spec : [SPEC_V5_MULTI_MOTEUR.md](SPEC_V5_MULTI_MOTEUR.md) (fichier `SPEC_V5_MULTI_MOTEUR_1.md`).
+Spec : [SPEC_V5_MULTI_MOTEUR.md](SPEC_V5_MULTI_MOTEUR.md).
 
 | Lot | Contenu | État | Branche |
 |---|---|---|---|
@@ -240,7 +240,7 @@ Spec : [SPEC_V5_MULTI_MOTEUR.md](SPEC_V5_MULTI_MOTEUR.md) (fichier `SPEC_V5_MULT
 | **C3** | Cascade prod : migration `0006` (`engine_predictions` + `batches.refiner_label`/`chain_disagreements`), cascade dans `process_batch_job` (proposeur → raffineur LLM, `merge_cascade`, 2 prédictions tracées), désaccord `theme1_niv1` → revue forcée, `resolve_refiner` (LLM local seul ; Claude/CamemBERT/stub refusés), `model_label` enrichi « ▶ », UI création (sélecteur raffineur) + détail (badge cascade, désaccords) | ✅ Développé — **en attente validation PO** | `v5/3-cascade` |
 | **C4** | Comparaison objective : migration `0007` (`comparison_runs` + FK `engine_predictions.comparison_run_id`), `comparison.py` (échantillon graine + métriques pures), `run_comparison_job` (replay 2-3 moteurs sur `verbatim_analyse`, rôle `compare`), endpoints (`POST /batches/{id}/comparisons` admin, `GET /comparisons[...]`, export CSV), **page Comparaison** (accord/confiance/latence/sentiment, mode dégradé sans juge) | ✅ Développé — **en attente validation PO** | `v5/4-comparaison` |
 | **C5** | Juge Claude : migration `0008` (`judge_verdicts`), `build_judge_prompt` **aveuglé** + `judge_pairwise` (outil dédié), phase juge dans `run_comparison_job` (divergences seules, **ordre A/B permuté**, mapping A/B→moteur, win-rate), endpoint verdicts paginé, **win-rate + exemples** sur la page + **mode dégradé** sans clé. Intègre le retour PO **lisibilité** (BarList échelle 0-100 + libellés clairs : accord, assurance auto-déclarée, latence) | ✅ Développé — **en attente validation PO** | `v5/5-juge` |
-| **C6** | Doc (EXPLOITATION/TRANSMISSION/guide), `recette_v5` consolidée, tag `v5.0` | ⬜ À faire | — |
+| **C6** | Doc : EXPLOITATION §4ter (Claude, égress `api.anthropic.com`, caveat ZDR, RBAC) + §7 ; TRANSMISSION (clé hors bundle) ; GUIDE_UTILISATEUR (§2 cascade, §6bis Comparaison, §6/§7 Claude) ; `recette_v5` **consolidée** (112/112, mockée torch-free). Tag `v5.0` **après merges PO** | ✅ Développé — **en attente validation PO** | `v5/6-doc-securite` |
 
 **Garde-fous tenus (C1)** : comportement `lmstudio` **strictement identique** (transport HTTP
 inchangé, fonctions pures déplacées sans modification) ; aucun moteur/route/migration touché ;
@@ -288,6 +288,19 @@ aveuglé, `judge_pairwise`, run avec juge end-to-end — divergences/permutation
 dégradé, endpoint verdicts) ; **migration 0008 appliquée en réel** (Postgres : `alembic_version = 0008…`,
 table `judge_verdicts`) ; non-régression **V1 48/48 · V3 13/13 · V4 50/50** ; `tsc --noEmit` OK ;
 `docker compose config` OK. **Reste (recette PO)** : run de comparaison réel avec juge Claude (coût API).
+
+### DoD V5 (spec §13)
+- [x] Moteur Claude **disponible si clé**, utilisable en test à la volée + comparaison, **non activable** en prod (refus serveur 400 vérifié).
+- [x] Cascade opt-in : proposeur → raffineur LLM ; désaccord `theme1_niv1` → revue forcée ; deux prédictions tracées ; `refiner_label=NULL` ⇒ comportement V4 identique.
+- [x] Page Comparaison : accord inter-moteurs, win-rate (juge), confiance, latence, exemples commentés ; **mode dégradé** fonctionnel sans clé.
+- [x] Juge **aveuglé + permuté** ; appels limités aux divergences ; échantillon plafonné.
+- [x] Garde-fous : offline strict **en production** intact ; anonymisation amont ; jamais hors taxonomie ; clé hors base/dépôt ; égress documenté + tracé audit.
+- [x] **Aucune régression** : `recette_v1` 48/48, `recette_v3` 13/13, `recette_v4` 50/50, `recette_v5` 112/112 ; `tsc`/build front OK ; `docker compose config` OK.
+- [ ] **Tag `v5.0`** : à poser **après** validation PO + merges `--no-ff` des branches `v5/1`→`v5/6` sur `main`.
+
+> **Reste hors lots V5** : merges `--no-ff` (sur feu vert PO) puis tag `v5.0` ; recette PO sur poste
+> (cascade réelle LM Studio, comparaison + juge Claude réels). Décision front : `app/web` (React) =
+> front unique servi ; `app/web-b` déprécié (suppression à acter séparément).
 
 ---
 
