@@ -20,7 +20,7 @@ from ..core.db import get_db
 from ..core.security import get_current_user, require_admin
 from ..schemas.comparison import ComparisonCreate, ComparisonRunOut
 from ..services.jobs import enqueue_comparison
-from common.models import Batch, ComparisonRun, EnginePrediction, ModelVersion
+from common.models import Batch, ComparisonRun, EnginePrediction, JudgeVerdict, ModelVersion, Result
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["comparisons"], dependencies=[Depends(get_current_user)])
@@ -97,12 +97,27 @@ def get_comparison(run_id: int, db: Session = Depends(get_db)):
 
 @router.get("/comparisons/{run_id}/verdicts")
 def get_verdicts(run_id: int, offset: int = 0, limit: int = 50, db: Session = Depends(get_db)):
-    """Verdicts du juge Claude (lot C5). En C4 : toujours vide (mode dégradé)."""
+    """Verdicts du juge Claude (C5), paginés. Vide si le juge n'a pas tourné (mode dégradé)."""
     run = db.get(ComparisonRun, run_id)
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run de comparaison introuvable")
-    # Le juge arrive au lot C5 ; tant qu'il n'a pas tourné, aucune divergence n'est jugée.
-    return {"total": 0, "offset": offset, "limit": limit, "items": []}
+    q = db.query(JudgeVerdict).filter_by(comparison_run_id=run_id)
+    total = q.count()
+    rows = q.order_by(JudgeVerdict.id).offset(offset).limit(min(limit, 200)).all()
+    # Verbatim associé (anonymisé) récupéré via result_id pour l'affichage d'exemples.
+    rids = [r.result_id for r in rows if r.result_id is not None]
+    verbs = {}
+    if rids:
+        verbs = {res.id: res.verbatim_analyse
+                 for res in db.query(Result.id, Result.verbatim_analyse).filter(Result.id.in_(rids)).all()}
+    items = [{
+        "id": r.id, "result_id": r.result_id, "row_index": r.row_index,
+        "verbatim": verbs.get(r.result_id),
+        "engine_a": r.engine_a, "engine_b": r.engine_b,
+        "classif_a": r.classif_a, "classif_b": r.classif_b,
+        "winner": r.winner, "rationale": r.rationale,
+    } for r in rows]
+    return {"total": total, "offset": offset, "limit": limit, "items": items}
 
 
 @router.get("/comparisons/{run_id}/export")

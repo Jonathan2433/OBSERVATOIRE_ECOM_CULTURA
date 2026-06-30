@@ -239,7 +239,7 @@ Spec : [SPEC_V5_MULTI_MOTEUR.md](SPEC_V5_MULTI_MOTEUR.md) (fichier `SPEC_V5_MULT
 | **C2** | Moteur Claude (`claude_predictor.py`, client `/v1/messages` stdlib + tool use, proposeur+raffineur revalidés), `kind="claude"` dans `get_predictor`, `MODEL_KIND_CLAUDE`, `_detect_claude` + sync (jamais auto-activé), **refus d'activation 400** (`routes_models`), bloc config `claude:` + env `ANTHROPIC_API_KEY`/`CLAUDE_*`, sélecteur moteur *Test à la volée* (`/predict` `model_id`), ligne « comparaison uniquement » dans Modèles | ✅ Développé — **en attente validation PO** | `v5/2-moteur-claude` |
 | **C3** | Cascade prod : migration `0006` (`engine_predictions` + `batches.refiner_label`/`chain_disagreements`), cascade dans `process_batch_job` (proposeur → raffineur LLM, `merge_cascade`, 2 prédictions tracées), désaccord `theme1_niv1` → revue forcée, `resolve_refiner` (LLM local seul ; Claude/CamemBERT/stub refusés), `model_label` enrichi « ▶ », UI création (sélecteur raffineur) + détail (badge cascade, désaccords) | ✅ Développé — **en attente validation PO** | `v5/3-cascade` |
 | **C4** | Comparaison objective : migration `0007` (`comparison_runs` + FK `engine_predictions.comparison_run_id`), `comparison.py` (échantillon graine + métriques pures), `run_comparison_job` (replay 2-3 moteurs sur `verbatim_analyse`, rôle `compare`), endpoints (`POST /batches/{id}/comparisons` admin, `GET /comparisons[...]`, export CSV), **page Comparaison** (accord/confiance/latence/sentiment, mode dégradé sans juge) | ✅ Développé — **en attente validation PO** | `v5/4-comparaison` |
-| **C5** | Juge Claude aveuglé + permuté, `judge_verdicts`, win-rate + exemples commentés | ⬜ À faire | — |
+| **C5** | Juge Claude : migration `0008` (`judge_verdicts`), `build_judge_prompt` **aveuglé** + `judge_pairwise` (outil dédié), phase juge dans `run_comparison_job` (divergences seules, **ordre A/B permuté**, mapping A/B→moteur, win-rate), endpoint verdicts paginé, **win-rate + exemples** sur la page + **mode dégradé** sans clé. Intègre le retour PO **lisibilité** (BarList échelle 0-100 + libellés clairs : accord, assurance auto-déclarée, latence) | ✅ Développé — **en attente validation PO** | `v5/5-juge` |
 | **C6** | Doc (EXPLOITATION/TRANSMISSION/guide), `recette_v5` consolidée, tag `v5.0` | ⬜ À faire | — |
 
 **Garde-fous tenus (C1)** : comportement `lmstudio` **strictement identique** (transport HTTP
@@ -278,6 +278,17 @@ anonymisation) ; **lancer = admin** (RBAC), consulter = analyste+ ; Claude utili
 réel** stub vs CamemBERT (n=50 : accord 20 %, 40 divergences, latence 0,05 vs 307 ms/verbatim) ;
 non-régression **V1 48/48 · V3 13/13 · V4 50/50** ; `tsc --noEmit` OK ; `docker compose config` OK.
 
+**Garde-fous tenus (C5)** : juge **aveuglé** (A/B, aucun nom de moteur) + **ordre permuté** (anti-biais
+de position, V5-D11) ; juge appelé **seulement sur les divergences** + **plafond** d'appels (coût) ;
+le juge ne tranche que sur du texte **déjà anonymisé** ; **mode dégradé** propre sans clé (juge non
+exécuté, comparaison objective conservée, V5-D12) ; échec propre (ClaudeError). Anonymisation/offline intacts.
+
+**Validation automatisée (C1→C5)** : `app/tests/recette_v5.py` **112/112 OK** (juge mocké : prompt
+aveuglé, `judge_pairwise`, run avec juge end-to-end — divergences/permutation/mapping/win-rate —, mode
+dégradé, endpoint verdicts) ; **migration 0008 appliquée en réel** (Postgres : `alembic_version = 0008…`,
+table `judge_verdicts`) ; non-régression **V1 48/48 · V3 13/13 · V4 50/50** ; `tsc --noEmit` OK ;
+`docker compose config` OK. **Reste (recette PO)** : run de comparaison réel avec juge Claude (coût API).
+
 ---
 
 ## Journal de décisions (ADR-lite)
@@ -305,3 +316,5 @@ non-régression **V1 48/48 · V3 13/13 · V4 50/50** ; `tsc --noEmit` OK ; `dock
 | D19 | 2026-06-24 | V5/C4 : métriques de comparaison isolées en fonctions **pures** (`worker/comparison.py`) ; le replay rejoue `verbatim_analyse` **sans satisfaction** (best-effort depuis `original_columns`, sinon None) | Testabilité (recette torch-free) + risque §14 assumé (satisfaction non stockée en colonne) ; n'affecte pas la prod, écart documenté |
 | D20 | 2026-06-24 | V5/C4 : page Comparaison = **onglet du lot** (`/lots/:id/comparaison`) ; juge affiché en **mode dégradé** (EmptyState « lot C5 ») ; bornes (défaut 50 / max 200) en dur dans la route API (pas d'import du worker) | Réutilise le shell de détail de lot et ses composants (BarList/StackedSentimentBar) ; l'API n'importe pas le code worker (images séparées) ; juge = C5 |
 | D21 | 2026-06-25 | Correctifs runtime révélés en recette C4 : (a) `prepare_threshold=None` (psycopg3) dans `common/db.py` — supprime `DuplicatePreparedStatement` au 2e run (worker RQ fork) ; (b) nginx du front **re-résout** l'upstream `api` (resolver Docker + variable) — supprime le 502 après recréation du conteneur api | Bugs d'infra (pas de logique métier) exposés par l'enchaînement de comparaisons et les rebuilds ; vérifiés en live (login 200, comparaison done, 0 occurrence) |
+| D22 | 2026-06-25 | V5/C5 : juge **pairwise par paire divergente** ; aveuglement (A/B) + **permutation d'ordre** côté worker, mapping A/B→moteur reconstruit après l'appel ; échec d'un appel juge -> run `failed` (échec propre, pas de repli silencieux) ; plafond `_MAX_JUDGE_CALLS=200` (loggé si atteint) | Anti-biais d'auto-évaluation/position (V5-D11) ; cohérence avec le principe « pas de repli caché » ; maîtrise du coût API (juge sur divergences seules + plafond) |
+| D23 | 2026-06-25 | V5/C5 (retour PO) : `BarList` accepte une **échelle fixe `max`** (0-100) + suffixe d'unité ; libellés de la page Comparaison réécrits (accord = même grand thème ; confiance = **assurance auto-déclarée, pas justesse** ; latence = plus bas = plus rapide) | Les barres normalisées sur le max étaient trompeuses (42 % en barre pleine) ; la « confiance » était mal comprise — clarifiée explicitement |

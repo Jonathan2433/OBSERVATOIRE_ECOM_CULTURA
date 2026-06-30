@@ -149,8 +149,29 @@ export interface ComparisonMetrics {
   latency_ms: Record<string, number>;
   sentiment: Record<string, Record<string, number>>;
   n_divergences: number;
-  judge: unknown | null;                         // rempli au lot C5
+  judge: JudgeMetrics | null;                    // null = juge non exécuté (mode dégradé)
 }
+export interface JudgeMetrics {
+  win_rate: Record<string, number>;              // moteur -> % de victoires (sur ses duels jugés)
+  wins: Record<string, number>;
+  n_judged: number;                              // nb de duels jugés (sur divergences)
+  n_ties: number;
+}
+export interface JudgeVerdict {
+  id: number;
+  result_id: number | null;
+  row_index?: number | null;
+  verbatim?: string | null;
+  engine_a: string;
+  engine_b: string;
+  classif_a?: string | null;
+  classif_b?: string | null;
+  winner: "a" | "b" | "tie";
+  rationale: string | null;
+}
+export interface VerdictsPage { total: number; offset: number; limit: number; items: JudgeVerdict[] }
+export const getVerdicts = (id: number, offset = 0, limit = 20) =>
+  request<VerdictsPage>(`/api/comparisons/${id}/verdicts?offset=${offset}&limit=${limit}`);
 export interface ComparisonRun {
   id: number;
   batch_id: number;

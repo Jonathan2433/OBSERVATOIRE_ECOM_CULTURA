@@ -21,6 +21,9 @@ Sections :
 - C4 : comparaison objective — fonctions pures (`sample_indices` reproductible, accord/
   confiance/latence/sentiment, `build_metrics` juge=None), migration 0007, `run_comparison_job`
   end-to-end (rôle `compare`, métriques), routes (RBAC admin, validations, GET/export).
+- C5 : juge Claude — `build_judge_prompt` aveuglé, `judge_pairwise` (outil dédié, hors-forme->tie),
+  migration 0008, `run_comparison_job` avec juge end-to-end (divergences, permutation, mapping
+  A/B->moteur, win-rate), mode dégradé sans clé, endpoint verdicts paginé.
 
 Usage :  python app/tests/recette_v5.py   (code de sortie 0 si aucun ÉCHEC)
 """
@@ -640,6 +643,128 @@ def run() -> None:
     except ImportError as exc:
         check("C4 : (skip) routes comparaison — fastapi indisponible", True, str(exc))
 
+    # ============== C5 : juge Claude (aveuglé + permuté) ======================
+    from common.models import JudgeVerdict
+
+    # --- C5.1 Prompt du juge AVEUGLÉ ----------------------------------------
+    jp = cp.build_judge_prompt("le colis est arrivé cassé",
+                               "Livraison / Retard (sentiment Négatif)", "Produit / Qualité (sentiment Négatif)")
+    blob = (jp["system"] + jp["user"]).lower()
+    check("C5 : prompt juge aveuglé (aucun nom de moteur)",
+          not any(x in blob for x in ["lmstudio", "camembert", "claude", "stub", "qwen"]))
+    check("C5 : prompt juge expose verbatim + A/B",
+          "colis est arrivé cassé" in jp["user"] and "Classification A" in jp["user"] and "Classification B" in jp["user"])
+
+    # --- C5.2 judge_pairwise (call mocké) -----------------------------------
+    orig_call = cp.call_claude_messages
+    try:
+        cap = {}
+
+        def _fake_judge_call(base, key, model, system, user, max_tokens, to,
+                             tool_name=None, input_schema=None, tool_description=None):
+            cap["tool_name"] = tool_name
+            return {"winner": "B", "rationale": "B colle mieux au verbatim"}
+        cp.call_claude_messages = _fake_judge_call
+        v = make_claude_predictor().judge_pairwise("verbatim", "A-classif", "B-classif")
+        check("C5 : judge_pairwise renvoie winner+rationale", v["winner"] == "B" and "colle" in v["rationale"])
+        check("C5 : judge_pairwise utilise l'outil dédié (JUDGE_TOOL_NAME)", cap.get("tool_name") == cp.JUDGE_TOOL_NAME)
+        cp.call_claude_messages = lambda *a, **k: {"winner": "???", "rationale": "x"}
+        check("C5 : verdict hors-forme -> tie (neutre)",
+              make_claude_predictor().judge_pairwise("v", "a", "b")["winner"] == "tie")
+    finally:
+        cp.call_claude_messages = orig_call
+
+    # --- C5.3 Migration 0008 + ORM ------------------------------------------
+    _m8 = (ROOT / "app/api/migrations/versions/0008_judge_verdicts.py").read_text(encoding="utf-8")
+    check("C5 : migration 0008 chaînée sur 0007",
+          'revision = "0008_judge_verdicts"' in _m8 and 'down_revision = "0007_comparison_runs"' in _m8)
+    check("C5 : migration 0008 crée judge_verdicts", '"judge_verdicts"' in _m8 and "winner" in _m8)
+    check("C5 : table judge_verdicts dans Base.metadata", "judge_verdicts" in _Base.metadata.tables)
+
+    # --- C5.4 run_comparison_job AVEC juge (Claude mocké) -------------------
+    class _FakeJudge:
+        def __init__(self, cfg):
+            pass
+        def judge_pairwise(self, verbatim, a_c, b_c):
+            # Préfère la classification contenant N1b, quel que soit le côté A/B
+            # -> teste le mapping A/B -> moteur réel indépendamment de la permutation.
+            if a_c.startswith(N1b):
+                return {"winner": "A", "rationale": "A plus pertinent"}
+            if b_c.startswith(N1b):
+                return {"winner": "B", "rationale": "B plus pertinent"}
+            return {"winner": "tie", "rationale": "équivalent"}
+
+    with _SL() as db:
+        jb = _Batch(label="judge-src", status="done", seuil_revue=0.5)
+        db.add(jb); db.flush()
+        for i in range(6):
+            db.add(_Result(batch_id=jb.id, row_index=i, verbatim_analyse=f"verbatim {i}", nb_themes=1))
+        db.commit(); jbid = jb.id
+        jrun = ComparisonRun(batch_id=jbid, status="pending", judge_enabled=True,
+                             engine_labels=["stub-heuristique", "lmstudio:r1"], sample_size=10, seed=3)
+        db.add(jrun); db.commit(); jrun_id = jrun.id
+
+    _saved3 = (_tasks.get_predictor, _tasks.build_worker_cfg, cp.ClaudePredictor)
+    try:
+        _tasks.build_worker_cfg = lambda: {"thresholds": {"revue_humaine": 0.5}, "claude": {"api_key_present": True}}
+        _tasks.get_predictor = lambda model, cfg: (
+            _CmpEngine(lambda i: N1 if i % 2 == 0 else N1b) if getattr(model, "kind", None) == _KL
+            else _CmpEngine(lambda i: N1))
+        cp.ClaudePredictor = _FakeJudge       # juge mocké (lazy import dans _run_judge_phase)
+        res = _tasks.run_comparison_job(jrun_id)
+        check("C5 : run avec juge -> done", res.get("status") == "done", res)
+        with _SL() as db:
+            jr = db.get(ComparisonRun, jrun_id)
+            verds = db.query(JudgeVerdict).filter_by(comparison_run_id=jrun_id).all()
+            jm = jr.metrics.get("judge") if jr.metrics else None
+            check("C5 : metrics.judge présent (win-rate + compteurs)",
+                  jm is not None and "win_rate" in jm and "n_judged" in jm, jm)
+            check("C5 : nb verdicts == divergences (3 sur 6) == n_judged",
+                  len(verds) == 3 and jm["n_judged"] == 3, (len(verds), jm and jm.get("n_judged")))
+            check("C5 : win-rate — le moteur N1b gagne tous les duels (mapping A/B correct)",
+                  jm["win_rate"].get("lmstudio:r1") == 1.0 and jm["win_rate"].get("stub-heuristique") == 0.0,
+                  jm["win_rate"])
+            winners = {(v.engine_a if v.winner == "a" else v.engine_b) for v in verds}
+            check("C5 : tous les verdicts désignent le bon moteur réel", winners == {"lmstudio:r1"}, winners)
+    finally:
+        _tasks.get_predictor, _tasks.build_worker_cfg, cp.ClaudePredictor = _saved3
+
+    # --- C5.5 Mode dégradé : juge demandé mais clé absente -------------------
+    with _SL() as db:
+        drun = ComparisonRun(batch_id=jbid, status="pending", judge_enabled=True,
+                             engine_labels=["stub-heuristique", "lmstudio:r1"], sample_size=10, seed=4)
+        db.add(drun); db.commit(); drun_id = drun.id
+    _saved4 = (_tasks.get_predictor, _tasks.build_worker_cfg)
+    try:
+        _tasks.build_worker_cfg = lambda: {"thresholds": {"revue_humaine": 0.5}, "claude": {"api_key_present": False}}
+        _tasks.get_predictor = lambda model, cfg: (
+            _CmpEngine(lambda i: N1 if i % 2 == 0 else N1b) if getattr(model, "kind", None) == _KL
+            else _CmpEngine(lambda i: N1))
+        _tasks.run_comparison_job(drun_id)
+        with _SL() as db:
+            dr = db.get(ComparisonRun, drun_id)
+            check("C5 : sans clé -> juge non exécuté (metrics.judge None, mode dégradé)",
+                  dr.metrics is not None and dr.metrics.get("judge") is None)
+            check("C5 : sans clé -> aucun verdict",
+                  db.query(JudgeVerdict).filter_by(comparison_run_id=drun_id).count() == 0)
+    finally:
+        _tasks.get_predictor, _tasks.build_worker_cfg = _saved4
+
+    # --- C5.6 Endpoint verdicts (paginé + verbatim) via TestClient ----------
+    try:
+        from fastapi.testclient import TestClient
+        from app.main import app as _app2
+        ana = TestClient(_app2)
+        ana.post("/api/auth/login", json={"username": "admin", "password": "MotDePasseAdmin123!"})
+        rv = ana.get(f"/api/comparisons/{jrun_id}/verdicts")
+        body = rv.json()
+        check("C5 : GET verdicts -> total 3 + items", rv.status_code == 200 and body.get("total") == 3
+              and len(body.get("items", [])) == 3)
+        check("C5 : verdict exposé avec verbatim + gagnant",
+              all("verbatim" in it and it.get("winner") in ("a", "b", "tie") for it in body["items"]))
+    except ImportError as exc:
+        check("C5 : (skip) endpoint verdicts — fastapi indisponible", True, str(exc))
+
 
 if __name__ == "__main__":
     run()
@@ -650,5 +775,5 @@ if __name__ == "__main__":
         if status == "ÉCHEC" and detail:
             line += f"  -> {detail}"
         print(line)
-    print(f"\nRecette V5 (C1+C2+C3+C4) : {len(_RESULTS) - len(fails)}/{len(_RESULTS)} OK")
+    print(f"\nRecette V5 (C1+C2+C3+C4+C5) : {len(_RESULTS) - len(fails)}/{len(_RESULTS)} OK")
     sys.exit(1 if fails else 0)

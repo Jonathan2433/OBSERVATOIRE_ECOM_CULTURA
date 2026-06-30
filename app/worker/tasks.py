@@ -11,6 +11,7 @@ import logging
 import math
 import os
 import platform
+import random
 import time
 from collections import Counter
 from datetime import datetime, timezone
@@ -18,7 +19,7 @@ from datetime import datetime, timezone
 from common.db import SessionLocal
 from common.models import (
     Batch, ComparisonRun, ENGINE_ROLE_COMPARE, ENGINE_ROLE_PROPOSER, ENGINE_ROLE_REFINER,
-    EnginePrediction, MODEL_KIND_LMSTUDIO, ModelVersion, Result,
+    EnginePrediction, JudgeVerdict, MODEL_KIND_LMSTUDIO, ModelVersion, Result,
 )
 
 from . import comparison as comparison_lib
@@ -359,6 +360,81 @@ def _to_engine_pred_compare(run_id, result_id, row_index, engine_label, pred, la
     return ep
 
 
+def _classif_str(niv1, niv2, sentiment) -> str:
+    """Libellé lisible d'une classification, pour le prompt du juge et l'affichage."""
+    n1 = niv1 or "(non classé)"
+    n2 = f" / {niv2}" if niv2 else ""
+    s = f" (sentiment {sentiment})" if sentiment else ""
+    return f"{n1}{n2}{s}"
+
+
+_MAX_JUDGE_CALLS = 200   # garde-fou coût : plafond dur d'appels au juge par run
+
+
+def _run_judge_phase(db, run, sample, texts, engines, theme_by, niv2_by, sent_by, cfg) -> dict:
+    """Juge Claude (C5) sur les divergences : aveuglé + ordre A/B permuté (V5-D11).
+
+    Pour chaque verbatim où ≥2 moteurs divergent sur ``theme1_niv1``, fait juger chaque
+    paire en désaccord par Claude (A/B anonymes). Le mapping A/B -> moteur réel est
+    reconstruit ici (la permutation est connue du worker, pas du juge). Agrège un
+    win-rate par moteur. Échec propre (ClaudeError) -> remonte et fait échouer le run.
+    """
+    from .claude_predictor import ClaudePredictor
+
+    judge = ClaudePredictor(cfg)
+    rng = random.Random((run.seed or 0) + 1)   # permutation reproductible mais décorrélée du tirage
+    div = comparison_lib.divergent_indices(theme_by)
+    wins = {e: 0 for e in engines}
+    duels = {e: 0 for e in engines}
+    n_judged, n_ties = 0, 0
+    capped = False
+
+    for k in div:
+        if n_judged >= _MAX_JUDGE_CALLS:
+            capped = True
+            break
+        if db.query(ComparisonRun.status).filter(ComparisonRun.id == run.id).scalar() == "canceled":
+            break
+        for i in range(len(engines)):
+            for j in range(i + 1, len(engines)):
+                ea, eb = engines[i], engines[j]
+                if (theme_by[ea][k] or "") == (theme_by[eb][k] or ""):
+                    continue   # ces deux moteurs sont d'accord sur ce verbatim
+                if n_judged >= _MAX_JUDGE_CALLS:
+                    capped = True
+                    break
+                ca = _classif_str(theme_by[ea][k], niv2_by[ea][k], sent_by[ea][k])
+                cb = _classif_str(theme_by[eb][k], niv2_by[eb][k], sent_by[eb][k])
+                # Aveuglement + permutation aléatoire de l'ordre A/B (V5-D11).
+                if rng.random() < 0.5:
+                    a_eng, b_eng, a_c, b_c = ea, eb, ca, cb
+                else:
+                    a_eng, b_eng, a_c, b_c = eb, ea, cb, ca
+                verdict = judge.judge_pairwise(texts[k], a_c, b_c)   # {winner: A|B|tie, rationale}
+                w = verdict["winner"]
+                winner_db = "a" if w == "A" else "b" if w == "B" else "tie"
+                db.add(JudgeVerdict(
+                    comparison_run_id=run.id, result_id=sample[k].id, row_index=sample[k].row_index,
+                    engine_a=a_eng, engine_b=b_eng, classif_a=a_c[:200], classif_b=b_c[:200],
+                    winner=winner_db, rationale=verdict["rationale"]))
+                duels[a_eng] += 1
+                duels[b_eng] += 1
+                if w == "A":
+                    wins[a_eng] += 1
+                elif w == "B":
+                    wins[b_eng] += 1
+                else:
+                    n_ties += 1
+                n_judged += 1
+        db.commit()
+
+    if capped:
+        logger.warning("Comparaison %s : juge plafonné à %d duels (divergences non toutes jugées).",
+                       run.id, _MAX_JUDGE_CALLS)
+    win_rate = {e: round(wins[e] / duels[e], 4) if duels[e] else 0.0 for e in engines}
+    return {"win_rate": win_rate, "wins": wins, "n_judged": n_judged, "n_ties": n_ties, "capped": capped}
+
+
 def run_comparison_job(run_id: int) -> dict:
     """Rejoue un échantillon d'un lot à travers 2-3 moteurs et calcule les métriques.
 
@@ -389,7 +465,7 @@ def run_comparison_job(run_id: int) -> dict:
             texts = [r.verbatim_analyse or "" for r in sample]
             sats = [_satisfaction_from_original(r.original_columns) for r in sample]
 
-            theme_by, conf_by, sent_by, lat_by = {}, {}, {}, {}
+            theme_by, niv2_by, conf_by, sent_by, lat_by = {}, {}, {}, {}, {}
             for label in engines:
                 if db.query(ComparisonRun.status).filter(ComparisonRun.id == run_id).scalar() == "canceled":
                     run.status = "canceled"
@@ -404,16 +480,26 @@ def run_comparison_job(run_id: int) -> dict:
                 preds = predictor.predict_cleaned_batch(texts, sats)
                 lat_by[label] = (time.monotonic() - t0) * 1000 / max(1, len(texts))
                 theme_by[label] = [p.get("theme1_niv1") or "" for p in preds]
+                niv2_by[label] = [p.get("theme1_niv2") or "" for p in preds]
                 conf_by[label] = [p.get("confidence_globale") for p in preds]
                 sent_by[label] = [p.get("theme1_sentiment") or "" for p in preds]
                 for i, p in enumerate(preds):
                     db.add(_to_engine_pred_compare(run_id, sample[i].id, sample[i].row_index, label, p, lat_by[label]))
                 db.commit()
 
-            run.metrics = comparison_lib.build_metrics(theme_by, conf_by, sent_by, lat_by, len(sample))
+            metrics = comparison_lib.build_metrics(theme_by, conf_by, sent_by, lat_by, len(sample))
+
+            # --- Juge Claude (C5) : seulement si demandé ET clé présente (sinon mode dégradé)
+            if run.judge_enabled and (cfg.get("claude", {}) or {}).get("api_key_present"):
+                metrics["judge"] = _run_judge_phase(db, run, sample, texts, engines, theme_by, niv2_by, sent_by, cfg)
+            elif run.judge_enabled:
+                logger.info("Comparaison %s : juge demandé mais clé Claude absente -> mode dégradé.", run_id)
+
+            run.metrics = metrics
             run.status = "done"
             db.commit()
-            logger.info("Comparaison %s terminée (%d verbatims, %d moteurs).", run_id, len(sample), len(engines))
+            logger.info("Comparaison %s terminée (%d verbatims, %d moteurs, juge=%s).",
+                        run_id, len(sample), len(engines), bool(metrics.get("judge")))
             return {"status": "done", "sample": len(sample), "engines": engines}
 
         except Exception as exc:
