@@ -40,8 +40,10 @@ export default function ResultsPage() {
       <div className="ui-stack">
         <Card title="Filtres" actions={
           <span className="ui-row">
-            <a className="ui-btn ui-btn--secondary ui-btn--sm" href={exportUrl(batchId, "csv")}>Export CSV</a>
-            <a className="ui-btn ui-btn--secondary ui-btn--sm" href={exportUrl(batchId, "xlsx")}>Export Excel</a>
+            <a className="ui-btn ui-btn--secondary ui-btn--sm" href={exportUrl(batchId, "csv", filters)}
+               title="Exporte uniquement les lignes correspondant aux filtres actifs">Export CSV</a>
+            <a className="ui-btn ui-btn--secondary ui-btn--sm" href={exportUrl(batchId, "xlsx", filters)}
+               title="Exporte uniquement les lignes correspondant aux filtres actifs">Export Excel</a>
           </span>
         }>
           <div className="ui-toolbar">

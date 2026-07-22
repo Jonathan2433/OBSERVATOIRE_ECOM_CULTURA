@@ -31,9 +31,9 @@ _FIELDS = {
 
 
 @router.get("/taxonomy")
-def get_taxonomy():
-    """Référentiel des thèmes (pour les listes contraintes de la revue)."""
-    return {"themes": taxo.themes()}
+def get_taxonomy(db: Session = Depends(get_db)):
+    """Référentiel des thèmes (base + ajouts en revue) pour les listes de la revue."""
+    return {"themes": taxo.merged_themes(db)}
 
 
 @router.get("/batches/{batch_id}/review", response_model=ResultsResponse)
@@ -61,13 +61,25 @@ def review_result(result_id: int, payload: CorrectionRequest,
 
     changed = False
     if payload.action == "correct":
-        # Cible niv.1/niv.2 (valeur fournie ou existante) -> contrôle hiérarchique.
-        target_niv1 = payload.theme1_niv1 if payload.theme1_niv1 is not None else res.theme1_niv1
-        target_niv2 = payload.theme1_niv2 if payload.theme1_niv2 is not None else res.theme1_niv2
-        if (payload.theme1_niv1 is not None or payload.theme1_niv2 is not None):
-            if not (target_niv1 and target_niv2 and taxo.is_valid_pair(target_niv1, target_niv2)):
+        # Cible niv.1/niv.2 (valeur fournie ou existante).
+        if payload.theme1_niv1 is not None or payload.theme1_niv2 is not None:
+            target_niv1 = ((payload.theme1_niv1 if payload.theme1_niv1 is not None else res.theme1_niv1) or "").strip()
+            target_niv2 = ((payload.theme1_niv2 if payload.theme1_niv2 is not None else res.theme1_niv2) or "").strip()
+            if not target_niv1 or not target_niv2:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                                    detail=f"Couple thème invalide : « {target_niv1} » / « {target_niv2} »")
+                                    detail="Thème et sous-thème sont obligatoires.")
+            if len(target_niv1) > 120 or len(target_niv2) > 120:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                    detail="Thème / sous-thème trop long (120 caractères maximum).")
+            # Normalise (trim) les valeurs corrigées avant journalisation/enregistrement.
+            if payload.theme1_niv1 is not None:
+                payload.theme1_niv1 = target_niv1
+            if payload.theme1_niv2 is not None:
+                payload.theme1_niv2 = target_niv2
+            # Couple hors référentiel -> on l'enregistre pour le réutiliser ensuite
+            # (listes de la revue des verbatims suivants et des futurs lots).
+            if not taxo.pair_is_known(db, target_niv1, target_niv2):
+                taxo.register_pair(db, target_niv1, target_niv2, user_id=current_user.id)
         if payload.theme1_sentiment is not None and payload.theme1_sentiment not in SENTIMENTS:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Sentiment invalide")
 

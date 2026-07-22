@@ -44,12 +44,19 @@ def _get_batch_or_404(db: Session, batch_id: int) -> Batch:
     return batch
 
 
+def _like_escape(s: str) -> str:
+    """Échappe les métacaractères LIKE (%, _) pour une recherche « contient »
+    littérale : taper « 50% » ou « e_carte » ne doit pas se comporter en joker."""
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def _apply_filters(query, niv1, sentiment, revue, rupture, churn, insatisfaction, q):
     if niv1:
         # Recherche « contient » sur le thème (niv.1 OU niv.2), pas une égalité
         # exacte : taper « Programme » doit matcher « Programme de fidélité ».
-        like = f"%{niv1}%"
-        query = query.filter(or_(Result.theme1_niv1.ilike(like), Result.theme1_niv2.ilike(like)))
+        like = f"%{_like_escape(niv1)}%"
+        query = query.filter(or_(Result.theme1_niv1.ilike(like, escape="\\"),
+                                 Result.theme1_niv2.ilike(like, escape="\\")))
     if sentiment:
         query = query.filter(Result.theme1_sentiment == sentiment)
     if revue is not None:
@@ -61,7 +68,7 @@ def _apply_filters(query, niv1, sentiment, revue, rupture, churn, insatisfaction
     if insatisfaction:
         query = query.filter(Result.signal_insatisfaction == True)  # noqa: E712
     if q:
-        query = query.filter(Result.verbatim_analyse.ilike(f"%{q}%"))
+        query = query.filter(Result.verbatim_analyse.ilike(f"%{_like_escape(q)}%", escape="\\"))
     return query
 
 
@@ -111,9 +118,24 @@ def _enriched_rows(results: list[Result]):
 
 
 @router.get("/{batch_id}/export")
-def export_results(batch_id: int, format: str = "csv", db: Session = Depends(get_db)):
+def export_results(
+    batch_id: int,
+    format: str = "csv",
+    db: Session = Depends(get_db),
+    niv1: Optional[str] = None,
+    sentiment: Optional[str] = None,
+    revue: Optional[bool] = None,
+    rupture: bool = False,
+    churn: bool = False,
+    insatisfaction: bool = False,
+    q: Optional[str] = None,
+):
+    """Export enrichi. Les mêmes filtres que la liste sont honorés : si des
+    filtres sont passés, l'export ne contient QUE les lignes correspondantes."""
     batch = _get_batch_or_404(db, batch_id)
-    results = db.query(Result).filter(Result.batch_id == batch_id).order_by(Result.row_index).all()
+    query = db.query(Result).filter(Result.batch_id == batch_id)
+    query = _apply_filters(query, niv1, sentiment, revue, rupture, churn, insatisfaction, q)
+    results = query.order_by(Result.row_index).all()
     headers, rows = _enriched_rows(results)
     stem = f"classifications_{batch.label}".replace(" ", "_")
 

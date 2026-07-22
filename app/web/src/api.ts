@@ -231,7 +231,9 @@ export interface ResultFilters {
   limit?: number;
   offset?: number;
 }
-export function listResults(batchId: number, f: ResultFilters = {}): Promise<ResultsResponse> {
+// Sérialise les filtres (sans pagination) — partagé par la liste et l'export,
+// pour que l'export honore exactement les filtres affichés à l'écran.
+function resultFilterParams(f: ResultFilters): URLSearchParams {
   const p = new URLSearchParams();
   if (f.niv1) p.set("niv1", f.niv1);
   if (f.sentiment) p.set("sentiment", f.sentiment);
@@ -240,12 +242,19 @@ export function listResults(batchId: number, f: ResultFilters = {}): Promise<Res
   if (f.churn) p.set("churn", "true");
   if (f.insatisfaction) p.set("insatisfaction", "true");
   if (f.q) p.set("q", f.q);
+  return p;
+}
+export function listResults(batchId: number, f: ResultFilters = {}): Promise<ResultsResponse> {
+  const p = resultFilterParams(f);
   p.set("limit", String(f.limit ?? 50));
   p.set("offset", String(f.offset ?? 0));
   return request<ResultsResponse>(`/api/batches/${batchId}/results?${p.toString()}`);
 }
-export const exportUrl = (batchId: number, format: "csv" | "xlsx") =>
-  `/api/batches/${batchId}/export?format=${format}`;
+export const exportUrl = (batchId: number, format: "csv" | "xlsx", filters: ResultFilters = {}) => {
+  const p = resultFilterParams(filters);
+  p.set("format", format);
+  return `/api/batches/${batchId}/export?${p.toString()}`;
+};
 
 // --- Test à la volée ---
 export interface Prediction {
