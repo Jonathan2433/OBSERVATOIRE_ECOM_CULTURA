@@ -9,6 +9,7 @@ from .engine_prediction import (
 from .comparison_run import ComparisonRun, COMPARISON_STATUSES
 from .judge_verdict import JudgeVerdict, JUDGE_WINNERS
 from .correction import Correction
+from .taxonomy_entry import TaxonomyEntry
 from .model_version import (
     ModelVersion, MODEL_KIND_CLAUDE, MODEL_KIND_LMSTUDIO, MODEL_KIND_REAL, MODEL_KIND_STUB,
 )
@@ -23,6 +24,7 @@ __all__ = [
     "ComparisonRun", "COMPARISON_STATUSES",
     "JudgeVerdict", "JUDGE_WINNERS",
     "Correction",
+    "TaxonomyEntry",
     "ModelVersion", "MODEL_KIND_CLAUDE", "MODEL_KIND_LMSTUDIO", "MODEL_KIND_REAL", "MODEL_KIND_STUB",
     "AuditLog",
     "AppConfig",
