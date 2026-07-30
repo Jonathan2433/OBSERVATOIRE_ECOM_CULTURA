@@ -7,6 +7,9 @@ import {
 import { Badge, Button, Card, Chip, EmptyState, Input, ProgressBar, Select, Spinner } from "../ui";
 
 const SENTIMENTS = ["Négatif", "Neutre", "Positif"];
+// Valeur sentinelle de la liste déroulante : bascule le champ en saisie libre.
+const OTHER = "__AUTRE__";
+const OTHER_LABEL = "Autre (saisie manuelle)";
 
 export default function ReviewPage() {
   const { id } = useParams();
@@ -21,6 +24,9 @@ export default function ReviewPage() {
 
   const [niv1, setNiv1] = useState("");
   const [niv2, setNiv2] = useState("");
+  // Mode « saisie libre » explicite (option « Autre » choisie), par niveau.
+  const [niv1Manual, setNiv1Manual] = useState(false);
+  const [niv2Manual, setNiv2Manual] = useState(false);
   const [sentiment, setSentiment] = useState("");
   const [sigR, setSigR] = useState(false);
   const [sigC, setSigC] = useState(false);
@@ -37,6 +43,7 @@ export default function ReviewPage() {
         if (it) {
           setNiv1(it.theme1_niv1 ?? "");
           setNiv2(it.theme1_niv2 ?? "");
+          setNiv1Manual(false); setNiv2Manual(false);
           setSentiment(it.theme1_sentiment ?? "");
           setSigR(it.signal_rupture); setSigC(it.signal_churn); setSigI(it.signal_insatisfaction);
         }
@@ -51,23 +58,36 @@ export default function ReviewPage() {
   }, [batchId]);
 
   const norm = (s: string) => s.trim().toLowerCase();
-  // Sous-thèmes suggérés pour un thème existant (comparaison insensible à la casse
-  // pour rester cohérent avec la normalisation côté API). Vide si le thème est nouveau.
+  // Sous-thèmes du thème sélectionné (vide si thème nouveau / hors référentiel).
   const childrenOf = (n1: string) =>
     themes.find((t) => norm(t.niv1) === norm(n1))?.niv2 ?? [];
-  // Un sous-thème « connu du référentiel » (de n'importe quel thème) vs. saisi librement.
-  const isKnownSubtheme = (n2: string) =>
-    !!norm(n2) && themes.some((t) => t.niv2.some((c) => norm(c) === norm(n2)));
+  // Forme canonique d'un libellé connu (pour que la valeur du <select> matche une option).
+  const canonNiv1 = (v: string) => themes.find((t) => norm(t.niv1) === norm(v))?.niv1;
 
-  // Réalignement du sous-thème déclenché à la SORTIE du champ thème (événement
-  // « commit »), jamais à chaque frappe : on ne repositionne que si le sous-thème
-  // courant est un reliquat du référentiel (vide, ou sous-thème d'un AUTRE thème),
-  // jamais un sous-thème que le relecteur vient de saisir librement.
-  const realignNiv2OnBlur = () => {
-    const kids = childrenOf(niv1);
-    if (kids.length && !kids.includes(niv2) && (niv2 === "" || isKnownSubtheme(niv2))) {
-      setNiv2(kids[0]);
+  const niv2Options = childrenOf(niv1);
+  // Un niveau est en « saisie libre » si l'utilisateur a choisi « Autre », ou si la
+  // valeur proposée n'existe pas dans le référentiel (ex. « Autre / Non classé »).
+  const niv1IsOther = niv1Manual || (!!niv1 && canonNiv1(niv1) === undefined);
+  const niv2IsOther = niv1IsOther || niv2Manual ||
+    (!!niv2 && !niv2Options.some((c) => norm(c) === norm(niv2)));
+
+  const onNiv1Select = (v: string) => {
+    if (v === OTHER) {
+      // Nouveau thème -> le sous-thème devient forcément une saisie libre.
+      setNiv1Manual(true); setNiv1("");
+      setNiv2Manual(true); setNiv2("");
+    } else {
+      setNiv1Manual(false); setNiv1(v);
+      // Aligne le sous-thème sur un enfant valide du thème choisi.
+      const kids = childrenOf(v);
+      setNiv2Manual(false);
+      setNiv2(kids.some((c) => norm(c) === norm(niv2)) ? niv2 : (kids[0] ?? ""));
     }
+  };
+
+  const onNiv2Select = (v: string) => {
+    if (v === OTHER) { setNiv2Manual(true); setNiv2(""); }
+    else { setNiv2Manual(false); setNiv2(v); }
   };
 
   const submit = async (action: "validate" | "correct") => {
@@ -138,31 +158,46 @@ export default function ReviewPage() {
                 </div>
 
                 <div className="ui-grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
-                  <Input
-                    label="Thème niv.1"
-                    list="review-niv1-options"
-                    value={niv1}
-                    placeholder="Choisir ou saisir un thème…"
-                    hint="Liste déroulante, ou tapez un nouveau thème."
-                    autoComplete="off"
-                    onChange={(e) => setNiv1(e.target.value)}
-                    onBlur={realignNiv2OnBlur}
-                  />
-                  <Input
-                    label="Sous-thème niv.2"
-                    list="review-niv2-options"
-                    value={niv2}
-                    placeholder="Choisir ou saisir un sous-thème…"
-                    hint="Liste déroulante, ou tapez un nouveau sous-thème."
-                    autoComplete="off"
-                    onChange={(e) => setNiv2(e.target.value)}
-                  />
-                  <datalist id="review-niv1-options">
-                    {themes.map((t) => <option key={t.niv1} value={t.niv1} />)}
-                  </datalist>
-                  <datalist id="review-niv2-options">
-                    {childrenOf(niv1).map((n) => <option key={n} value={n} />)}
-                  </datalist>
+                  <div className="ui-stack" style={{ gap: "var(--sp-2)" }}>
+                    <Select
+                      label="Thème niv.1"
+                      value={niv1IsOther ? OTHER : (canonNiv1(niv1) ?? niv1)}
+                      onChange={(e) => onNiv1Select(e.target.value)}
+                    >
+                      {themes.map((t) => <option key={t.niv1} value={t.niv1}>{t.niv1}</option>)}
+                      <option value={OTHER}>{OTHER_LABEL}</option>
+                    </Select>
+                    {niv1IsOther && (
+                      <Input
+                        aria-label="Nouveau thème"
+                        placeholder="Saisir un nouveau thème"
+                        value={niv1}
+                        autoFocus={niv1Manual}
+                        autoComplete="off"
+                        onChange={(e) => setNiv1(e.target.value)}
+                      />
+                    )}
+                  </div>
+
+                  <div className="ui-stack" style={{ gap: "var(--sp-2)" }}>
+                    <Select
+                      label="Sous-thème niv.2"
+                      value={niv2IsOther ? OTHER : (niv2Options.find((c) => norm(c) === norm(niv2)) ?? niv2)}
+                      onChange={(e) => onNiv2Select(e.target.value)}
+                    >
+                      {niv2Options.map((n) => <option key={n} value={n}>{n}</option>)}
+                      <option value={OTHER}>{OTHER_LABEL}</option>
+                    </Select>
+                    {niv2IsOther && (
+                      <Input
+                        aria-label="Nouveau sous-thème"
+                        placeholder="Saisir un nouveau sous-thème"
+                        value={niv2}
+                        autoComplete="off"
+                        onChange={(e) => setNiv2(e.target.value)}
+                      />
+                    )}
+                  </div>
                 </div>
                 <Select label="Sentiment" value={sentiment} onChange={(e) => setSentiment(e.target.value)}>
                   {SENTIMENTS.map((s) => <option key={s}>{s}</option>)}
@@ -181,7 +216,8 @@ export default function ReviewPage() {
                   <Button variant="secondary" loading={busy} onClick={() => submit("validate")}>
                     Valider tel quel <kbd className="ui-kbd">V</kbd>
                   </Button>
-                  <Button variant="primary" loading={busy} onClick={() => submit("correct")}>
+                  <Button variant="primary" loading={busy} onClick={() => submit("correct")}
+                          disabled={(niv1IsOther && !niv1.trim()) || (niv2IsOther && !niv2.trim())}>
                     Corriger &amp; valider <kbd className="ui-kbd">C</kbd>
                   </Button>
                 </div>
