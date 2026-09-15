@@ -282,7 +282,17 @@ export const predict = (text: string, satisfaction?: number | null, modelId?: nu
 
 // --- Revue humaine ---
 export interface TaxonomyTheme { niv1: string; niv2: string[] }
-export const getTaxonomy = () => request<{ themes: TaxonomyTheme[] }>("/api/taxonomy");
+/**
+ * Référentiel pour les listes de la revue.
+ *
+ * `batchId` cible le référentiel du moteur qui a produit CE lot — pas celui du
+ * moteur actif. Depuis que plusieurs modèles coexistent, les deux ne partagent
+ * aucun sous-thème : relire un ancien lot avec la liste du modèle courant
+ * proposerait des libellés sans rapport avec ce qui est affiché.
+ */
+export const getTaxonomy = (batchId?: number) =>
+  request<{ themes: TaxonomyTheme[]; model_label?: string | null }>(
+    batchId != null ? `/api/taxonomy?batch_id=${batchId}` : "/api/taxonomy");
 export const getReviewQueue = (batchId: number, offset = 0, limit = 1) =>
   request<ResultsResponse>(`/api/batches/${batchId}/review?limit=${limit}&offset=${offset}`);
 
@@ -361,6 +371,13 @@ export const getOps = () => request<OpsKpi>("/api/admin/ops");
 export interface AppMeta {
   default_seuil_revue: number;
   active_model: { label: string; kind: string } | null;
+  /**
+   * Signaux du contrat de sortie SANS détecteur entraîné (D-41) : noms courts
+   * "rupture" | "churn" | "insatisfaction". Ils sortent toujours à `false` —
+   * l'interface doit les afficher « non mesuré » et non « absent », sans quoi
+   * une absence de modèle se lit comme une absence de signal.
+   */
+  signaux_non_mesures?: string[];
 }
 export const getMeta = () => request<AppMeta>("/api/meta");
 

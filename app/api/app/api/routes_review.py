@@ -5,6 +5,7 @@ import csv
 import io
 import logging
 from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
@@ -31,9 +32,22 @@ _FIELDS = {
 
 
 @router.get("/taxonomy")
-def get_taxonomy(db: Session = Depends(get_db)):
-    """Référentiel des thèmes (base + ajouts en revue) pour les listes de la revue."""
-    return {"themes": taxo.merged_themes(db)}
+def get_taxonomy(batch_id: Optional[int] = None, db: Session = Depends(get_db)):
+    """Référentiel des thèmes (base + ajouts en revue) pour les listes de la revue.
+
+    ``batch_id`` sert à relire un lot produit par un AUTRE moteur que l'actif —
+    situation courante depuis que plusieurs modèles coexistent. Les deux
+    référentiels ne partagent aucun sous-thème (D-36) : servir celui de l'actif
+    proposerait au relecteur une liste sans rapport avec ce qu'il relit.
+    Sans ``batch_id``, c'est le référentiel du modèle actif qui est servi.
+    """
+    label = None
+    if batch_id is not None:
+        lot = db.get(Batch, batch_id)
+        if lot is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lot introuvable")
+        label = lot.model_label
+    return {"themes": taxo.merged_themes(db, label), "model_label": label}
 
 
 @router.get("/batches/{batch_id}/review", response_model=ResultsResponse)

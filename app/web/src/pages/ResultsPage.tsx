@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { exportUrl, listResults, type ResultFilters, type ResultRow, type ResultsResponse } from "../api";
+import { exportUrl, getMeta, listResults, type ResultFilters, type ResultRow, type ResultsResponse } from "../api";
 import { Badge, type BadgeTone, Button, Card, Chip, Drawer, EmptyState, InfoTip, Input, Select, Spinner } from "../ui";
 
 const PAGE = 50;
@@ -9,12 +9,36 @@ function sentimentTone(s?: string | null): BadgeTone {
   return s === "Négatif" ? "danger" : s === "Positif" ? "success" : "neutral";
 }
 
-function SignalBadges({ r }: { r: ResultRow }) {
+/**
+ * Signaux d'un résultat.
+ *
+ * Un signal sans détecteur entraîné (D-41 : `churn` 64 positifs au corpus,
+ * `rupture` 32) sort TOUJOURS à `false`. Ne rien afficher le ferait lire comme
+ * « pas de rupture détectée », alors que nous ne l'avons pas cherchée —
+ * arbitrage PO du 11/09 : l'écran doit dire « non mesuré ».
+ *
+ * `nonMesures` vient de /api/meta. Vide (méta indisponible), le composant
+ * retrouve son comportement d'origine : on n'invente pas un périmètre.
+ */
+function SignalBadges({ r, nonMesures = [] }: { r: ResultRow; nonMesures?: string[] }) {
+  const mesure = (nom: string) => !nonMesures.includes(nom);
   const out = [];
-  if (r.signal_rupture) out.push(<Badge key="r" tone="danger">rupture</Badge>);
-  if (r.signal_churn) out.push(<Badge key="c" tone="warning">churn</Badge>);
-  if (r.signal_insatisfaction) out.push(<Badge key="i" tone="warning">insatisf.</Badge>);
-  return out.length ? <span className="ui-row" style={{ gap: 4 }}>{out}</span> : <span className="ui-muted">—</span>;
+  if (mesure("rupture") && r.signal_rupture) out.push(<Badge key="r" tone="danger">rupture</Badge>);
+  if (mesure("churn") && r.signal_churn) out.push(<Badge key="c" tone="warning">churn</Badge>);
+  if (mesure("insatisfaction") && r.signal_insatisfaction) out.push(<Badge key="i" tone="warning">insatisf.</Badge>);
+
+  const absents = ["rupture", "churn", "insatisfaction"].filter((n) => nonMesures.includes(n));
+  return (
+    <span className="ui-row" style={{ gap: 4 }}>
+      {out.length ? out : (absents.length < 3 ? <span className="ui-muted">—</span> : null)}
+      {absents.length > 0 && (
+        <span className="ui-row" style={{ gap: 4 }}>
+          <Badge tone="neutral">{absents.join(", ")} : non mesuré</Badge>
+          <InfoTip text={`Aucun détecteur n'est entraîné pour ${absents.join(" et ")} : trop peu d'exemples dans le corpus annoté pour un modèle évaluable (D-41). Ces signaux ne sont pas « absents », ils ne sont pas recherchés. La règle métier reste à définir.`} />
+        </span>
+      )}
+    </span>
+  );
 }
 
 export default function ResultsPage() {
@@ -25,6 +49,13 @@ export default function ResultsPage() {
   const [offset, setOffset] = useState(0);
   const [filters, setFilters] = useState<ResultFilters>({});
   const [selected, setSelected] = useState<ResultRow | null>(null);
+  // Périmètre de mesure des signaux (D-41). Échec silencieux : sans cette
+  // information l'affichage retombe sur son comportement d'origine.
+  const [nonMesures, setNonMesures] = useState<string[]>([]);
+
+  useEffect(() => {
+    getMeta().then((m) => setNonMesures(m.signaux_non_mesures ?? [])).catch(() => {});
+  }, []);
 
   useEffect(() => {
     listResults(batchId, { ...filters, limit: PAGE, offset })
@@ -88,7 +119,7 @@ export default function ResultsPage() {
                           <td style={{ maxWidth: 340 }}>{r.verbatim_analyse.slice(0, 120)}{r.verbatim_analyse.length > 120 ? "…" : ""}</td>
                           <td>{r.theme1_niv1 ? <>{r.theme1_niv1}<br /><span className="ui-muted">{r.theme1_niv2}</span></> : "—"}</td>
                           <td><Badge tone={sentimentTone(r.theme1_sentiment)}>{r.theme1_sentiment ?? "—"}</Badge></td>
-                          <td><SignalBadges r={r} /></td>
+                          <td><SignalBadges r={r} nonMesures={nonMesures} /></td>
                           <td className="ui-table__num">{r.confidence_globale != null ? r.confidence_globale.toFixed(2) : "—"}</td>
                           <td>{r.corrected ? <Badge tone="primary">corrigé</Badge> : r.revue_requise ? <Badge tone="warning" dot>en revue</Badge> : <Badge tone="success" dot>auto</Badge>}</td>
                         </tr>
@@ -117,7 +148,7 @@ export default function ResultsPage() {
               <dt>Thème 1</dt><dd>{selected.theme1_niv1 ? `${selected.theme1_niv1} / ${selected.theme1_niv2}` : "—"}{selected.theme1_score != null ? ` (${selected.theme1_score.toFixed(2)})` : ""}</dd>
               <dt>Thème 2</dt><dd>{selected.theme2_niv1 ? `${selected.theme2_niv1} / ${selected.theme2_niv2}` : "—"}</dd>
               <dt>Sentiment</dt><dd><Badge tone={sentimentTone(selected.theme1_sentiment)}>{selected.theme1_sentiment ?? "—"}</Badge></dd>
-              <dt>Signaux</dt><dd><SignalBadges r={selected} /></dd>
+              <dt>Signaux</dt><dd><SignalBadges r={selected} nonMesures={nonMesures} /></dd>
               <dt>Confiance</dt><dd>{selected.confidence_globale != null ? selected.confidence_globale.toFixed(2) : "—"}</dd>
               <dt>Statut</dt><dd>{selected.corrected ? "corrigé" : selected.revue_requise ? "en revue" : "auto"}</dd>
             </dl>

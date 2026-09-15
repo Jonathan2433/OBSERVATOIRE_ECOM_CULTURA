@@ -2,6 +2,12 @@
 
 > Application interne de classification et de pilotage des verbatims clients e-commerce Cultura.
 > Document technique **et** fonctionnel — base contractuelle du développement de la V1.
+>
+> 📌 **Document contractuel — non réécrit.** Les exigences fonctionnelles et les
+> garde-fous du §10 restent en vigueur. Deux **hypothèses techniques** du §7 ont en
+> revanche été invalidées par la mesure, et sont annotées sur place : l'usage
+> d'ONNX int8 à l'inférence (§7.6, §7.8) et l'unicité du référentiel (§10.3).
+> L'état courant est décrit par [PASSATION.md](PASSATION.md).
 
 | | |
 |---|---|
@@ -272,7 +278,12 @@ Transformer le POC en **application conteneurisée, utilisable par le métier**,
 - Backend : Python 3.11, FastAPI, SQLAlchemy/Alembic, RQ, pydantic.
 - Frontend : React 18 + TypeScript, Vite, une lib de composants (ex. MUI), une lib de graphiques (ex. Recharts).
 - Données : PostgreSQL 16, Redis 7.
-- ML : le socle du POC (torch, transformers, optimum/onnxruntime, scikit-learn, spaCy) — **ONNX int8** privilégié à l'inférence.
+- ML : le socle du POC (torch, transformers, optimum/onnxruntime, scikit-learn, spaCy) — ~~**ONNX int8** privilégié à l'inférence~~.
+  > ⚠️ **Hypothèse invalidée (09/09/2026).** Mesuré sur le matériel cible : les modèles
+  > servis via ONNX int8 ne s'accordent avec PyTorch que sur **55 % / 13 % / 74 %** des
+  > argmax selon la tâche, pour un débit **3,3× plus lent**. Le backend retenu est
+  > **PyTorch** (`onnx.use_for_inference: false`) ; les artefacts sont conservés mais
+  > inertes. Les réactiver exige une requalification.
 
 ### 7.7 Conteneurisation & déploiement
 - `docker compose up` lance toute la stack ; un `.env` fournit les secrets (clé de session, mot de passe DB).
@@ -281,7 +292,9 @@ Transformer le POC en **application conteneurisée, utilisable par le métier**,
 - Front exposé sur `http://localhost:<port>` ; rien d'autre n'est exposé.
 
 ### 7.8 Performance & dimensionnement
-- Cible : lot ~11 000 verbatims **< ~1 h** (ONNX int8, `batch_size` ajustable).
+- Cible : lot ~11 000 verbatims **< ~1 h** (backend PyTorch — cf. §7.6 —, `batch_size` ajustable).
+  Débit mesuré sur le jeu de test gelé : **≈ 21 verbatims/s**, soit ≈ 9 min pour 11 000.
+  *La mesure en conditions réelles sur un lot complet reste à faire (DoD §11).*
 - Recommandé : laptop **≥ 16 Go RAM, ≥ 4 cœurs** ; allouer suffisamment de RAM/CPU à Docker Desktop (ex. 8 Go / 4 cœurs).
 - Le `worker` garde les modèles chargés ; un seul job lourd à la fois.
 
@@ -338,7 +351,13 @@ Transformer le POC en **application conteneurisée, utilisable par le métier**,
 
 1. **Jamais** envoyer de données (verbatims, résultats, modèles, métriques) hors du poste : pas d'Internet, pas de cloud, pas d'API tierce, **pas de télémétrie**.
 2. **Jamais** stocker en base un verbatim **non anonymisé** ; la base ne contient que du texte anonymisé.
-3. **Jamais** prédire une classe hors `taxonomy_cultura_poc.json`, ni un couple (niv.1, niv.2) invalide (contrainte hiérarchique imposée).
+3. **Jamais** prédire une classe hors du référentiel, ni un couple (niv.1, niv.2) invalide (contrainte hiérarchique imposée).
+   > 📌 **Précision (14/09/2026).** L'exigence est inchangée, mais le référentiel n'est
+   > plus unique : plusieurs modèles coexistent, chacun avec le sien, embarqué à sa
+   > racine (`<racine>/taxonomy.json`). La contrainte s'applique au référentiel **du
+   > modèle qui produit la prédiction**, et la revue humaine sert celui **du lot relu**.
+   > `taxonomy_cultura_poc.json` reste le référentiel du modèle V1 et le repli de
+   > déploiement.
 4. **Jamais** modifier ou écraser les fichiers sources d'origine, ni les poids du modèle (volume modèles en lecture seule).
 5. **Jamais** ré-entraîner le modèle automatiquement en production : l'entraînement reste une opération CLI maîtrisée et validée par un humain.
 6. **Jamais** présenter une prédiction automatique comme une vérité validée : toujours afficher le score de confiance et le statut (auto / en revue / corrigé).
@@ -373,7 +392,7 @@ Transformer le POC en **application conteneurisée, utilisable par le métier**,
 | Risque | Impact | Mitigation / conseil |
 |---|---|---|
 | **Mono-poste = point de défaillance unique** (panne/perte du laptop) | Perte d'historique | Sauvegardes régulières des volumes ; l'archi conteneurisée permet de **migrer vers un petit serveur interne** sans refonte si l'usage se généralise. |
-| **Ressources laptop** (CamemBERT CPU + Postgres + worker) | Lenteur / OOM | ONNX int8, un seul job lourd à la fois, allouer assez de RAM à Docker Desktop, recommander ≥ 16 Go. |
+| **Ressources laptop** (CamemBERT CPU + Postgres + worker) | Lenteur / OOM | Un seul job lourd à la fois, allouer assez de RAM à Docker Desktop, recommander ≥ 16 Go. *(ONNX int8 écarté — cf. §7.6.)* |
 | **Licence Docker Desktop** (payante au-delà d'un certain seuil d'entreprise) | Conformité licence | Vérifier l'éligibilité ; alternatives gratuites : **Rancher Desktop / Podman / Colima**. |
 | **Handoff modèle via volume** (dépôt manuel de fichiers) | Erreur d'activation | Validation au chargement (présence taxonomie/encodeurs/carte de version) + activation explicite tracée. |
 | **Comptes locaux** (gestion mots de passe) | Sécurité | Politique de mot de passe, verrouillage anti-bruteforce ; **prévoir SSO Entra ID en V1.1**. |

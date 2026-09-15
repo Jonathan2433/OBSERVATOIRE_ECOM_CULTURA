@@ -19,7 +19,8 @@ from torch.utils.data import DataLoader
 
 from ..modeling import build_sequence_classifier, base_model_path, load_tokenizer, save_versioned
 from ..utils import load_config, resolve_path, set_seed, sentiment_input
-from .dataset import EncodedDataset
+from ..utils.features import politique_prefixe
+from .dataset import EncodedDataset, make_collate
 from .prepare_dataset import ProcessedDataset
 from .trainer import append_training_log, fine_tune
 
@@ -36,11 +37,18 @@ def _build_texts(df, cfg: Dict[str, Any]):
     ]
 
 
-def train_sentiment(cfg: Dict[str, Any]) -> Dict[str, Any]:
-    """Entraîne le modèle de sentiment 3 classes et renvoie un résumé."""
+def train_sentiment(cfg: Dict[str, Any],
+                    data: "ProcessedDataset" = None) -> Dict[str, Any]:
+    """Entraîne le modèle de sentiment 3 classes et renvoie un résumé.
+
+    ``data`` permet de fournir un jeu déjà construit — utilisé par le lot L6, qui
+    restreint l'entraînement aux verbatims portant un sentiment annoté. Par
+    défaut, le jeu est chargé depuis les artefacts, comportement inchangé.
+    """
     set_seed(cfg["model"]["seed"])
     logger.info("=== Entraînement modèle de sentiment (3 classes) ===")
-    data = ProcessedDataset.load(cfg)
+    if data is None:
+        data = ProcessedDataset.load(cfg)
     tokenizer = load_tokenizer(base_model_path(cfg))
     max_length = cfg["model"]["max_length"]
     if cfg.get("smoke_test", {}).get("enabled"):
@@ -62,9 +70,11 @@ def train_sentiment(cfg: Dict[str, Any]) -> Dict[str, Any]:
     model, history = fine_tune(
         model,
         DataLoader(train_ds, batch_size=cfg["model"]["batch_size_train"], shuffle=True,
-                   num_workers=cfg["model"].get("num_workers", 0)),
+                   num_workers=cfg["model"].get("num_workers", 0),
+                   collate_fn=make_collate(tokenizer, False)),
         DataLoader(val_ds, batch_size=cfg["model"]["batch_size_inference"], shuffle=False,
-                   num_workers=cfg["model"].get("num_workers", 0)),
+                   num_workers=cfg["model"].get("num_workers", 0),
+                   collate_fn=make_collate(tokenizer, False)),
         cfg, multilabel=False, class_weight=data.sentiment_class_weight, task_name="sentiment",
     )
 
@@ -73,6 +83,13 @@ def train_sentiment(cfg: Dict[str, Any]) -> Dict[str, Any]:
         "type": "multi_class",
         "labels": data.sentiment_labels,
         "use_satisfaction_prefix": cfg["sentiment"]["use_satisfaction_prefix"],
+        # ENF-7 — la politique de préfixe fait partie du contrat du modèle :
+        # elle est inscrite ici et contrôlée au chargement par
+        # features.verifier_politique_prefixe(). Sans cela, un modèle entraîné
+        # sur `[SATISFACTION x/4]` pourrait être servi avec `x/10`, en silence.
+        "politique_prefixe": politique_prefixe(cfg),
+        "satisfaction_scale_max": cfg["sentiment"].get("satisfaction_scale_max"),
+        "lowercase": cfg.get("cleaning", {}).get("lowercase"),
         "base_model": cfg["model"]["base_model"],
         "best_val_f1_macro": max(h["f1_macro"] for h in history) if history else None,
     }

@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { listModels, predict, type ModelVersion, type Prediction } from "../api";
-import { Badge, type BadgeTone, Button, Card, Input, Select, Textarea } from "../ui";
+import { getMeta, listModels, predict, type ModelVersion, type Prediction } from "../api";
+import { Badge, type BadgeTone, Button, Card, InfoTip, Input, Select, Textarea } from "../ui";
 
 function sentimentTone(s?: string | null): BadgeTone {
   return s === "Négatif" ? "danger" : s === "Positif" ? "success" : "neutral";
@@ -25,9 +25,12 @@ export default function TestPage() {
   const [res, setRes] = useState<Prediction | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Signaux sans détecteur entraîné (D-41), pour le moteur CamemBERT configuré.
+  const [nonMesures, setNonMesures] = useState<string[]>([]);
 
   useEffect(() => {
     listModels().then((m) => setModels(m.filter((x) => x.available))).catch(() => setModels([]));
+    getMeta().then((m) => setNonMesures(m.signaux_non_mesures ?? [])).catch(() => {});
   }, []);
 
   const onSubmit = async (e: FormEvent) => {
@@ -49,6 +52,12 @@ export default function TestPage() {
     res.signal_churn && "churn",
     res.signal_insatisfaction_forte && "insatisfaction forte",
   ].filter(Boolean) as string[] : [];
+
+  // Le périmètre de mesure vaut pour le moteur CamemBERT (/api/meta). Un autre
+  // moteur — LM Studio, Claude, démo — décide autrement : ne rien affirmer.
+  const moteurChoisi = models.find((m) => String(m.id) === modelId)
+                    ?? models.find((m) => m.is_active);
+  const signauxAbsents = (moteurChoisi?.kind ?? "real") === "real" ? nonMesures : [];
 
   return (
     <div>
@@ -106,9 +115,21 @@ export default function TestPage() {
                 </>
               )}
               <dt>Signaux</dt>
-              <dd>{signals.length
-                ? <span className="ui-row" style={{ gap: 4 }}>{signals.map((s) => <Badge key={s} tone="warning">{s}</Badge>)}</span>
-                : <span className="ui-muted">aucun</span>}</dd>
+              <dd>
+                <span className="ui-row" style={{ gap: 4 }}>
+                  {signals.length
+                    ? signals.map((s) => <Badge key={s} tone="warning">{s}</Badge>)
+                    : (signauxAbsents.length < 3 && <span className="ui-muted">aucun</span>)}
+                  {/* D-41 : un signal sans détecteur sort toujours à faux.
+                      « aucun » le ferait lire comme une mesure. */}
+                  {signauxAbsents.length > 0 && (
+                    <>
+                      <Badge tone="neutral">{signauxAbsents.join(", ")} : non mesuré</Badge>
+                      <InfoTip text={`Aucun détecteur n'est entraîné pour ${signauxAbsents.join(" et ")} : trop peu d'exemples dans le corpus annoté pour un modèle évaluable (D-41). Ces signaux ne sont pas « absents », ils ne sont pas recherchés.`} />
+                    </>
+                  )}
+                </span>
+              </dd>
               <dt>Confiance globale</dt><dd>{String(res.confidence_globale)}</dd>
               <dt>Texte analysé</dt><dd className="ui-muted">{res["verbatim_analysé"]}</dd>
             </dl>

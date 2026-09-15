@@ -40,13 +40,224 @@ smoke_test:
 #  Seuils de décision (sigmoid / probabilités)
 # -----------------------------------------------------------------------------
 thresholds:
-  classification_niv1: 0.35        # Seuil sigmoid pour activer un thème niv.1
+  # Seuil sigmoid d'activation d'un thème niv.1, calé sur la COURBE DE VALIDATION
+  # du modèle réentraîné (L5' / L6, cf. eval_iter3_s0.85.json). À 0,85 la part de
+  # sorties bi-thèmes est de 5,7 % en validation pour 4,4 % d'annotations
+  # bi-thèmes — dans la bande visée par D-9/EF-4.
+  #
+  # ⚠️ Valait 0,35 jusqu'au 11/09/2026 : hérité du prototype, jamais recalé, et
+  # jamais lu par les rapports (qui passaient `--seuil 0.85` en ligne de commande).
+  # L'inférence de production tournait donc à 0,35, soit ~2,5 thèmes activés par
+  # verbatim tronqués à 2 : 95,1 % de sorties bi-thèmes mesurées sur la baseline.
+  # Le seuil déclaré est désormais le seuil réellement appliqué.
+  classification_niv1: 0.85
   classification_niv2: 0.40        # Seuil pour activer un sous-thème niv.2
   signal_rupture: 0.60             # Seuil détection rupture client
   signal_churn: 0.50               # Seuil détection churn
   signal_insatisfaction: 0.50      # Seuil détection insatisfaction forte
   revue_humaine: 0.50              # confidence_globale < seuil -> revue humaine (calibré sur le modèle réel)
-  max_themes: 2                    # Nb max de thèmes retournés par verbatim (scope POC)
+  max_themes: 2
+
+  # D-40 (arbitrage PO 09/09) — routage des sous-thèmes hors périmètre (D-32).
+  # Quand le sous-thème retenu relève des 16 hors périmètre, le modèle produit
+  # le niveau 1, laisse `theme1_niv2` VIDE et force `revue_humaine_requise`.
+  # Aucune colonne ajoutée à OUTPUT_COLUMNS ; c'est la sémantique qui change —
+  # le front, les exports et les tableaux de bord doivent tolérer un niv2 vide
+  # (contrôlé en recette L9).
+  niv2_hors_perimetre_vide: true
+
+  # `classification_niv2` est déclaré depuis l'origine mais JAMAIS lu : l'inférence
+  # fait un argmax masqué sans seuil (dette T-config de l'état des lieux). Ce
+  # drapeau le branche enfin : sous ce seuil, le niv2 est laissé vide et la revue
+  # forcée — c'est le mécanisme qui rend le routage D-32 réellement opérant, un
+  # sous-thème hors périmètre se traduisant par une confiance basse et diffuse.
+  # Laissé INACTIF par défaut : l'activer change le comportement du modèle actif.
+  # À calibrer en L6, ou en L7 avec la calibration de confiance.
+  niv2_seuil_actif: false
+
+# -----------------------------------------------------------------------------
+#  COUCHE DE DÉCISION — trois leviers validés par le PO le 11/09/2026.
+#
+#  Origine : campagne d'optimisation « atteindre les performances sans dépendre
+#  de Cultura » (docs/OPTIMISATION_SANS_CULTURA.md). Aucun de ces leviers
+#  n'ajoute d'information au modèle : ils ARBITRENT À SA PLACE là où les mesures
+#  montrent qu'il ne peut pas trancher. Ils ne remplacent ni le réentraînement
+#  ni l'atelier de référentiel (L3) — ils rendent exploitable le modèle actuel.
+#
+#  Les valeurs sont calées sur la VALIDATION, jamais sur le test.
+#  Implémentation unique : src/inference/decision.py (production ET évaluation).
+#
+#  ⚠️ Ces leviers sont calés sur le référentiel Cultura 2026 (11 thèmes niv.1).
+#  Un libellé absent du référentiel chargé lève une erreur au démarrage — un
+#  levier silencieusement inactif serait pire que pas de levier.
+# -----------------------------------------------------------------------------
+decision:
+
+  # ---------------------------------------------------------------------------
+  #  Référentiel sur lequel ces leviers ont été calés.
+  #
+  #  Si le référentiel chargé n'est pas celui-ci, les leviers sont DÉSACTIVÉS
+  #  avec un avertissement, et non appliqués au hasard ni levés en erreur :
+  #  l'application V1 tourne légitimement sur l'ancien référentiel à 20 thèmes,
+  #  où des seuils calés sur 11 thèmes n'ont aucun sens.
+  #
+  #  Le discriminant est déclaré, pas deviné : les deux référentiels partagent
+  #  exactement UN libellé de niveau 1 (D-36), et une heuristique fondée sur le
+  #  recouvrement des libellés s'y tromperait.
+  #
+  #  Si le référentiel correspond mais qu'un libellé de règle est introuvable,
+  #  c'est une erreur levée au démarrage — pas un levier silencieusement muet.
+  # ---------------------------------------------------------------------------
+  referentiel_attendu:
+    nom: "cultura_2026"
+    n_themes_niv1: 11
+
+  # ---------------------------------------------------------------------------
+  #  Levier 1 — seuils d'activation par thème.
+  #  Un seuil unique traite de la même façon un thème à 40 % du corpus et un
+  #  thème à 0,4 %. Les thèmes non listés gardent `classification_niv1`.
+  #  Gain mesuré en campagne : +1,3 point de F1-macro.
+  # ---------------------------------------------------------------------------
+  seuils_par_theme:
+    actif: true
+    valeurs:
+      "Général": 0.75              # fourre-tout : capte le résiduel, exigence abaissée
+      "Réception commande": 0.80
+      "Bug": 0.95                  # 0,4 % du corpus : n'activer que sur une quasi-certitude
+      "Recherche produit": 0.60    # rappel insuffisant au seuil commun
+
+  # ---------------------------------------------------------------------------
+  #  Levier 2 — arbitrage contextuel par source.
+  #
+  #  38,6 % de TOUTES les erreurs de thème sont un seul motif : `Réception
+  #  commande` prédit `Général`. Sur 102 cas, 93 viennent du formulaire MDTC
+  #  post-réception, sur des textes comme « c'était rapide » ou « code à
+  #  scanner, facile ». Le modèle a raison du point de vue du TEXTE SEUL —
+  #  l'annotateur, lui, savait de quel formulaire venait la réponse.
+  #
+  #  `avance_max` porte sur p(theme_source) - p(theme_cible). En dessous, la
+  #  prédiction est trop peu tranchée pour l'emporter sur le contexte.
+  #
+  #  ⚠️ RECALIBRÉ le 11/09/2026 : 0,6 -> 0,3.
+  #  La valeur 0,6 venait de la campagne, calée AVANT l'existence des seuils par
+  #  thème. Les deux leviers se recouvrent — les seuils par thème arbitrent déjà
+  #  entre `Général` (0,75) et `Réception commande` (0,80). Mesuré à 0,6 avec
+  #  l'implémentation de production : 19 décisions modifiées, 9 corrigées et
+  #  8 CASSÉES, soit un pile ou face. À 0,3 : 4 modifiées, 4 corrigées, 0 cassée.
+  #  Le levier reste petit — il l'est réellement — mais il ne dégrade plus rien.
+  #  Reproductible : `python scripts/calibrer_regle_source.py` (sur la validation).
+  #
+  #  ⚠️ Exige que la SOURCE FINE parvienne à la décision (`MDTC-postrecep`, pas
+  #  `MDTC`). Sans elle la règle ne s'applique pas — et le journal le dit.
+  #  Le chargeur de production affine la source quand il reconnaît le schéma
+  #  (cf. `preprocessing.loader.affiner_source`).
+  # ---------------------------------------------------------------------------
+  regles_source:
+    actif: true
+    regles:
+      - source: "MDTC-postrecep"
+        theme_source: "Général"
+        theme_cible: "Réception commande"
+        avance_max: 0.30
+        motif: >-
+          Formulaire post-réception : un éloge générique décrit le retrait ou la
+          conformité de la commande, que le texte seul ne nomme pas.
+
+  # ---------------------------------------------------------------------------
+  #  Levier 3 — suppression des paires de thèmes qui se recouvrent.
+  #
+  #  Ces paires sont proposées ensemble sur des verbatims MONO-thème : ce n'est
+  #  pas un second sujet, c'est une hésitation entre deux étiquettes pour le
+  #  même sujet. Quand les deux sont retenus, le moins probable est retiré.
+  #  Mesuré avec l'implémentation de production, sur la validation : c'est le
+  #  levier le plus rentable des trois (faux second thème 5,73 % -> 1,78 %,
+  #  précision du second thème 0,2879 -> 0,4583).
+  #
+  #  Ce levier TRAITE UN SYMPTÔME. La cause — le recouvrement du référentiel —
+  #  appartient à Cultura (D-7) et relève de l'atelier L3.
+  # ---------------------------------------------------------------------------
+  paires_confusables:
+    actif: true
+    paires:
+      - ["Choix produit", "Recherche produit"]     # 23 cas mono-thème
+
+      # ⚠️ ARBITRAGE PO du 11/09 : la paire ["Cartes cadeaux", "Passer commande"]
+      # (31 cas mono-thème) est RETIRÉE. Mesurée seule sur la validation, elle
+      # dégrade `Passer commande` (F1 0,5556 -> 0,5000) sans rien apporter à
+      # `Cartes cadeaux` (0,7077 inchangé), pour un gain global de +0,001 de
+      # F1-macro — du bruit. Son seul effet réel était de réduire encore la part
+      # de sorties bi-thèmes, ce qui était un bénéfice tant que le modèle
+      # sur-activait et devient un coût maintenant qu'il sous-active.
+      #
+      # La cause — le recouvrement des deux libellés au référentiel — appartient
+      # à Cultura (D-7) et est remontée à l'atelier L3. Elle n'est pas traitée
+      # ici : masquer un défaut de référentiel en aval n'est pas le corriger.
+
+  # ---------------------------------------------------------------------------
+  #  Cibles de la famille B du cadrage (§7.2) — critères MÉTIER, pas des
+  #  constantes techniques : ils vivent ici, pas en dur dans les scripts.
+  #
+  #  ⚠️ ARBITRAGE PO du 11/09 — `precision_second_theme` n'est plus un
+  #  engagement, c'est un INDICATEUR SUIVI.
+  #
+  #  Motif mesuré : sur 30 propositions de second thème annotées, 1 seule est un
+  #  second sujet légitime ; 9 sont la paire `Choix produit / Recherche produit`
+  #  et 6 ont le « second thème » égal au thème 1 annoté. Ce que la métrique
+  #  compte comme faux second thème est majoritairement une hésitation entre
+  #  étiquettes qui se recouvrent — elle ne mesure pas le besoin. Elle portait de
+  #  surcroît sur 35 verbatims bi-thèmes, et n'avait jamais été validée par
+  #  Cultura (Q-9, proposition eXalt de mai 2026).
+  #
+  #  Les engagements sont désormais `taux_faux_second_theme` et
+  #  `erreur_volume_globale` — les deux grandeurs qui traduisent O-3, des
+  #  volumes fiables pour prioriser.
+  # ---------------------------------------------------------------------------
+  cibles:
+    # Indicateur suivi : affiché, jamais opposable. La valeur reste celle du
+    # cadrage pour que l'écart au projet initial reste lisible.
+    precision_second_theme: 0.70
+    precision_second_theme_statut: "indicateur suivi — non opposable (arbitrage PO 11/09, ex-Q-9)"
+
+    # ---- Engagements ----------------------------------------------------------
+    taux_faux_second_theme: 0.15               # cadrage §7.2
+    taux_faux_second_theme_resserre: 0.10      # resserrement retenu le 11/09
+    erreur_volume: 0.15
+
+    # ⚠️ ARBITRAGE PO du 11/09 — l'erreur de volume s'apprécie AU GLOBAL.
+    # Les quatre plus gros couples (thème × sentiment), ceux qui pilotent
+    # effectivement la priorisation, sont à 5-11 %. Les écarts se concentrent sur
+    # les couples moyens, où une dizaine de verbatims suffit à faire bouger le
+    # pourcentage. Le détail par couple reste produit et publié, en suivi.
+    erreur_volume_maille: "globale"
+    # Seuil d'effectif au-delà duquel un couple est reporté au détail (suivi).
+    erreur_volume_seuil_significativite: 20
+
+    # Part de sorties bi-thèmes, exprimée en facteur de la part ANNOTÉE.
+    facteur_part_bi_theme: 1.5
+
+    # ---- Taux de revue humaine (famille C) ------------------------------------
+    # D-9 : la charge de relecture visée est de 10 à 15 % des verbatims.
+    #
+    # La MONOTONIE du seuil de revue est le dernier critère non atteint : un saut
+    # de +39,4 points entre 0,70 et 0,75 rendait le réglage inexploitable —
+    # impossible de viser une charge donnée si un centième de seuil fait doubler
+    # le volume à relire. Ce saut était mesuré sur une grille au pas de 0,05.
+    # Le pas est ramené à 0,01 pour distinguer une vraie falaise d'un artefact
+    # de mesure : à pas grossier, tout escalier ressemble à une falaise.
+    taux_revue_cible: [0.10, 0.15]
+    taux_revue_saut_max: 0.20        # aucun bond > 20 points d'un pas au suivant
+    taux_revue_grille: {debut: 0.30, fin: 0.95, pas: 0.01}
+
+    # La monotonie s'apprécie sur la PLAGE D'EXPLOITATION, pas sur toute la
+    # grille. Mesuré au pas de 0,01 : la courbe est lisse de 0,55 à 0,85
+    # (marches de 0,5 à 4,3 points) et ne présente qu'une seule discontinuité,
+    # +22,2 points entre 0,91 et 0,92 — un point de fonctionnement où l'on
+    # relirait 9 verbatims sur 10, que personne ne choisira jamais.
+    #
+    # La plage est définie par les seuils qui atteignent la cible D-9, élargie
+    # de cette marge de part et d'autre. Elle n'est donc pas choisie a priori :
+    # elle se déduit de la charge visée.
+    taux_revue_marge_plage: 0.05
 
 # -----------------------------------------------------------------------------
 #  Signaux spécifiques
@@ -70,6 +281,29 @@ signals:
 #  Modèle de sentiment (3 classes)
 # -----------------------------------------------------------------------------
 sentiment:
+  # ⚠️ Borne haute de l'échelle de satisfaction injectée en préfixe textuel.
+  # Elle DOIT correspondre au modèle chargé, jamais aux données :
+  #   - modèles actifs (juin 2026) : entraînés sur 1-10  -> valeur 10
+  #   - livraison Cultura du 09/09  : échelle 1-4 (D-20) -> valeur 4 à partir de L6
+  # Présenter une note 1-4 à un modèle entraîné sur 1-10 ferait passer un client
+  # très satisfait (4/4) pour un insatisfait (4/10) : baseline faussement
+  # mauvaise, gain faussement bon. Contrôlé par features.verifier_echelle().
+  satisfaction_scale_max: 10
+
+  # D-39 (arbitrage PO 09/09) — le préfixe est CONDITIONNEL À LA LONGUEUR.
+  # Mesuré sur la baseline (1 128 verbatims, jeu de test sans fuite) :
+  #     1-2 mots   : +0,418 d'accuracy   <- la note fait tout le travail
+  #     3-5 mots   : +0,093
+  #     6-10 mots  : +0,022
+  #     11-20 mots : -0,080              <- la note commence à nuire
+  #     21+ mots   : -0,157              <- elle écrase ce que dit le texte
+  # `actif: false` conserve le comportement des modèles actifs (préfixe
+  # systématique) : la politique DOIT suivre le modèle chargé, jamais les
+  # données. L6 la passe à true et l'inscrit dans training_card.json ;
+  # features.verifier_politique_prefixe() échoue en cas de divergence.
+  prefixe_conditionnel:
+    actif: false
+    max_mots: 10          # au-delà, aucun préfixe. À caler sur la validation en L6.
   labels: ["Négatif", "Neutre", "Positif"]
   # Le score de satisfaction (1-10) est un signal auxiliaire fort. Plutôt que de
   # concaténer le scalaire à l'embedding [CLS] (ce qui imposerait une tête custom
@@ -88,6 +322,19 @@ dataset:
   stratify_on: "theme1_niv1"       # Stratification (99.6% des verbatims = 1 thème)
   rare_class_threshold_warn: 30    # Warning si sous-thème < 30 exemples
   rare_class_threshold_weight: 50  # class_weight obligatoire si sous-thème < 50
+  # Plafond du `pos_weight` du niveau 1. Le corpus Cultura est très déséquilibré
+  # (Réception commande 41 %, Académie < 1 %), ce qui porte le poids jusqu'à 320 :
+  # la perte pousse alors le modèle à sur-activer (précision 0,144 / rappel 0,954
+  # mesurés à la première époque). Remède principal : le recalibrage du seuil
+  # multi-label (L5'). Ce plafond est un second levier, à activer seulement si la
+  # courbe de seuil ne suffit pas. `null` = formule d'origine, inchangée.
+  pos_weight_max: null
+  # Jeu de recette GELÉ (L2). Calculé une fois sur un texte canonique (nettoyage
+  # complet, minuscules forcées) puis relu tel quel par toutes les mesures.
+  # C'est ce qui garantit que la baseline et le modèle réentraîné sont évalués
+  # sur EXACTEMENT le même jeu de test — sans lui, deux découpages successifs ne
+  # partageaient que 23,6 % de leurs lignes, sans que rien ne le signale.
+  split_gele: "data/processed/cultura_2026/split_gele.csv"
 
 # -----------------------------------------------------------------------------
 #  Nettoyage du texte
@@ -105,6 +352,11 @@ cleaning:
 anonymization:
   enabled: true
   spacy_model: "fr_core_news_sm"
+  # §10.3 — si vrai, le chargeur ÉCHOUE au démarrage quand spaCy est absent,
+  # au lieu de masquer les noms propres en silence (T5, R-14). Les recettes
+  # applicatives torch-free conservent le mode dégradé : elles n'ingèrent
+  # aucune donnée réelle.
+  require_spacy: true
   entities_to_mask: ["PER", "EMAIL", "PHONE", "ORDER_ID"]
   mask_tokens:
     PER: "[NOM]"
@@ -146,6 +398,75 @@ paths:
   model_signals: "data/models/signals"
   training_logs: "data/processed/training_logs.json"
   eval_report: "data/processed/eval_report.json"
+
+# -----------------------------------------------------------------------------
+#  MOTEURS CamemBERT — plusieurs modèles coexistent dans le sélecteur.
+#
+#  Arbitrage PO du 11/09/2026 : le modèle Cultura 2026 s'AJOUTE à la sélection,
+#  il ne remplace pas le précédent. Les deux n'ont pourtant presque rien en
+#  commun — référentiel, seuil, couche de décision, préfixe, nettoyage — et un
+#  réglage global ne peut pas décrire les deux. Chaque profil porte donc son
+#  ÉCART à la configuration de référence ; le reste est hérité.
+#
+#  `paths.model_*` ci-dessus reste le chemin par défaut (scripts d'entraînement
+#  et d'évaluation). Les profils s'appliquent à l'inférence applicative.
+#
+#  ⚠️ La politique de préfixe et le nettoyage ne sont PAS déclarés ici : ils sont
+#  lus dans la `training_card.json` de chaque modèle. C'est le modèle qui
+#  commande — le contredire à l'inférence dégraderait ses sorties en silence.
+#  Cf. src/utils/moteurs.py.
+# -----------------------------------------------------------------------------
+moteurs_camembert:
+
+  - id: "v1_poc"
+    libelle: "V1 — référentiel POC (20 thèmes)"
+    racine: "data/models"
+    taxonomy: "data/raw/taxonomy_cultura_poc.json"
+    # Seuil d'origine du prototype. Il produit ~2,5 thèmes activés par verbatim
+    # tronqués à 2, donc énormément de sorties bi-thèmes (95,1 % mesurés sur la
+    # baseline) : c'est le grief métier n°1. Conservé tel quel — ce moteur est
+    # gardé pour comparaison et retour arrière, pas pour être amélioré.
+    seuil_niv1: 0.35
+    leviers_decision: false
+
+    # ⚠️ PAS de `eval_report` pour ce moteur — et c'est délibéré.
+    # `data/processed/eval_report.json` (18/06) est INVALIDE : mesuré sur un
+    # découpage où 99,6 % des lignes de test avaient leur texte dans le train.
+    # Le publier ferait afficher au sélecteur un F1 de niveau 2 de 0,891 pour V1
+    # contre 0,692 pour le modèle 2026 — soit exactement la conclusion inverse
+    # de la vérité. C'est ce chiffre-là qui a survécu deux mois sans que
+    # personne ne le voie.
+    #
+    # À la place, les SEULES mesures valides de ce modèle : la baseline L2, sur
+    # le jeu de test gelé, dont le protocole est celui du modèle 2026. Aucune
+    # métrique thématique n'y figure — les référentiels ne partagent qu'un
+    # libellé de niveau 1 sur 20/11 et aucun de niveau 2 (D-36), la comparaison
+    # thématique n'existe pas.
+    metriques:
+      accuracy_sentiment: 0.8145
+      f1_macro_sentiment: 0.6546
+
+  - id: "cultura_2026"
+    libelle: "Cultura 2026 — référentiel Cultura (11 thèmes)"
+    racine: "data/models/cultura_2026"
+    taxonomy: "data/raw/cultura_2026/taxonomy_cultura_2026.json"
+    # Calé sur la courbe de validation (L5'/L6), cf. eval_leviers_test.json.
+    seuil_niv1: 0.85
+    leviers_decision: true
+    eval_report: "data/processed/eval_report_cultura_2026.json"
+
+    # Seuil de routage en revue humaine, propre à ce moteur.
+    #
+    # Le seuil global (0,50) a été calibré sur le modèle V1, dont la confiance
+    # est bien plus basse. Appliqué au modèle 2026, il ne renvoie que 0,2 % des
+    # verbatims en relecture : la file de revue serait vide, et la charge de
+    # 10-15 % visée par D-9 jamais atteinte.
+    #
+    # Mesuré sur le jeu de test gelé (grille au pas de 0,01) : la cible D-9 est
+    # atteinte entre 0,69 et 0,72. 0,70 donne 11,6 % — au milieu de la bande, et
+    # sur une portion de courbe où un centième de seuil déplace la charge d'un
+    # point (critère de monotonie tenu, cf. COUCHE_DECISION.md §10).
+    seuil_revue: 0.70
 
 # -----------------------------------------------------------------------------
 #  Moteur LM Studio (V4) — second moteur LLM local, optionnel.
@@ -211,5 +532,285 @@ comparison:
 onnx:
   enabled: true
   quantize_int8: true
-  # Si true, l'inférence charge en priorité les modèles ONNX quantifiés.
-  use_for_inference: true
+  # ⚠️ DÉSACTIVÉ le 10/09/2026 — la quantification int8 DÉGRADE les modèles sur
+  # ce matériel, elle ne les accélère pas. Mesuré sur 300 verbatims réels, en
+  # comparant le même modèle servi en PyTorch et en ONNX int8 :
+  #
+  #   modèle      corrélation des probabilités   accord argmax
+  #   niv1                     0,78                   55 %
+  #   niv2                     0,50                   13 %
+  #   sentiment                0,71                   74 %
+  #
+  # Une quantification saine donnerait corrélation > 0,99 et accord > 98 %.
+  # Le débit, lui, est 3,3 fois PLUS LENT en ONNX (6,8 contre 22,4 verbatims/s) :
+  # la configuration `AutoQuantizationConfig.avx2` cible x86 alors que le poste
+  # de production est Apple Silicon arm64 (ENF-2). Le risque T3 de l'état des
+  # lieux est donc confirmé — et il coûte de la justesse, pas seulement de la
+  # vitesse.
+  #
+  # Conséquence : tant que `use_for_inference` valait true ET que les artefacts
+  # ONNX existaient, l'application servait un modèle dégradé. Sans ONNX, le débit
+  # mesuré est de 22 à 24 verbatims/s, soit ~8 min pour 11 000 — très au-dessus
+  # de ce qu'exige ENF-1. Il n'y a aucune raison de réactiver ce chemin avant
+  # d'avoir requalifié la quantification sur le matériel cible.
+  use_for_inference: false
+
+# =============================================================================
+#  CHARGEUR CULTURA 2026 — lot L1a (docs/SPEC_CHARGEUR.md)
+#
+#  Remplace la section `sources` ci-dessus, dont AUCUN mapping ne survit face
+#  aux fichiers réels (mesuré le 09/09/2026) : `Niveau de satisfaction général`
+#  -> `Satisfaction`, `Verbatim justification` -> `Justification niveau de
+#  satisfaction`, `Date de commande` -> `Date d'achat`, etc.
+#
+#  Les noms de colonnes ci-dessous sont NORMALISÉS (cf. column_norm.py §4) :
+#  minuscules, sans caractère de contrôle, sans ponctuation finale.
+# =============================================================================
+cultura_sources:
+  # Livraison de référence (D-29). La v1 du 09/09 10h27 est conservée pour audit.
+  data_dir: "data/raw/cultura_2026/v2_20260909"
+  taxonomy: "data/raw/cultura_2026/taxonomy_cultura_2026.json"
+  # Ordre de détection de l'encodage. Mesuré : les 8 CSV du 09/09 sont en cp1252.
+  encodages: ["utf-8-sig", "cp1252", "iso-8859-1"]
+  separateur_csv: ";"
+
+  # Colonnes d'annotation, communes aux 4 schémas.
+  colonnes_annotation:
+    theme1_niv1: "thème 1"
+    theme1_niv2: "sous thème 1"
+    theme2_niv1: "thème 2"
+    theme2_niv2: "sous thème 2"
+    signal: "signaux"
+    sentiment: "sentiment"
+
+  # ---------------------------------------------------------------------------
+  #  Les 4 schémas. Détection par le JEU DE COLONNES normalisées (§3), jamais
+  #  par le nom du fichier : les noms sont libres (`PostachatW32-TRANSMIS`…).
+  #
+  #  `signature` = colonnes discriminantes. Zéro schéma reconnu ou plusieurs
+  #  schémas reconnus => échec immédiat (§9.1).
+  #
+  #  ⚠️ `champs_libres` et `meta` forment une LISTE BLANCHE : toute colonne non
+  #  déclarée ici est écartée par construction. C'est plus sûr qu'une liste noire
+  #  au regard de D-18 — si Cultura ajoute une colonne PII à la prochaine
+  #  livraison, une liste noire la laisserait passer en silence.
+  # ---------------------------------------------------------------------------
+  schemas:
+
+    MDTC-postachat:
+      signature:
+        - "justification niveau de satisfaction"
+        - "produits non trouvés"
+        - "suggestion d'amélioration"
+      # D-30 : concaténer. `Justification` et `Suggestion` sont deux formulations
+      # du même retour, par le même client, sur la même commande.
+      composition: "concat"
+      separateur_concat: ". "
+      champs_libres:
+        - "justification niveau de satisfaction"
+        - "suggestion d'amélioration"
+      # D-30 : EXCLU du texte à classer. 104 valeurs, 100 % au format
+      # « Rayon : Produit » — donnée structurée, pas un verbatim. Conservée en
+      # colonne de contexte.
+      champs_contexte:
+        __produit_non_trouve__: "produits non trouvés"
+      satisfaction_col: "satisfaction"
+      echelle_satisfaction: "mdtc_1_4"
+      respondent_id_col: null        # aucun identifiant -> généré (§5)
+      meta:
+        __date__: "date de réponse"
+
+    MDTC-postrecep:
+      signature:
+        - "justification niveau de satisfaction"
+        - "!produits non trouvés"    # le `!` exige l'ABSENCE de la colonne
+      composition: "un_par_champ"
+      champs_libres:
+        - "justification niveau de satisfaction"
+      champs_contexte: {}
+      satisfaction_col: "satisfaction"
+      echelle_satisfaction: "mdtc_1_4"
+      respondent_id_col: null
+      meta:
+        __date__: "date de réponse"
+
+    Mopinion-desktop:
+      signature:
+        - "quel est votre degré de satisfaction concernant cultura"
+      # D-17 : un verbatim par champ libre rempli.
+      composition: "un_par_champ"
+      champs_libres:
+        - "merci ! avez vous tout de même une remarque ou un message pour nos équipes"
+        - "décrivez nous votre problème"
+      champs_contexte: {}
+      satisfaction_col: "quel est votre degré de satisfaction concernant cultura"
+      echelle_satisfaction: "mopinion_1_5"
+      respondent_id_col: "id"
+      meta:
+        __date__: "datetime"
+        __page_type__: "website data:window.tc_vars.page_type"
+        __url__: "url"
+        __device__: "device"
+
+    Mopinion-mobile:
+      signature:
+        - "quel est votre degré de satisfaction concernant le site de cultura"
+      composition: "un_par_champ"
+      champs_libres:
+        - "avez-vous une remarque ou des idées à nous partager"
+        - "ce n'est pas cela ? décrivez-nous le problème"
+        - "décrivez-nous le problème"
+        - "dites-nous en plus sur votre problème"
+      champs_contexte: {}
+      satisfaction_col: "quel est votre degré de satisfaction concernant le site de cultura"
+      echelle_satisfaction: "mopinion_1_5"
+      respondent_id_col: "id"
+      meta:
+        __date__: "datetime"
+        __page_type__: "website data:window.tc_vars.page_type"
+        __url__: "url"
+        __device__: "device"
+
+  # ---------------------------------------------------------------------------
+  #  Échelles de satisfaction (D-20, §7). Le score de recommandation n'est JAMAIS
+  #  retenu : il mesure l'intention de recommander la marque, pas le vécu décrit.
+  # ---------------------------------------------------------------------------
+  echelles_satisfaction:
+    mdtc_1_4:
+      valeurs_attendues: [1, 2, 3, 4]
+      conversion: null               # identité
+      hypothese: false
+      # ---------------------------------------------------------------------
+      #  Libellés textuels — exports MDTC de production (constaté le 15/09/2026).
+      #
+      #  La livraison d'entraînement encode la satisfaction en 1|2|3|4. Les
+      #  exports mensuels, eux, la donnent en toutes lettres : mesuré sur les
+      #  quatre fichiers MDTC du 07-13 septembre, 2 388 lignes, **0 % de
+      #  numérique**. Sans cette table, toutes les notes seraient perdues — donc
+      #  le préfixe [SATISFACTION x/4] du modèle de sentiment, et la règle
+      #  déterministe d'insatisfaction (note <= 3 ET sentiment négatif), qui
+      #  concerne 475 des 880 lignes du seul export-6.csv.
+      #
+      #  ⚠️ HYPOTHÈSE eXalt, à faire valider par Cultura. L'échelle est une
+      #  Likert à 4 points dont l'ordre ne fait pas de doute, mais la
+      #  correspondance exacte avec 1-4 n'a pas de table officielle — même
+      #  statut que l'échelle Mopinion (Q-17 / Q-23).
+      #
+      #  La comparaison est tolérante (casse, accents, espaces) : « TRÈS
+      #  SATISFAIT(E) » et « tres satisfait(e) » tombent sur la même entrée.
+      # ---------------------------------------------------------------------
+      libelles:
+        "Pas du tout satisfait(e)": 1
+        "Plutôt pas satisfait(e)": 2
+        "Plutôt satisfait(e)": 3
+        "Très satisfait(e)": 4
+    mopinion_1_5:
+      valeurs_attendues: [1, 2, 3, 4, 5]
+      # ⚠️ HYPOTHÈSE eXalt — aucune table officielle Cultura (Q-17 / Q-23, A6 sans
+      # réponse). Le 3 est rabattu vers l'insatisfaction : ces formulaires
+      # recueillent des irritants. Influence toute comparaison de volumes entre
+      # sources (O-3) : à faire valider avant de communiquer un chiffre agrégé.
+      conversion: {1: 1, 2: 2, 3: 2, 4: 3, 5: 4}
+      hypothese: true
+
+# =============================================================================
+#  NORMALISATION DES LABELS — lot L1a, §8 de SPEC_CHARGEUR (D-31)
+#
+#  Portée par le chargeur, jamais par un script de nettoyage jetable : Cultura
+#  re-livrera les fichiers, un nettoyage manuel serait à refaire à chaque fois.
+# =============================================================================
+label_normalization:
+  # Groupes de graphies équivalentes. Le libellé canonique n'est PAS écrit ici :
+  # c'est celui des membres du groupe qui figure dans le référentiel (D-7 — le
+  # référentiel appartient à Cultura). Si Cultura corrige « Attente commmande »
+  # en « Attente commande », ce fichier n'a pas à changer.
+  # Échec explicite si un groupe n'a aucun — ou plusieurs — membre au référentiel.
+  groupes_themes:
+    # 208 lignes « Attente commande » vs 132 « Attente commmande » (mesuré 09/09).
+    # Sans ce groupe on perd 208 ou 132 lignes selon la graphie retenue.
+    - ["Attente commande", "Attente commmande"]
+    - ["Recherche", "Recherche produit"]
+
+  groupes_sous_themes:
+    - ["Suivi commande", "Suivi de commande"]
+    - ["Gestion des points", "Gestion de points"]
+
+  # §8.3 — la normalisation la plus rentable : 887 lignes, 90 % des signaux
+  # annotés. Sans fusion, le modèle apprend deux classes de 519 et 368 au lieu
+  # d'une seule de 887. Clés comparées sous forme normalisée (casse/accents).
+  signaux:
+    "insatisfaction": "insatisfaction"
+    "insatisfait": "insatisfaction"
+    "churn": "churn"
+    "rupture": "rupture"
+
+  sentiments_attendus: ["Négatif", "Neutre", "Positif"]
+
+  # ---------------------------------------------------------------------------
+  #  D-32 — un sous-thème entre dans le périmètre du modèle à partir de 10
+  #  exemples. Les autres restent au référentiel mais sont routés en validation
+  #  humaine : le modèle prédit le niveau 1, l'humain qualifie le niveau 2.
+  #
+  #  ⚠️ Cette liste est FIGÉE, calculée sur la livraison du 09/09. Elle ne doit
+  #  pas être recalculée à chaque exécution : l'espace de labels changerait et
+  #  invaliderait les modèles déjà entraînés.
+  # ---------------------------------------------------------------------------
+  seuil_perimetre_sous_theme: 10
+  sous_themes_hors_perimetre:
+    - "Rechercher une activité"          # 0
+    - "Gérer ma réservation"             # 0  (Q-28 : le PO cite « Gérer une activité »)
+    - "Offrir une activité"              # 0
+    - "Expérience personnalisée"         # 0
+    - "Commande marketplace reçue"       # 0
+    - "Attente commande marketplace"     # 1
+    - "Retrouver ma carte cadeau Cultura"  # 3
+    - "Autre carte cadeau"               # 3
+    - "Classification produits"          # 3
+    - "Autre choix produit"              # 5
+    - "Autre espace client"              # 5
+    - "Autre réception commande"         # 6
+    - "Données personnelles"             # 7
+    - "Perception"                       # 7
+    - "Favoris"                          # 9
+    - "Retour produit"                   # 9
+
+  # §8.4 — les couples (thème, sous-thème) invalides sont ÉCARTÉS et journalisés,
+  # jamais corrigés : la correction demande un jugement humain cas par cas et
+  # serait à refaire à chaque livraison. Ils alimentent l'atelier L3.
+  ecarter_couples_invalides: true
+
+# =============================================================================
+#  BASELINE DU MODÈLE ACTUEL — lot L2
+#
+#  ⚠️ PÉRIMÈTRE ARBITRÉ PAR LE PO le 09/09/2026 : il n'y a **pas** de baseline
+#  thématique. Les deux référentiels partagent 1 libellé de niveau 1 sur 20/11
+#  et 0 de niveau 2 sur 67/59 : aucun F1 thématique n'est calculable entre
+#  l'ancien modèle et les nouvelles annotations. Les cibles de la famille A
+#  (§7.2 du cadrage) seront fixées en valeur absolue après le premier
+#  entraînement. Aucune table de correspondance ancien -> nouveau n'est
+#  construite : le chiffre qu'elle produirait dépendrait entièrement d'elle.
+#
+#  Ce qui reste mesurable : le sentiment (mêmes 3 classes), et les métriques
+#  comportementales indépendantes des libellés.
+# =============================================================================
+baseline:
+  # Arbitrage PO : le préfixe reste sur /10, comme les modèles actifs, et la
+  # note Cultura 1-4 y est RÉÉCHELONNÉE. Injecter la note brute ferait passer un
+  # client très satisfait (4/4) pour `[SATISFACTION 4/10]`, que l'entraînement
+  # de l'ancien modèle associe au négatif — baseline faussement mauvaise.
+  reechelonnage_satisfaction: {1: 1, 2: 4, 3: 7, 4: 10}
+
+  # Bras de contrôle sans préfixe : mesure ce que le préfixe apporte réellement,
+  # ce que personne n'a jamais chiffré.
+  mesurer_sans_prefixe: true
+
+  # D-28 — la baseline est mesurée PAR TRANCHE DE LONGUEUR, jamais globalement :
+  # la médiane réelle est de 6 mots, et « très bien » est hors de portée de tout
+  # modèle. Bornes en nombre de mots, incluses ; `null` = pas de borne haute.
+  tranches_longueur_mots: [[1, 2], [3, 5], [6, 10], [11, 20], [21, null]]
+
+  # R-16 — évaluation séparée par source : Mopinion desktop n'a aucun bi-thème,
+  # MDTC post-réception pèse la moitié du corpus et est massivement positif.
+  par_source: true
+
+  volume_cible_debit: 11000        # ENF-1, pour l'extrapolation du débit

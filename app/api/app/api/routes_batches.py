@@ -22,7 +22,12 @@ from common.models import Batch, MODEL_KIND_CLAUDE, MODEL_KIND_LMSTUDIO, ModelVe
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/batches", tags=["batches"], dependencies=[Depends(get_current_user)])
 
-_ALLOWED_SUFFIX = ".xlsx"
+#: Extensions acceptées au dépôt. Le CSV a été ajouté le 15/09/2026 : les exports
+#: MDTC arrivent désormais dans ce format, et `pd.read_excel` sur un CSV échouait
+#: sur un « File is not a zip file » que personne ne pouvait interpréter.
+#: Le FORMAT des colonnes, lui, est reconnu plus loin par le chargeur, sur le jeu
+#: de colonnes et jamais sur l'extension.
+_ALLOWED_SUFFIXES = (".xlsx", ".csv")
 
 
 def resolve_refiner(db: Session, refiner_label: str) -> ModelVersion:
@@ -45,12 +50,21 @@ def resolve_refiner(db: Session, refiner_label: str) -> ModelVersion:
     return m
 
 
-async def _save_upload(upload: UploadFile, dest_dir: Path, name: str) -> str:
-    if not upload.filename.lower().endswith(_ALLOWED_SUFFIX):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail=f"Format non supporté pour {upload.filename} (.xlsx attendu)")
+async def _save_upload(upload: UploadFile, dest_dir: Path, base: str) -> str:
+    """Enregistre un fichier déposé sous ``<base><extension d'origine>``.
+
+    L'extension est **conservée** : le chargeur choisit son mode de lecture
+    d'après elle (CSV ou classeur), et un `.csv` renommé en `.xlsx` échouerait
+    à la lecture avec une erreur incompréhensible pour l'utilisateur.
+    """
+    suffixe = Path(upload.filename or "").suffix.lower()
+    if suffixe not in _ALLOWED_SUFFIXES:
+        attendus = " ou ".join(_ALLOWED_SUFFIXES)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Format non supporté pour {upload.filename} ({attendus} attendu)")
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / name
+    dest = dest_dir / f"{base}{suffixe}"
     content = await upload.read()
     if len(content) > settings.max_upload_mb * 1024 * 1024:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -91,9 +105,9 @@ async def create_batch(
     dest_dir = Path(settings.uploads_dir) / str(batch.id)
     source_files = {}
     if mdtc is not None:
-        source_files["mdtc"] = await _save_upload(mdtc, dest_dir, "mdtc.xlsx")
+        source_files["mdtc"] = await _save_upload(mdtc, dest_dir, "mdtc")
     if mopinion is not None:
-        source_files["mopinion"] = await _save_upload(mopinion, dest_dir, "mopinion.xlsx")
+        source_files["mopinion"] = await _save_upload(mopinion, dest_dir, "mopinion")
     batch.source_files = source_files
     db.commit()
     db.refresh(batch)

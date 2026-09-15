@@ -3,6 +3,13 @@
 Charge la config.yaml du POC (seuils, nettoyage, anonymisation, sentiment,
 signaux) puis réécrit les CHEMINS en absolu vers les volumes du conteneur
 (/data/...), au lieu des chemins relatifs du POC.
+
+⚠️ Les **profils de moteurs** (`moteurs_camembert`) doivent être réécrits eux
+aussi. Ils déclarent des chemins relatifs à la racine du projet
+(`data/models/cultura_2026`) qui, dans le conteneur, se résoudraient en
+`/app/data/models/...` — un répertoire qui n'existe pas, puisque les modèles
+sont montés sur `/data/models`. Sans cette réécriture, AUCUN moteur CamemBERT
+n'est détecté et l'application retombe silencieusement sur le stub.
 """
 from __future__ import annotations
 
@@ -25,6 +32,8 @@ def build_worker_cfg() -> Dict[str, Any]:
     cfg["paths"]["taxonomy"] = os.environ.get("TAXONOMY_PATH", "/app/taxonomy.json")
     cfg["paths"]["eval_report"] = f"{processed}/eval_report.json"
     cfg["model"]["local_model_dir"] = os.environ.get("CAMEMBERT_DIR", f"{models}/camembert-base")
+
+    _reecrire_profils(cfg, models, processed)
 
     # --- Moteur LM Studio (V4) : surcharge env du bloc lmstudio de config.yaml --
     lms = cfg.setdefault("lmstudio", {})
@@ -51,3 +60,32 @@ def build_worker_cfg() -> Dict[str, Any]:
     cl["base_url"] = os.environ.get("CLAUDE_BASE_URL", cl.get("base_url", "https://api.anthropic.com"))
     cl["api_key_present"] = bool(os.environ.get("ANTHROPIC_API_KEY"))
     return cfg
+
+
+def _reecrire_profils(cfg: Dict[str, Any], models: str, processed: str) -> None:
+    """Réécrit les chemins des profils de moteurs vers les volumes du conteneur.
+
+    Les profils déclarent leur racine **relativement au répertoire des
+    modèles** du projet (``data/models``, ``data/models/cultura_2026``). Dans le
+    conteneur ce répertoire est monté ailleurs : seule la partie qui suit
+    ``data/models`` est conservée, et recollée sous ``MODELS_DIR``.
+
+    Le référentiel n'est pas réécrit : chaque modèle embarque le sien à sa
+    racine (``taxonomy.json``), qui suit donc le déplacement. Un profil dont le
+    modèle n'embarque pas son référentiel retombera sur ``paths.taxonomy`` — et
+    `moteurs.taxonomie_du_profil` l'aura signalé au journal.
+    """
+    profils = cfg.get("moteurs_camembert") or []
+    racine_projet = "data/models"
+    for profil in profils:
+        declaree = str(profil.get("racine", "")).strip("/")
+        if declaree == racine_projet:
+            profil["racine"] = models
+        elif declaree.startswith(racine_projet + "/"):
+            profil["racine"] = f"{models}/{declaree[len(racine_projet) + 1:]}"
+        # Un profil hors de `data/models` est laissé tel quel : il désigne un
+        # emplacement que l'opérateur a choisi, et que nous n'avons pas à deviner.
+
+        rapport = profil.get("eval_report")
+        if rapport and str(rapport).startswith("data/processed/"):
+            profil["eval_report"] = f"{processed}/{str(rapport)[len('data/processed/'):]}"

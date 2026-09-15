@@ -1,0 +1,113 @@
+# =============================================================================
+#  Correspondance ancien référentiel (20/67) -> nouveau référentiel (11/59)
+#
+#  ⚠️ CETTE TABLE EST UN JUGEMENT eXalt, NON VALIDÉ PAR CULTURA.
+#
+#  Elle n'existe que pour recycler le **jeu factice** du 12/08, annoté dans
+#  l'ancien référentiel, en matériel d'entraînement d'appoint — en particulier
+#  ses 289 verbatims bi-thèmes et ses 219 exemples de `churn`, denrées rares
+#  dans le corpus réel (314 bi-thèmes, 64 churn).
+#
+#  Elle ne doit JAMAIS servir à :
+#    - produire une baseline de l'ancien modèle (D-36 l'a explicitement écarté) ;
+#    - comparer des volumes entre l'ancien et le nouveau référentiel ;
+#    - réétiqueter des données réelles.
+#
+#  Deux limites assumées :
+#    1. La correspondance est **lossy** : plusieurs sous-thèmes anciens
+#       convergent vers un seul nouveau (les 3 de « Retour / Remboursement »
+#       vers `Réception commande / Retour produit`, par exemple).
+#    2. Certains sous-thèmes nouveaux n'ont **aucun** antécédent : les 4
+#       d'`Académie`, les 2 marketplace, `Produits numériques`, `Taille colis`.
+#       Le jeu factice n'y apportera rien.
+#
+#  Clé : "<thème ancien> | <sous-thème ancien>"
+#  Valeur : [thème nouveau, sous-thème nouveau]
+# =============================================================================
+correspondance_niv2:
+  "Suivi de commande et livraison | Absence de notification": ["Attente commmande", "Suivi de commande"]
+  "Suivi de commande et livraison | Colis endommagé": ["Réception commande", "Etat colis, produit"]
+  "Suivi de commande et livraison | Colis perdu": ["Réception commande", "Livraison à domicile / point retrait"]
+  "Suivi de commande et livraison | Délai non respecté": ["Attente commmande", "Respect des délais"]
+  "Suivi de commande et livraison | Erreur de livraison": ["Réception commande", "Conformité commande"]
+
+  "Tunnel de vente - Paiement | Bug paiement": ["Bug", "Bug commande"]
+  "Tunnel de vente - Paiement | Problème code promo / réduction": ["Passer commande", "Utiliser un code promotionnel et fidélité"]
+  "Tunnel de vente - Paiement | Problème de remboursement": ["Réception commande", "Retour produit"]
+  "Tunnel de vente - Paiement | Problème e-carte cadeau": ["Cartes cadeaux", "Payer avec une carte cadeau"]
+
+  "Annulation commande | Annulation sans explication": ["Attente commmande", "Commande annulée"]
+  "Annulation commande | Erreur de prix": ["Choix produit", "Prix, promotions"]
+  "Annulation commande | Produit disponible devenu en rupture": ["Choix produit", "Stock, disponibilité"]
+
+  "Trouver son produit | Facile": ["Recherche produit", "Résultats du moteur de recherche"]
+  "Trouver son produit | Filtres peu performants": ["Recherche produit", "Filtres/tris des pages liste"]
+  "Trouver son produit | Manque de visibilité des promotions": ["Choix produit", "Prix, promotions"]
+  "Trouver son produit | Recherche peu efficace": ["Recherche produit", "Résultats du moteur de recherche"]
+
+  "Prix de la livraison | Clarifier l'information sur les livraisons": ["Passer commande", "Modes de livraison"]
+  "Prix de la livraison | Frais inattendus": ["Passer commande", "Modes de livraison"]
+  "Prix de la livraison | Trop élevé": ["Passer commande", "Modes de livraison"]
+
+  "Site / Application | Bug technique": ["Bug", "Autre bug"]
+  "Site / Application | Ergonomie mobile": ["Général", "Ergonomie/utilisabilité"]
+  "Site / Application | Lenteur du site": ["Bug", "Lenteurs"]
+  "Site / Application | Navigation difficile": ["Général", "Ergonomie/utilisabilité"]
+
+  "Produit | Contenu manquant ou incomplet": ["Choix produit", "Informations produit"]
+  "Produit | Non conforme à la description": ["Réception commande", "Conformité commande"]
+  "Produit | Qualité décevante": ["Réception commande", "Satisfaction produit"]
+
+  "Service client | Difficile à joindre": ["Général", "SAV"]
+  "Service client | Délai de réponse trop long": ["Général", "SAV"]
+  "Service client | Réponse insatisfaisante": ["Général", "SAV"]
+
+  "Programme de fidélité | Bon d'achat non reçu": ["Programme de fidélité", "Gestion de points"]
+  "Programme de fidélité | Points non crédités": ["Programme de fidélité", "Gestion de points"]
+  "Programme de fidélité | Règles peu claires": ["Programme de fidélité", "Perception"]
+
+  "Retour / Remboursement | Délai de remboursement trop long": ["Réception commande", "Retour produit"]
+  "Retour / Remboursement | Procédure complexe": ["Réception commande", "Retour produit"]
+  "Retour / Remboursement | Remboursement partiel": ["Réception commande", "Retour produit"]
+
+  "Disponibilité & Stock | Délai de réapprovisionnement inconnu": ["Choix produit", "Stock, disponibilité"]
+  "Disponibilité & Stock | Pré-commande mal gérée": ["Choix produit", "Stock, disponibilité"]
+  "Disponibilité & Stock | Rupture de stock non signalée": ["Choix produit", "Stock, disponibilité"]
+  "Disponibilité & Stock | Stock en ligne différent du magasin": ["Choix produit", "Stock, disponibilité"]
+
+  "Click & Collect | Commande non prête à l'heure prévue": ["Réception commande", "Retrait magasin"]
+  "Click & Collect | Délai de préparation trop long": ["Attente commmande", "Respect des délais"]
+  "Click & Collect | Mauvaise communication sur la disponibilité": ["Réception commande", "Retrait magasin"]
+  "Click & Collect | Produit manquant lors du retrait": ["Réception commande", "Retrait magasin"]
+
+  "Compte client & Connexion | Données personnelles incorrectes": ["Espace client", "Données personnelles"]
+  "Compte client & Connexion | Historique de commandes inaccessible": ["Espace client", "Historique"]
+  "Compte client & Connexion | Problème de connexion / mot de passe": ["Bug", "Bug identification"]
+
+  "Communication & Emails Cultura | Contenu email non pertinent": ["Espace client", "Préférences"]
+  "Communication & Emails Cultura | Email important non reçu": ["Attente commmande", "Suivi de commande"]
+  "Communication & Emails Cultura | Trop d'emails promotionnels": ["Espace client", "Préférences"]
+
+  "Fiche produit & Contenu | Avis clients peu fiables ou absents": ["Choix produit", "Informations produit"]
+  "Fiche produit & Contenu | Informations produit insuffisantes": ["Choix produit", "Informations produit"]
+  "Fiche produit & Contenu | Photos insuffisantes ou trompeuses": ["Choix produit", "Informations produit"]
+
+  "Catalogue & Offre produit | Catalogue moins large que la concurrence": ["Recherche produit", "Assortiment"]
+  "Catalogue & Offre produit | Nouveautés difficiles à trouver": ["Recherche produit", "Assortiment"]
+  "Catalogue & Offre produit | Référence manquante au catalogue": ["Recherche produit", "Assortiment"]
+
+  "Prix produit | Erreur de prix affiché": ["Choix produit", "Prix, promotions"]
+  "Prix produit | Prix différent entre site et magasin": ["Choix produit", "Prix, promotions"]
+  "Prix produit | Prix trop élevé vs concurrence": ["Choix produit", "Prix, promotions"]
+
+  "Carte cadeau physique | Carte cadeau non acceptée en ligne": ["Cartes cadeaux", "Payer avec une carte cadeau"]
+  "Carte cadeau physique | Expiration non communiquée": ["Cartes cadeaux", "Autre carte cadeau"]
+  "Carte cadeau physique | Solde incorrect ou inconnu": ["Cartes cadeaux", "Consulter le solde d'une carte cadeau Cultura"]
+
+  "Expérience omnicanale | Commande web non gérable en magasin": ["Passer commande", "Passer commande en magasin (CCW)"]
+  "Expérience omnicanale | Programme fidélité non unifié": ["Programme de fidélité", "Perception"]
+  "Expérience omnicanale | Stock magasin non visible en ligne": ["Choix produit", "Stock, disponibilité"]
+
+  "Personnalisation & Recommandations | Historique de navigation non exploité": ["Général", "Expérience personnalisée"]
+  "Personnalisation & Recommandations | Pas d'alerte disponibilité": ["Choix produit", "Stock, disponibilité"]
+  "Personnalisation & Recommandations | Recommandations non pertinentes": ["Général", "Expérience personnalisée"]

@@ -59,7 +59,7 @@ export default function BatchesPage() {
     <div>
       <div className="page-header">
         <h1 className="page-header__title">Lots de traitement</h1>
-        <p className="page-header__sub">Déposez les deux exports Excel du mois, puis lancez et suivez le traitement.</p>
+        <p className="page-header__sub">Déposez les deux exports du mois (Excel ou CSV), puis lancez et suivez le traitement.</p>
       </div>
 
       <div className="ui-stack">
@@ -67,8 +67,8 @@ export default function BatchesPage() {
           {error && <p className="ui-field__error" style={{ marginBottom: "var(--sp-3)" }}>{error}</p>}
           <form onSubmit={onSubmit} className="ui-stack" style={{ maxWidth: 720 }}>
             <div className="ui-grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
-              <FileDropzone label="Fichier MDTC" hint="Glisser-déposer ou cliquer (.xlsx)" file={mdtc} onSelect={setMdtc} />
-              <FileDropzone label="Fichier Mopinion" hint="Glisser-déposer ou cliquer (.xlsx)" file={mopinion} onSelect={setMopinion} />
+              <FileDropzone label="Fichier MDTC" hint="Glisser-déposer ou cliquer (.xlsx ou .csv)" file={mdtc} onSelect={setMdtc} />
+              <FileDropzone label="Fichier Mopinion" hint="Glisser-déposer ou cliquer (.xlsx ou .csv)" file={mopinion} onSelect={setMopinion} />
             </div>
             <Input label="Libellé du lot (optionnel)" value={label}
                    onChange={(e) => setLabel(e.target.value)} placeholder="ex. juillet 2026" />

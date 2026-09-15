@@ -304,6 +304,33 @@ table `judge_verdicts`) ; non-régression **V1 48/48 · V3 13/13 · V4 50/50** ;
 
 ---
 
+## Modèle Cultura 2026 — refonte du moteur ✅ *(septembre 2026)*
+
+Refonte complète du moteur sur le référentiel Cultura (11 thèmes / 59 sous-thèmes),
+déclenchée par un constat : les métriques publiées du prototype étaient **invalides**
+— mesurées sur un découpage où 99,6 % des textes de test se retrouvaient à
+l'entraînement.
+
+| Lot | Objet | État |
+|---|---|---|
+| **L1a** | Chargeur de la livraison Cultura : 4 schémas, normalisation des libellés, journal d'anomalies | ✅ recette 29 OK · 1 échec connu (jeu factice obsolète) |
+| **L2** | Protocole d'évaluation **sans fuite** : découpage par texte unique, contrôle **bloquant**, F1 calculé après plafonnement | ✅ recette 15 OK |
+| **L5'** | Courbe seuil → qualité du second thème ; outillage de calibration | ✅ |
+| **L6** | Réentraînement, trois itérations : P(couple) 0,5723 → 0,6574 → **0,6901** | ✅ |
+| **L9** | Recette technique et **métier** (prononcée par le PO le 11/09), procédure de bascule | ✅ |
+| **Couche de décision** | Trois leviers industrialisés dans le produit, implémentation unique partagée production/évaluation | ✅ recette 46 OK |
+| **Mise à disposition** | Le modèle **s'ajoute** au sélecteur ; V1, LM Studio, Claude et le stub restent disponibles | ✅ *bascule du défaut non effectuée* |
+
+**Résultat sur le jeu de test gelé** (n = 1 010) : F1-macro niv.1 **0,6922**
+(0,6647 sans les leviers), P(couple) 0,6921, sentiment accuracy **0,9352**
+(F1-macro 0,8783). Les trois engagements retenus sont tenus : faux second thème
+**2,05 %** (≤ 10 %), erreur de volume **12,51 %** au global (≤ 15 %), part de
+bi-thèmes **2,97 %** pour 3,47 % annotés (dans la bande ±1,5×).
+
+Détail : [COUCHE_DECISION.md](COUCHE_DECISION.md) · [RECETTE_NOUVEAU_MODELE.md](RECETTE_NOUVEAU_MODELE.md)
+
+---
+
 ## Journal de décisions (ADR-lite)
 
 | # | Date | Décision | Justification |
@@ -331,3 +358,15 @@ table `judge_verdicts`) ; non-régression **V1 48/48 · V3 13/13 · V4 50/50** ;
 | D21 | 2026-06-25 | Correctifs runtime révélés en recette C4 : (a) `prepare_threshold=None` (psycopg3) dans `common/db.py` — supprime `DuplicatePreparedStatement` au 2e run (worker RQ fork) ; (b) nginx du front **re-résout** l'upstream `api` (resolver Docker + variable) — supprime le 502 après recréation du conteneur api | Bugs d'infra (pas de logique métier) exposés par l'enchaînement de comparaisons et les rebuilds ; vérifiés en live (login 200, comparaison done, 0 occurrence) |
 | D22 | 2026-06-25 | V5/C5 : juge **pairwise par paire divergente** ; aveuglement (A/B) + **permutation d'ordre** côté worker, mapping A/B→moteur reconstruit après l'appel ; échec d'un appel juge -> run `failed` (échec propre, pas de repli silencieux) ; plafond `_MAX_JUDGE_CALLS=200` (loggé si atteint) | Anti-biais d'auto-évaluation/position (V5-D11) ; cohérence avec le principe « pas de repli caché » ; maîtrise du coût API (juge sur divergences seules + plafond) |
 | D23 | 2026-06-25 | V5/C5 (retour PO) : `BarList` accepte une **échelle fixe `max`** (0-100) + suffixe d'unité ; libellés de la page Comparaison réécrits (accord = même grand thème ; confiance = **assurance auto-déclarée, pas justesse** ; latence = plus bas = plus rapide) | Les barres normalisées sur le max étaient trompeuses (42 % en barre pleine) ; la « confiance » était mal comprise — clarifiée explicitement |
+| D24 | 2026-09-09 | **ONNX int8 désactivé à l'inférence** (`onnx.use_for_inference: false`), artefacts conservés mais inertes | Mesuré : accord avec PyTorch de **55 % / 13 % / 74 %** des argmax selon la tâche, pour un débit **3,3× plus lent**. Un moteur qui répond autre chose que le modèle évalué invalide toute la recette |
+| D25 | 2026-09-11 | **Couche de décision** industrialisée dans `src/inference/decision.py`, appelée par la production **et** par l'évaluation ; la recette vérifie l'équivalence sur 300 verbatims simulés | La décision était écrite deux fois, à garder identiques à la main. Tolérable tant que la règle tenait en trois lignes ; faux dès que les leviers déplacent le *thème 1* — l'évaluation aurait mesuré un produit inexistant |
+| D26 | 2026-09-11 | Le seuil déclaré devient le seuil appliqué : `classification_niv1` **0,35 → 0,85** | La configuration portait 0,35 pendant que tous les rapports passaient `--seuil 0.85` en ligne de commande. **La production tournait donc à 0,35**, soit 95,1 % de sorties bi-thèmes — le grief métier n°1 |
+| D27 | 2026-09-11 | Marge de l'arbitrage par source **recalibrée 0,6 → 0,3** ; la paire confusable `Cartes cadeaux / Passer commande` **retirée** (arbitrage PO) | Mesuré avec l'implémentation réelle : à 0,6 la règle corrigeait 9 décisions et en cassait 8 — un pile ou face, calé avant l'existence des seuils par thème. La paire retirée dégradait `Passer commande` de 5,6 points sans rien apporter à `Cartes cadeaux` |
+| D28 | 2026-09-11 | La **précision du second thème** devient un indicateur suivi ; les engagements sont le **taux de faux second thème** et l'**erreur de volume au global** (arbitrage PO) | Sur 30 propositions annotées, **1 seule** est un second sujet légitime ; 9 sont une hésitation entre étiquettes qui se recouvrent. La métrique ne mesurait pas le besoin, et portait sur 35 verbatims |
+| D29 | 2026-09-11 | Signaux sans détecteur (`churn`, `rupture`) affichés **« non mesuré »** ; `OUTPUT_COLUMNS` inchangé, l'export garde `false` (arbitrage PO) | Un `false` affiché comme une mesure ferait croire qu'aucun client n'est en rupture, alors que nous ne l'avons pas cherché — sur les deux colonnes à l'enjeu métier le plus fort |
+| D30 | 2026-09-14 | **Mise à disposition additive** : plusieurs CamemBERT coexistent via des **profils** (`moteurs_camembert`), chacun avec son référentiel, ses seuils et sa couche de décision (arbitrage PO) | La procédure prévue écrasait `data/models` : irréversible sans restauration de fichiers, et elle détruisait le seul point de comparaison. Le retour arrière devient une resélection |
+| D31 | 2026-09-14 | **Chaque modèle embarque son référentiel** (`<racine>/taxonomy.json`) ; la revue humaine sert celui du **lot relu**, pas celui du moteur actif | Les deux référentiels ne partagent **aucun** sous-thème (D-36) : servir celui de l'actif proposait au relecteur une liste sans rapport, et enregistrait un couple « inconnu » à chaque correction. C'est aussi la seule forme qui suive le modèle en conteneur |
+| D32 | 2026-09-14 | **`scikit-learn` épinglé à 1.6.1** | Les détecteurs de signaux sont sérialisés en 1.6.1 ; une image reconstruite installait 1.9.1 — scikit-learn avertit lui-même que les résultats peuvent être invalides. Un signal faux en silence est pire qu'un signal absent. Relever la borne exige de réentraîner |
+| D33 | 2026-09-15 | **Ingestion des exports Cultura 2026** (CSV et XLSX) par le chargeur de la livraison, en mode `annote=False`, plutôt qu'en étendant le chargeur historique | Un seul chargeur pour les deux usages : la liste blanche qui protège les données personnelles, la composition D-30 et la détection de schéma seraient sinon à maintenir en double, et c'est toujours la copie oubliée qui laisse passer une colonne de trop. Le format est déduit du JEU DE COLONNES, jamais de l'extension ni du nom de fichier |
+| D34 | 2026-09-15 | **Table de correspondance des libellés de satisfaction MDTC** déclarée en configuration (`echelles_satisfaction.mdtc_1_4.libelles`) | Les exports de production donnent la satisfaction en toutes lettres (« Très satisfait(e) ») là où la livraison d'entraînement l'encode en 1-4 : mesuré **0 % de numérique** sur les 2 388 lignes MDTC du 07-13 septembre. Sans table, toutes les notes seraient perdues — donc le préfixe de sentiment et la règle déterministe d'insatisfaction. ⚠️ **Hypothèse eXalt** : l'ordre de l'échelle ne fait pas de doute, mais aucune table officielle Cultura ne l'atteste (même statut que Q-17/Q-23) |
+| D35 | 2026-09-15 | **La partie interrogative des URL est tronquée** à l'ingestion (`neutraliser_url`) | Mesuré sur l'export Mopinion desktop : 4 URL sur 480 portent un identifiant de commande dans leur requête (`/account?orderId=P90000003`). Le chemin porte le signal utile — de quelle page vient le retour —, la requête porte l'identifiant. On tronque plutôt que d'anonymiser : même logique que la liste blanche, ne pas lire plutôt que masquer |

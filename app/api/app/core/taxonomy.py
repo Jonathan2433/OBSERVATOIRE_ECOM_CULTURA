@@ -5,14 +5,29 @@ qu'un couple (niv.1, niv.2) appartient bien au référentiel. Stdlib uniquement
 (pas de numpy) : l'API reste légère.
 
 Deux sources fusionnées :
-  * le référentiel « officiel » (fichier JSON monté en lecture seule) ;
+  * le référentiel « officiel » du **modèle actif** ;
   * les thèmes/sous-thèmes ajoutés à la volée en revue humaine, stockés en base
     (table ``taxonomy_entries``) et réutilisables ensuite.
+
+Le référentiel suit le modèle actif
+-----------------------------------
+Depuis que plusieurs moteurs CamemBERT coexistent (arbitrage PO du 11/09), le
+référentiel n'est plus une constante de déploiement. Les deux modèles ne
+partagent **aucun** sous-thème (D-36 : 0 libellé commun sur 67/59) : servir à la
+revue le référentiel du POC pendant que le modèle 2026 produit ses propres
+libellés offrirait au relecteur une liste sans rapport avec ce qu'il relit, et
+enregistrerait en base un couple « inconnu » à chaque correction.
+
+Chaque modèle embarque donc son référentiel à sa racine (``taxonomy.json``), et
+c'est celui du modèle actif qui est servi. Le fichier de ``settings`` reste le
+repli — déploiement mono-modèle, ou modèle sans référentiel embarqué.
 """
 from __future__ import annotations
 
 import functools
 import json
+import logging
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.exc import IntegrityError
@@ -23,9 +38,21 @@ from common.models import TaxonomyEntry
 from .config import settings
 
 
-@functools.lru_cache(maxsize=1)
-def load_taxonomy() -> Dict[str, Any]:
-    with open(settings.taxonomy_path, "r", encoding="utf-8") as fh:
+#: Nom du référentiel embarqué à la racine d'un modèle.
+TAXONOMY_EMBARQUEE = "taxonomy.json"
+
+logger = logging.getLogger("api.taxonomy")
+
+
+@functools.lru_cache(maxsize=8)
+def _charger(chemin: str) -> Dict[str, Any]:
+    """Lit et indexe un fichier de référentiel. Mémoïsé PAR CHEMIN.
+
+    Le cache était à une seule entrée : il figeait le premier référentiel lu
+    pour la durée du processus, ce qui aurait servi l'ancien après une bascule
+    de modèle.
+    """
+    with open(chemin, "r", encoding="utf-8") as fh:
         data = json.load(fh)
     themes = data["themes"]
     return {
@@ -33,20 +60,67 @@ def load_taxonomy() -> Dict[str, Any]:
         "children": {t["niv1"]: list(t["niv2"]) for t in themes},
         "parent": {n2: t["niv1"] for t in themes for n2 in t["niv2"]},
         "niv1": [t["niv1"] for t in themes],
+        "_chemin": chemin,
     }
 
 
-def themes() -> List[dict]:
-    return load_taxonomy()["themes"]
+def chemin_referentiel(db: Optional[Session] = None,
+                       model_label: Optional[str] = None) -> str:
+    """Référentiel d'un modèle donné, du modèle actif sinon, du déploiement à défaut.
+
+    ``model_label`` sert à relire un lot **produit par un autre moteur** que
+    l'actif : c'est le cas dès qu'on bascule. Un relecteur qui reprend un lot
+    ancien doit voir le référentiel du modèle qui l'a produit, pas celui qui se
+    trouve actif au moment où il ouvre la page.
+
+    Ne lève jamais : un référentiel introuvable fait retomber sur le fichier de
+    ``settings``. Mieux vaut la liste de l'ancien modèle qu'une page de revue en
+    erreur — mais le journal le dit, car cette liste serait trompeuse.
+    """
+    if db is None:
+        return settings.taxonomy_path
+    try:
+        from common.models import MODEL_KIND_REAL, ModelVersion
+
+        modele = None
+        if model_label:
+            modele = db.query(ModelVersion).filter_by(
+                label=model_label, kind=MODEL_KIND_REAL).first()
+        if modele is None:
+            modele = db.query(ModelVersion).filter_by(
+                is_active=True, available=True, kind=MODEL_KIND_REAL).first()
+        if modele and modele.path:
+            candidat = Path(modele.path) / TAXONOMY_EMBARQUEE
+            if candidat.is_file():
+                return str(candidat)
+            logger.warning(
+                "Modèle « %s » : aucun %s à sa racine (%s). Le référentiel "
+                "de déploiement sera servi à la revue — il peut ne pas "
+                "correspondre aux libellés que ce modèle produit.",
+                modele.label, TAXONOMY_EMBARQUEE, modele.path)
+    except Exception as exc:  # pragma: no cover - l'API ne doit pas tomber pour ça
+        logger.warning("Référentiel du modèle indéterminable (%s).", exc)
+    return settings.taxonomy_path
 
 
-def is_valid_niv1(niv1: str) -> bool:
-    return niv1 in load_taxonomy()["children"]
+def load_taxonomy(db: Optional[Session] = None,
+                  model_label: Optional[str] = None) -> Dict[str, Any]:
+    """Référentiel de base à servir, celui du modèle concerné quand il est connu."""
+    return _charger(chemin_referentiel(db, model_label))
 
 
-def is_valid_pair(niv1: str, niv2: str) -> bool:
+def themes(db: Optional[Session] = None,
+           model_label: Optional[str] = None) -> List[dict]:
+    return load_taxonomy(db, model_label)["themes"]
+
+
+def is_valid_niv1(niv1: str, db: Optional[Session] = None) -> bool:
+    return niv1 in load_taxonomy(db)["children"]
+
+
+def is_valid_pair(niv1: str, niv2: str, db: Optional[Session] = None) -> bool:
     """Couple présent dans le référentiel *de base* (fichier JSON)."""
-    return load_taxonomy()["parent"].get(niv2) == niv1
+    return load_taxonomy(db)["parent"].get(niv2) == niv1
 
 
 # --------------------------------------------------------------------------- #
@@ -58,13 +132,16 @@ def _norm(s: Optional[str]) -> str:
     return (s or "").strip().casefold()
 
 
-def merged_themes(db: Session) -> List[dict]:
+def merged_themes(db: Session, model_label: Optional[str] = None) -> List[dict]:
     """Référentiel de base + ajouts (``taxonomy_entries``), fusionnés.
 
     L'ordre du référentiel de base est conservé ; les thèmes/sous-thèmes ajoutés
     sont insérés à la suite (triés) sans jamais dupliquer un couple existant.
+
+    ``model_label`` cible le référentiel d'un moteur précis — celui qui a produit
+    le lot en cours de relecture, qui n'est pas forcément l'actif.
     """
-    base = load_taxonomy()
+    base = load_taxonomy(db, model_label)
     # Ordre des niv.1 : base d'abord, ajouts ensuite.
     order: List[str] = list(base["niv1"])
     order_norm = {_norm(n): n for n in order}
@@ -101,7 +178,7 @@ def pair_is_known(db: Session, niv1: str, niv2: str) -> bool:
         return False
     # Référentiel de base : comparaison normalisée (is_valid_pair reste sensible à
     # la casse pour ses autres appelants ; ici on veut la clé de _norm).
-    for n2, n1 in load_taxonomy()["parent"].items():
+    for n2, n1 in load_taxonomy(db)["parent"].items():
         if _norm(n2) == key2 and _norm(n1) == key1:
             return True
     # Ajouts en base : table minuscule -> itération directe, _norm fait foi. On évite

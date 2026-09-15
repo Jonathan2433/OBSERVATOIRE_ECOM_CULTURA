@@ -21,7 +21,16 @@ torch>=2.1.0
 transformers>=4.38.0,<4.46.0
 optimum[onnxruntime]>=1.17.0,<2.0.0
 datasets>=2.17.0
-scikit-learn>=1.4.0               # Détecteurs de signaux (LogReg) + métriques
+# ÉPINGLÉ. Les détecteurs de signaux sont des pipelines sérialisés avec joblib :
+# les recharger sous une autre version fait dire à scikit-learn lui-même
+# « might lead to breaking code or invalid results ». Mesuré le 14/09 : les
+# modèles du 18/06 et du 10/09 sont tous sérialisés en 1.6.1, et une image
+# reconstruite sans épinglage installait 1.9.1 — trois versions d'écart, sur
+# les sorties `signal_*` du contrat. Un signal faux en silence est pire qu'un
+# signal absent.
+# Relever cette borne EXIGE de réentraîner les détecteurs (`scripts/run_training.py`)
+# et de vérifier que les seuils tiennent encore.
+scikit-learn==1.6.1               # Détecteurs de signaux (LogReg) + métriques
 
 # --- Données / IO ------------------------------------------------------------
 pandas>=2.1.0

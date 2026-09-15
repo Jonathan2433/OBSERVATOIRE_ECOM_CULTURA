@@ -52,7 +52,7 @@ export default function ReviewPage() {
   };
 
   useEffect(() => {
-    getTaxonomy().then((t) => setThemes(t.themes)).catch(() => setThemes([]));
+    getTaxonomy(batchId).then((t) => setThemes(t.themes)).catch(() => setThemes([]));
     loadNext();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batchId]);
@@ -102,7 +102,7 @@ export default function ReviewPage() {
       // Une correction a pu introduire un nouveau thème/sous-thème : on rafraîchit
       // le référentiel pour qu'il soit proposé sur les verbatims suivants.
       if (action === "correct") {
-        getTaxonomy().then((t) => setThemes(t.themes)).catch(() => { /* garde l'ancien */ });
+        getTaxonomy(batchId).then((t) => setThemes(t.themes)).catch(() => { /* garde l'ancien */ });
       }
       loadNext();
     } catch (e: any) {

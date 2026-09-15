@@ -30,7 +30,14 @@ logger = logging.getLogger(__name__)
 #  Expressions régulières PII
 # --------------------------------------------------------------------------- #
 # E-mail (RFC simplifiée, suffisante pour des verbatims).
-_EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")
+# L'astérisque est admis dans la partie locale : Cultura masque parfois ses
+# exports en amont, mais **incomplètement** — 10 occurrences de la forme
+# `******@free.fr` mesurées le 09/09/2026, que l'ancien motif laissait passer
+# (le domaine, lui, reste une donnée personnelle). `\b` est remplacé par un
+# lookbehind : il n'y a pas de frontière de mot devant un `*`.
+_EMAIL_RE = re.compile(
+    r"(?<![A-Za-z0-9._%+\-*])[A-Za-z0-9._%+\-*]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"
+)
 
 # Téléphone français : 0X XX XX XX XX, +33 / 0033, séparateurs espace/point/tiret.
 _PHONE_RE = re.compile(
@@ -86,6 +93,50 @@ def _is_stoplisted(span_text: str, stoplist: set) -> bool:
     """True si tous les tokens du span sont du vocabulaire métier (à ne pas masquer)."""
     tokens = [t for t in re.split(r"\s+", span_text.strip().lower()) if t]
     return bool(tokens) and all(t in stoplist for t in tokens)
+
+
+class AnonymisationIndisponibleError(RuntimeError):
+    """spaCy est requis mais absent : le masquage des noms propres serait muet.
+
+    Levée par :func:`verifier_ner_disponible`, appelée **au démarrage** du
+    chargeur (§10.3 de SPEC_CHARGEUR). Le mode dégradé du constructeur est
+    conservé — il est légitime pour les recettes applicatives torch-free, qui
+    n'ingèrent aucune donnée réelle — mais il ne doit jamais s'appliquer
+    silencieusement à une chaîne qui touche des verbatims Cultura.
+    """
+
+
+def verifier_ner_disponible(cfg: Dict[str, Any]) -> None:
+    """Échoue si l'anonymisation des noms propres est demandée mais indisponible.
+
+    Contrôle explicite exigé par §10.3 : le mode dégradé de spaCy est silencieux
+    (T5, R-14), et les 302 masquages `[NOM]` du prototype étaient très
+    probablement des faux positifs sur des majuscules de début de phrase. Un
+    masquage muet des noms propres est un risque RGPD, pas un désagrément.
+
+    Désactivable délibérément par ``anonymization.require_spacy: false``.
+    """
+    anon = cfg.get("anonymization", {}) or {}
+    if not anon.get("enabled", True):
+        return
+    if not anon.get("require_spacy", True):
+        return
+    if "PER" not in set(anon.get("entities_to_mask", [])):
+        return
+    modele = anon.get("spacy_model", "fr_core_news_sm")
+    try:
+        import spacy
+
+        spacy.load(modele, disable=["lemmatizer", "tagger", "parser"])
+    except Exception as exc:  # noqa: BLE001 - dépend de l'environnement
+        raise AnonymisationIndisponibleError(
+            f"`anonymization.enabled` est vrai et `PER` fait partie des entités à "
+            f"masquer, mais le modèle spaCy '{modele}' est indisponible "
+            f"({type(exc).__name__}: {exc}). Les noms propres ne seraient PAS "
+            f"masqués, en silence. Installer le modèle "
+            f"(`python -m spacy download {modele}`), ou assumer explicitement le "
+            f"mode dégradé via `anonymization.require_spacy: false`."
+        ) from exc
 
 
 class Anonymizer:
