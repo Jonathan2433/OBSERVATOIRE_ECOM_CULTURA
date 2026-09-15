@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { createBatch, getMeta, listBatches, listModels, type Batch, type ModelVersion } from "../api";
 import StatusBadge from "../components/StatusBadge";
-import { Button, Card, FileDropzone, InfoTip, Input, ProgressBar, Select } from "../ui";
+import { Button, Card, FilesDropzone, InfoTip, Input, ProgressBar, Select } from "../ui";
 
 export default function BatchesPage() {
   const navigate = useNavigate();
@@ -11,8 +11,9 @@ export default function BatchesPage() {
   const [busy, setBusy] = useState(false);
   const [label, setLabel] = useState("");
   const [seuil, setSeuil] = useState(0.5);  // remplacé par la valeur de config au montage
-  const [mdtc, setMdtc] = useState<File | null>(null);
-  const [mopinion, setMopinion] = useState<File | null>(null);
+  // Un seul dépôt pour tout le mois : la source de chaque fichier est
+  // identifiée à la lecture, il n'y a rien à déclarer.
+  const [fichiers, setFichiers] = useState<File[]>([]);
   const [refiner, setRefiner] = useState("");                 // "" = aucun (1 seul moteur)
   const [refiners, setRefiners] = useState<ModelVersion[]>([]); // raffineurs LLM locaux dispo
 
@@ -37,15 +38,15 @@ export default function BatchesPage() {
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!mdtc && !mopinion) {
-      setError("Sélectionnez au moins un fichier (MDTC ou Mopinion).");
+    if (fichiers.length === 0) {
+      setError("Déposez au moins un export (MDTC ou Mopinion, .xlsx ou .csv).");
       return;
     }
     setBusy(true);
     try {
       const b = await createBatch({
         label: label.trim() || undefined, seuilRevue: seuil,
-        refinerLabel: refiner || undefined, mdtc, mopinion,
+        refinerLabel: refiner || undefined, fichiers,
       });
       navigate(`/lots/${b.id}`);
     } catch (err: any) {
@@ -59,17 +60,23 @@ export default function BatchesPage() {
     <div>
       <div className="page-header">
         <h1 className="page-header__title">Lots de traitement</h1>
-        <p className="page-header__sub">Déposez les deux exports du mois (Excel ou CSV), puis lancez et suivez le traitement.</p>
+        <p className="page-header__sub">Déposez les exports du mois (Excel ou CSV, autant que nécessaire), puis lancez et suivez le traitement.</p>
       </div>
 
       <div className="ui-stack">
         <Card title="Nouveau lot">
           {error && <p className="ui-field__error" style={{ marginBottom: "var(--sp-3)" }}>{error}</p>}
           <form onSubmit={onSubmit} className="ui-stack" style={{ maxWidth: 720 }}>
-            <div className="ui-grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
-              <FileDropzone label="Fichier MDTC" hint="Glisser-déposer ou cliquer (.xlsx ou .csv)" file={mdtc} onSelect={setMdtc} />
-              <FileDropzone label="Fichier Mopinion" hint="Glisser-déposer ou cliquer (.xlsx ou .csv)" file={mopinion} onSelect={setMopinion} />
-            </div>
+            <FilesDropzone
+              label="Exports du mois"
+              hint="Glisser-déposer ou cliquer — MDTC et Mopinion, .xlsx ou .csv"
+              files={fichiers} onChange={setFichiers} />
+            <p className="ui-muted" style={{ margin: 0 }}>
+              Déposez tous les exports du mois d'un coup — post-achat et post-réception,
+              ancien et nouveau format, Mopinion desktop et mobile. Chaque fichier est
+              reconnu à la lecture : rien à déclarer. Un fichier non reconnu arrête le
+              lot en le nommant, plutôt que de traiter un mois incomplet en silence.
+            </p>
             <Input label="Libellé du lot (optionnel)" value={label}
                    onChange={(e) => setLabel(e.target.value)} placeholder="ex. juillet 2026" />
             <label className="ui-field">

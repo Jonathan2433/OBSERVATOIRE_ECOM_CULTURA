@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 import pandas as pd
 
@@ -310,6 +310,77 @@ def load_for_batch(
         raise ValueError("Aucun fichier source fourni (mdtc et mopinion absents).")
     combined = pd.concat(frames, ignore_index=True, sort=False)
     return combined
+
+
+def load_many(chemins: Sequence[str | Path], cfg: Dict[str, Any]) -> pd.DataFrame:
+    """Charge un nombre quelconque d'exports dans un seul lot.
+
+    Chaque fichier est identifié **par son jeu de colonnes** : il n'y a plus à
+    déclarer lequel est MDTC et lequel est Mopinion, ni à se limiter à un de
+    chaque. Un mois complet — post-achat ancien et nouveau, post-réception
+    ancien et nouveau, Mopinion desktop et mobile — se dépose en une fois.
+
+    Un fichier au format Cultura 2026 part vers le chargeur 2026 ; les autres
+    sont routés vers le chargeur historique d'après leurs colonnes. Un fichier
+    qui n'est reconnu par aucun des deux **fait échouer le lot** avec son nom :
+    traiter un mois amputé d'une source sans le dire fausserait les volumes, et
+    les volumes sont la raison d'être de l'outil.
+    """
+    if not chemins:
+        raise ValueError("Aucun fichier source fourni.")
+
+    frames, erreurs, resume = [], [], []
+    for chemin in chemins:
+        nom = Path(chemin).name
+        try:
+            df = _charger_un_fichier(chemin, cfg)
+        except Exception as exc:
+            erreurs.append(f"{nom} : {exc}")
+            continue
+        frames.append(df)
+        sources = sorted(set(df[COL_SOURCE].dropna().unique())) if COL_SOURCE in df.columns else []
+        resume.append(f"{nom} -> {', '.join(sources) or 'source inconnue'} ({len(df)})")
+
+    if erreurs:
+        raise ValueError(
+            "Fichier(s) non exploitable(s) : " + " | ".join(erreurs) +
+            ". Le lot n'est pas lancé : un mois amputé d'une source fausserait "
+            "les volumes.")
+
+    logger.info("Lot multi-fichiers : %s", " · ".join(resume))
+    combined = pd.concat(frames, ignore_index=True, sort=False)
+    return combined
+
+
+def _charger_un_fichier(chemin: str | Path, cfg: Dict[str, Any]) -> pd.DataFrame:
+    """Charge un export sans savoir à l'avance de quelle source il vient."""
+    schema = detecter_schema_2026(chemin, cfg)
+    if schema:
+        logger.info("%s : format Cultura 2026 (%s).", Path(chemin).name, schema)
+        return load_cultura_2026(chemin, cfg)
+
+    # Format historique : on choisit le chargeur d'après les colonnes présentes,
+    # et non d'après le nom du fichier, qui ne garantit rien.
+    colonnes = set(_lire_entetes(chemin))
+    mdtc = cfg["sources"]["mdtc"]
+    mopinion = cfg["sources"]["mopinion"]
+    if mdtc["text_col_primary"] in colonnes:
+        logger.info("%s : format historique MDTC.", Path(chemin).name)
+        return load_mdtc(chemin, cfg)
+    if any(c in colonnes for c in mopinion["text_cols_primary"]):
+        logger.info("%s : format historique Mopinion.", Path(chemin).name)
+        return load_mopinion(chemin, cfg)
+    raise ValueError(
+        f"aucun format reconnu (ni Cultura 2026, ni historique). "
+        f"Colonnes lues : {sorted(colonnes)[:8]}")
+
+
+def _lire_entetes(chemin: str | Path) -> List[str]:
+    """En-têtes d'un fichier, sans charger son contenu."""
+    from .cultura_loader import read_table
+
+    df, _ = read_table(Path(chemin), ["utf-8-sig", "cp1252", "iso-8859-1"], ";")
+    return [str(c) for c in df.columns]
 
 
 def _charger_une_source(chemin: str | Path, charger_v1, nom: str,

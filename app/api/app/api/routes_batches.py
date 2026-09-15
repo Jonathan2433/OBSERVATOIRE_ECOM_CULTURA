@@ -5,7 +5,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
@@ -28,6 +28,11 @@ router = APIRouter(prefix="/api/batches", tags=["batches"], dependencies=[Depend
 #: Le FORMAT des colonnes, lui, est reconnu plus loin par le chargeur, sur le jeu
 #: de colonnes et jamais sur l'extension.
 _ALLOWED_SUFFIXES = (".xlsx", ".csv")
+
+#: Garde-fou de dépôt. Un mois complet tient en 6 à 8 fichiers ; au-delà, c'est
+#: probablement une erreur de sélection, et chaque fichier coûte une lecture
+#: complète avant même que le lot ne démarre.
+_MAX_FICHIERS = 20
 
 
 def resolve_refiner(db: Session, refiner_label: str) -> ModelVersion:
@@ -80,6 +85,7 @@ async def create_batch(
     refiner_label: Optional[str] = Form(None),
     mdtc: Optional[UploadFile] = File(None),
     mopinion: Optional[UploadFile] = File(None),
+    fichiers: List[UploadFile] = File(default_factory=list),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -103,11 +109,29 @@ async def create_batch(
         batch.label = f"lot-{batch.id}"
 
     dest_dir = Path(settings.uploads_dir) / str(batch.id)
-    source_files = {}
+    source_files: dict = {}
+
+    # Dépôt multiple : un mois complet tient en un lot — post-achat ancien et
+    # nouveau, post-réception ancien et nouveau, Mopinion desktop et mobile.
+    # Aucune déclaration à faire : chaque fichier est identifié à la lecture, sur
+    # son jeu de colonnes. Les champs `mdtc` et `mopinion` restent acceptés pour
+    # ne pas casser les appels existants.
+    if fichiers:
+        if len(fichiers) > _MAX_FICHIERS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{len(fichiers)} fichiers déposés, maximum {_MAX_FICHIERS}.")
+        chemins = []
+        for i, up in enumerate(fichiers):
+            chemins.append(await _save_upload(up, dest_dir, f"source_{i:02d}"))
+        source_files["fichiers"] = chemins
     if mdtc is not None:
         source_files["mdtc"] = await _save_upload(mdtc, dest_dir, "mdtc")
     if mopinion is not None:
         source_files["mopinion"] = await _save_upload(mopinion, dest_dir, "mopinion")
+    if not source_files:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Aucun fichier déposé.")
     batch.source_files = source_files
     db.commit()
     db.refresh(batch)

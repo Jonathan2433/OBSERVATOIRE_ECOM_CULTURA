@@ -106,11 +106,18 @@ export async function createBatch(opts: {
   refinerLabel?: string | null;   // cascade V5 (LLM local) — optionnel
   mdtc?: File | null;
   mopinion?: File | null;
+  /**
+   * Dépôt multiple : autant d'exports que nécessaire dans un seul lot. Rien à
+   * déclarer sur leur nature — chaque fichier est identifié à la lecture, sur
+   * son jeu de colonnes. `mdtc` / `mopinion` restent acceptés.
+   */
+  fichiers?: File[];
 }): Promise<Batch> {
   const form = new FormData();
   if (opts.label) form.append("label", opts.label);
   form.append("seuil_revue", String(opts.seuilRevue));
   if (opts.refinerLabel) form.append("refiner_label", opts.refinerLabel);
+  for (const f of opts.fichiers ?? []) form.append("fichiers", f);
   if (opts.mdtc) form.append("mdtc", opts.mdtc);
   if (opts.mopinion) form.append("mopinion", opts.mopinion);
   // Pas de Content-Type manuel : le navigateur pose le boundary multipart.
