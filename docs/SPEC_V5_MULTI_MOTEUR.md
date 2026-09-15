@@ -11,6 +11,25 @@ Réf. : [CAHIER_DES_CHARGES.md](CAHIER_DES_CHARGES.md) (garde-fous §10, DoD §1
 [SPEC_V4_LMSTUDIO.md](SPEC_V4_LMSTUDIO.md). Cadence inchangée : **1 lot = 1 branche
 `v5/N-nom` = 1 porte de validation PO**, merge `--no-ff`.
 
+> 📌 **Complément du 14/09/2026 — la V5 a été livrée, et le multi-moteur s'est
+> élargi.** Cette spec traite de moteurs de **natures différentes** (CamemBERT,
+> LM Studio, Claude). Depuis la refonte, **plusieurs moteurs CamemBERT coexistent
+> également** : chacun porte son référentiel, ses seuils et sa couche de décision,
+> déclarés en profil (`config.yaml → moteurs_camembert`).
+>
+> Ce que cela change pour les mécanismes décrits ici :
+>
+> * `get_predictor` ne construit plus le prédicteur avec la configuration globale
+>   mais avec **celle du profil du moteur choisi** — deux CamemBERT ne partagent ni
+>   référentiel, ni seuil, ni politique de décision ;
+> * la **comparaison de moteurs** (§ page Comparaison) peut désormais opposer deux
+>   CamemBERT entre eux, et pas seulement CamemBERT contre un LLM ;
+> * une **cascade** entre deux moteurs aux référentiels différents n'a **pas** de
+>   sens (aucun sous-thème commun) : le raffineur doit partager l'espace de labels
+>   du proposeur.
+>
+> Détail : [`COUCHE_DECISION.md`](COUCHE_DECISION.md) §8.
+
 ---
 
 ## 0. Décisions validées (ADR-lite, en amont de la rédaction)

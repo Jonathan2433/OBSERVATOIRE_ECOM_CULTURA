@@ -13,6 +13,8 @@ export { ProgressBar } from "./ProgressBar";
 export type { ProgressBarProps } from "./ProgressBar";
 export { FileDropzone } from "./FileDropzone";
 export type { FileDropzoneProps } from "./FileDropzone";
+export { FilesDropzone } from "./FilesDropzone";
+export type { FilesDropzoneProps } from "./FilesDropzone";
 export { Drawer } from "./Drawer";
 export type { DrawerProps } from "./Drawer";
 export { Chip } from "./Chip";

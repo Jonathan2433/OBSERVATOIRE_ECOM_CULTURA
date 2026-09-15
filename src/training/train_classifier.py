@@ -46,10 +46,18 @@ from .trainer import append_training_log, fine_tune
 logger = logging.getLogger(__name__)
 
 
-def _loader(ds: EncodedDataset, batch_size: int, shuffle: bool, cfg: Dict[str, Any]) -> DataLoader:
+def _loader(ds: EncodedDataset, batch_size: int, shuffle: bool,
+            cfg: Dict[str, Any], tokenizer=None, multilabel: bool = False) -> DataLoader:
+    """DataLoader avec padding dynamique quand le dataset le demande."""
+    from .dataset import make_collate
+
+    collate = (make_collate(tokenizer, multilabel)
+               if getattr(ds, "dynamic_padding", False) and tokenizer is not None
+               else None)
     return DataLoader(
         ds, batch_size=batch_size, shuffle=shuffle,
         num_workers=cfg["model"].get("num_workers", 0),
+        collate_fn=collate,
     )
 
 
@@ -74,8 +82,8 @@ def train_niv1(data: ProcessedDataset, cfg: Dict[str, Any]) -> Dict[str, Any]:
     model = build_sequence_classifier(base_model_path(cfg), num_labels=len(data.niv1_labels), multilabel=True)
     model, history = fine_tune(
         model,
-        _loader(train_ds, cfg["model"]["batch_size_train"], True, cfg),
-        _loader(val_ds, cfg["model"]["batch_size_inference"], False, cfg),
+        _loader(train_ds, cfg["model"]["batch_size_train"], True, cfg, tokenizer, True),
+        _loader(val_ds, cfg["model"]["batch_size_inference"], False, cfg, tokenizer, True),
         cfg, multilabel=True, pos_weight=data.niv1_pos_weight,
         threshold=cfg["thresholds"]["classification_niv1"], task_name="niv1",
     )
@@ -85,6 +93,7 @@ def train_niv1(data: ProcessedDataset, cfg: Dict[str, Any]) -> Dict[str, Any]:
         "type": "multi_label",
         "labels": data.niv1_labels,
         "threshold": cfg["thresholds"]["classification_niv1"],
+        "lowercase": cfg.get("cleaning", {}).get("lowercase"),
         "base_model": cfg["model"]["base_model"],
         "best_val_f1_macro": max(h["f1_macro"] for h in history) if history else None,
     }
@@ -112,8 +121,8 @@ def train_niv2(data: ProcessedDataset, cfg: Dict[str, Any]) -> Dict[str, Any]:
     model = build_sequence_classifier(base_model_path(cfg), num_labels=len(data.niv2_labels), multilabel=False)
     model, history = fine_tune(
         model,
-        _loader(train_ds, cfg["model"]["batch_size_train"], True, cfg),
-        _loader(val_ds, cfg["model"]["batch_size_inference"], False, cfg),
+        _loader(train_ds, cfg["model"]["batch_size_train"], True, cfg, tokenizer, False),
+        _loader(val_ds, cfg["model"]["batch_size_inference"], False, cfg, tokenizer, False),
         cfg, multilabel=False, class_weight=data.niv2_class_weight,
         task_name="niv2",
     )
@@ -122,6 +131,7 @@ def train_niv2(data: ProcessedDataset, cfg: Dict[str, Any]) -> Dict[str, Any]:
         "task": "classification_niv2",
         "type": "multi_class",
         "labels": data.niv2_labels,
+        "lowercase": cfg.get("cleaning", {}).get("lowercase"),
         "base_model": cfg["model"]["base_model"],
         "best_val_f1_macro": max(h["f1_macro"] for h in history) if history else None,
     }

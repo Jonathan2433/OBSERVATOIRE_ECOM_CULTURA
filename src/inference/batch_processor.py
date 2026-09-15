@@ -15,11 +15,11 @@ from __future__ import annotations
 import logging
 import time
 from collections import Counter
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 
-from ..preprocessing.loader import COL_SATISFACTION, COL_TEXT
+from ..preprocessing.loader import COL_SATISFACTION, COL_SOURCE, COL_TEXT
 from .predictor import OUTPUT_COLUMNS, VerbatimPredictor, _empty_result
 
 logger = logging.getLogger(__name__)
@@ -49,6 +49,11 @@ def process_dataframe(
     n = len(df)
     texts = df[COL_TEXT].tolist() if COL_TEXT in df.columns else [""] * n
     sats = df[COL_SATISFACTION].tolist() if COL_SATISFACTION in df.columns else [None] * n
+    # La source ne va dans aucun modèle : elle alimente les règles d'arbitrage
+    # contextuel de la couche de décision (cf. src/inference/decision.py). Une
+    # source absente ne fait pas échouer le lot — elle désactive ces règles, et
+    # la politique le journalise.
+    sources = df[COL_SOURCE].tolist() if COL_SOURCE in df.columns else [None] * n
 
     # --- 1. Anonymisation + nettoyage (par verbatim, tolérant aux erreurs) ----
     pii_counts: Counter = Counter()
@@ -74,10 +79,10 @@ def process_dataframe(
     # --- 2. Inférence par lots -------------------------------------------------
     logger.info("Inférence sur %d verbatims (batch=%d)...", n, predictor.batch_size)
     try:
-        preds = predictor.predict_cleaned_batch(cleaned, sats)
+        preds = predictor.predict_cleaned_batch(cleaned, sats, sources)
     except Exception as exc:
         logger.error("Échec de l'inférence par lots (%s) ; repli verbatim par verbatim.", exc)
-        preds = _predict_one_by_one(cleaned, sats, predictor)
+        preds = _predict_one_by_one(cleaned, sats, sources, predictor)
 
     # --- 3. Construction du DataFrame enrichi ---------------------------------
     pred_df = pd.DataFrame(preds, columns=OUTPUT_COLUMNS)
@@ -105,16 +110,20 @@ def process_dataframe(
             "churn": int(pred_df["signal_churn"].sum()),
             "insatisfaction_forte": int(pred_df["signal_insatisfaction_forte"].sum()),
         },
+        # Un chiffre sans son protocole n'est pas un chiffre : le lot dit sous
+        # quelle politique de décision il a été produit, et combien de fois
+        # chaque règle s'est appliquée.
+        "decision": predictor.politique.resume(),
     }
     return enriched, report
 
 
-def _predict_one_by_one(cleaned, sats, predictor) -> List[Dict[str, Any]]:
+def _predict_one_by_one(cleaned, sats, sources, predictor) -> List[Dict[str, Any]]:
     """Repli : inférence verbatim par verbatim (isole les échecs individuels)."""
     out = []
-    for c, s in zip(_progress(cleaned, len(cleaned), "Inférence (repli)"), sats):
+    for c, s, src in zip(_progress(cleaned, len(cleaned), "Inférence (repli)"), sats, sources):
         try:
-            out.append(predictor.predict_cleaned_batch([c], [s])[0])
+            out.append(predictor.predict_cleaned_batch([c], [s], [src])[0])
         except Exception as exc:
             logger.warning("Échec d'inférence sur un verbatim (%s) -> revue humaine.", exc)
             out.append(_empty_result(c))

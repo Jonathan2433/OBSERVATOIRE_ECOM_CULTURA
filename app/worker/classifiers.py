@@ -7,13 +7,16 @@ agnostique du backend.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 
 from src.inference.predictor import OUTPUT_COLUMNS, _empty_result, build_output  # noqa: F401
 from src.preprocessing import Anonymizer, TextCleaner
-from src.utils import Taxonomy, resolve_path, sentiment_input
+from src.utils import Taxonomy, resolve_path
+
+logger = logging.getLogger("worker.classifiers")
 
 # --- Règles mots-clés (substitut au modèle, pour démonstration sans entraînement) ---
 KEYWORD_RULES = [
@@ -104,13 +107,43 @@ class StubPredictor:
         return out
 
 
+def config_du_moteur(active_model, cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Configuration propre au moteur CamemBERT choisi.
+
+    Plusieurs modèles CamemBERT coexistent depuis le 11/09 (arbitrage PO : le
+    nouveau s'ajoute, il ne remplace pas). Ils ne partagent ni référentiel, ni
+    seuil, ni couche de décision, ni politique de préfixe : chacun doit être
+    servi avec SA configuration, retrouvée depuis le chemin enregistré au
+    registre.
+
+    Profil introuvable — modèle déposé hors des profils déclarés, ou
+    configuration antérieure — on retombe sur ``cfg`` : le comportement
+    historique, jamais une erreur.
+    """
+    from src.utils import config_du_profil, profil_par_racine
+
+    profil = profil_par_racine(cfg, getattr(active_model, "path", None))
+    if profil is None:
+        logger.warning(
+            "Modèle « %s » (%s) : aucun profil de moteur ne correspond. "
+            "Configuration de référence appliquée — vérifier `moteurs_camembert`.",
+            getattr(active_model, "label", "?"), getattr(active_model, "path", "?"))
+        return cfg
+    conf = config_du_profil(cfg, profil)
+    logger.info("Moteur « %s » : référentiel %s · seuil niv.1 %s · leviers %s",
+                profil.get("id"), conf["paths"]["taxonomy"],
+                conf["thresholds"]["classification_niv1"],
+                bool(profil.get("leviers_decision")))
+    return conf
+
+
 def get_predictor(active_model, cfg: Dict[str, Any]):
     """Fabrique le bon backend selon le modèle actif (réel CamemBERT, LM Studio, ou stub)."""
     kind = getattr(active_model, "kind", None)
     if kind == "real":
         from src.inference.predictor import VerbatimPredictor
 
-        return VerbatimPredictor(cfg)
+        return VerbatimPredictor(config_du_moteur(active_model, cfg))
     if kind == "lmstudio":
         from .lmstudio_predictor import LMStudioPredictor
 

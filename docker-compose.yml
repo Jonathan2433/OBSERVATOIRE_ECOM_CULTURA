@@ -58,7 +58,14 @@ services:
     volumes:
       - ./data/uploads:/data/uploads      # fichiers déposés (partagé avec worker)
       - ./data/output:/data/output        # CSV enrichis (export L4)
-      - ./data/raw/taxonomy_cultura_poc.json:/app/taxonomy.json:ro   # référentiel (revue)
+      # Référentiel de REPLI, servi quand le modèle actif n'embarque pas le sien.
+      - ./data/raw/taxonomy_cultura_poc.json:/app/taxonomy.json:ro
+      # Référentiels des modèles, en LECTURE SEULE. Chaque modèle embarque le
+      # sien (`<racine>/taxonomy.json`) et c'est celui du modèle ACTIF que la
+      # revue humaine sert. Sans ce montage, un relecteur travaillant sur des
+      # sorties du modèle Cultura 2026 se verrait proposer les 20 thèmes du POC,
+      # dont AUCUN sous-thème n'est commun (D-36).
+      - ./data/models:/data/models:ro
     depends_on:
       db:
         condition: service_healthy

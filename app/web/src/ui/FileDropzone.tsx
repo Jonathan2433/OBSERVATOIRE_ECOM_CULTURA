@@ -15,7 +15,9 @@ function humanSize(bytes: number): string {
 }
 
 /** Zone de dépôt d'un fichier (glisser-déposer + clic), avec aperçu nom/taille. */
-export function FileDropzone({ label, hint, accept = ".xlsx", file, onSelect }: FileDropzoneProps) {
+// Les exports Cultura arrivent en classeur ou en CSV selon la source et le mois ;
+// le format des colonnes est reconnu à la lecture, pas à l'extension.
+export function FileDropzone({ label, hint, accept = ".xlsx,.csv", file, onSelect }: FileDropzoneProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [drag, setDrag] = useState(false);
 

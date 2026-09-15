@@ -10,14 +10,19 @@ Chaque loader renvoie le DataFrame d'origine INTACT (toutes les colonnes
 préservées pour le CSV enrichi final) augmenté de colonnes techniques normalisées
 (préfixées ``__`` pour éviter toute collision avec des colonnes métier) :
 
-  __source__        : "MDTC" | "Mopinion"
+  __source__        : provenance, la plus FINE que le fichier permette
+                      ("MDTC-postachat" / "MDTC-postrecep" quand le schéma de la
+                      livraison Cultura 2026 est reconnu, "MDTC" sinon ; idem
+                      Mopinion). La couche de décision s'appuie dessus pour ses
+                      règles d'arbitrage contextuel — cf. src/inference/decision.py.
   __text_raw__      : texte brut à classifier (avant anonymisation/nettoyage)
   __satisfaction__  : score de satisfaction (int, NaN si absent)
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Sequence
 
 import pandas as pd
 
@@ -26,8 +31,45 @@ COL_SOURCE = "__source__"
 COL_TEXT = "__text_raw__"
 COL_SATISFACTION = "__satisfaction__"
 
+logger = logging.getLogger(__name__)
+
 SOURCE_MDTC = "MDTC"
 SOURCE_MOPINION = "Mopinion"
+
+
+def affiner_source(df: pd.DataFrame, source_grossiere: str,
+                   cfg: Dict[str, Any]) -> str:
+    """Précise la provenance quand le schéma de la livraison Cultura est reconnu.
+
+    Les formulaires post-achat et post-réception arrivent sous la même étiquette
+    « MDTC » alors qu'ils posent des questions différentes — et c'est
+    précisément cette différence que la règle d'arbitrage contextuel exploite
+    (38,6 % des erreurs de thème viennent du post-réception).
+
+    Prudence délibérée : la source n'est affinée QUE si la signature de colonnes
+    est positivement reconnue. Un export au format V1, dont les colonnes ne
+    ressemblent à aucun schéma déclaré, garde l'étiquette grossière — la règle
+    ne s'appliquera pas, ce qui est le comportement voulu : mieux vaut un levier
+    inactif qu'un levier appliqué à un formulaire qu'on n'a pas identifié.
+    """
+    schemas = ((cfg.get("cultura_sources") or {}).get("schemas") or {})
+    if not schemas:
+        return source_grossiere
+    candidats = {n: s for n, s in schemas.items()
+                 if n.split("-")[0].lower() == source_grossiere.lower()}
+    if not candidats:
+        return source_grossiere
+    from .column_norm import normalize_column_name
+    from .cultura_loader import SchemaInconnuError, detect_schema
+
+    colonnes = [normalize_column_name(c) for c in df.columns]
+    try:
+        return detect_schema(colonnes, candidats, source_grossiere)
+    except SchemaInconnuError:
+        # Format non reconnu : on reste sur l'étiquette grossière, sans échouer.
+        # Le chargement mensuel ne doit pas s'interrompre parce qu'un levier
+        # d'optimisation ne pourra pas s'appliquer.
+        return source_grossiere
 
 
 # --------------------------------------------------------------------------- #
@@ -98,7 +140,7 @@ def load_mdtc(path: str | Path, cfg: Dict[str, Any]) -> pd.DataFrame:
         return ". ".join(parts)
 
     out = df.copy()
-    out[COL_SOURCE] = SOURCE_MDTC
+    out[COL_SOURCE] = affiner_source(df, SOURCE_MDTC, cfg)
     out[COL_TEXT] = out.apply(_build_text, axis=1)
     out[COL_SATISFACTION] = out[conf["satisfaction_col"]].apply(_coerce_int)
     return out
@@ -127,7 +169,7 @@ def load_mopinion(path: str | Path, cfg: Dict[str, Any]) -> pd.DataFrame:
         return ". ".join(parts)
 
     out = df.copy()
-    out[COL_SOURCE] = SOURCE_MOPINION
+    out[COL_SOURCE] = affiner_source(df, SOURCE_MOPINION, cfg)
     out[COL_TEXT] = out.apply(_build_text, axis=1)
     out[COL_SATISFACTION] = out[conf["satisfaction_col"]].apply(_coerce_int)
     return out
@@ -168,6 +210,84 @@ def _to_bool(value: Any) -> bool:
 # --------------------------------------------------------------------------- #
 #  Chargement combiné pour le traitement mensuel par lots
 # --------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
+#  Exports au format Cultura 2026 (CSV ou XLSX)
+# --------------------------------------------------------------------------- #
+#: Colonnes techniques et de contexte conservées d'un export 2026.
+#: Tout le reste est écarté par la LISTE BLANCHE du chargeur (D-18) — c'est elle
+#: qui garantit qu'un numéro de commande ou un identifiant client ne descend pas
+#: dans la base ni dans l'export enrichi.
+COLONNES_CONSERVEES_2026 = (
+    "__source__", "__text_raw__", "__satisfaction__", "__satisfaction_raw__",
+    "__field__", "__fichier__", "__date__", "__page_type__", "__url__", "__device__",
+)
+
+
+def detecter_schema_2026(path: str | Path, cfg: Dict[str, Any]) -> Optional[str]:
+    """Nom du schéma Cultura 2026 reconnu pour ce fichier, ``None`` sinon.
+
+    Ne lève jamais : un fichier au format V1, ou illisible, renvoie ``None`` et
+    le chargement repart sur le chemin historique. La détection porte sur le
+    JEU DE COLONNES, jamais sur le nom du fichier.
+    """
+    from .column_norm import normalize_column_name
+    from .cultura_loader import SchemaInconnuError, read_table
+
+    sources = cfg.get("cultura_sources") or {}
+    if not sources.get("schemas"):
+        return None
+    try:
+        df, _ = read_table(Path(path), sources.get("encodages", ["utf-8-sig"]),
+                           sources.get("separateur_csv", ";"))
+        from .cultura_loader import detect_schema
+
+        return detect_schema([normalize_column_name(c) for c in df.columns],
+                             sources["schemas"], Path(path).name)
+    except SchemaInconnuError:
+        return None
+    except Exception as exc:  # fichier illisible : on laisse le chemin V1 trancher
+        logger.debug("Détection 2026 impossible sur %s (%s).", Path(path).name, exc)
+        return None
+
+
+def load_cultura_2026(path: str | Path, cfg: Dict[str, Any]) -> pd.DataFrame:
+    """Charge un export au format Cultura 2026 pour un traitement de lot.
+
+    Réutilise le chargeur de la livraison Cultura en mode **production**
+    (``annote=False``) : même détection de schéma, même liste blanche, même
+    composition des champs libres (D-30), mais sans exiger les colonnes
+    d'annotation — un export mensuel vient chercher une prédiction, pas la
+    fournir.
+
+    Ce chemin apporte trois choses que le chargeur historique ne sait pas faire :
+
+    * il lit le **CSV** comme le XLSX, avec détection d'encodage ;
+    * il produit la **source fine** (``MDTC-postrecep``…), sans laquelle la règle
+      d'arbitrage contextuel de la couche de décision ne peut pas s'appliquer ;
+    * il n'emporte que les colonnes **déclarées**, ce qui laisse dehors les
+      numéros de commande et identifiants client présents dans les exports.
+    """
+    from .cultura_loader import charger_fichier
+
+    sources = cfg["cultura_sources"]
+    min_tokens = int(cfg.get("cleaning", {}).get("min_tokens", 0))
+
+    # Pas de normaliseur de libellés : il ne sert qu'à résoudre une annotation,
+    # et un export de production n'en porte aucune. Le demander imposerait de
+    # monter le référentiel Cultura dans le conteneur du worker pour rien.
+    lignes, rapport = charger_fichier(Path(path), sources, None,
+                                      min_tokens, annote=False)
+    logger.info(
+        "Export Cultura 2026 « %s » : schéma %s · %d lignes lues · %d verbatims · "
+        "%d ligne(s) sans texte", Path(path).name, rapport.schema,
+        rapport.lignes_lues, rapport.verbatims_produits, rapport.lignes_sans_texte)
+
+    if not lignes:
+        return pd.DataFrame(columns=list(COLONNES_CONSERVEES_2026))
+    out = pd.DataFrame(lignes)
+    return out[[c for c in COLONNES_CONSERVEES_2026 if c in out.columns]].copy()
+
+
 def load_for_batch(
     mdtc_path: str | Path | None,
     mopinion_path: str | Path | None,
@@ -181,11 +301,101 @@ def load_for_batch(
     de manière homogène. Une colonne ``source`` est conservée via ``__source__``.
     """
     frames = []
-    if mdtc_path:
-        frames.append(load_mdtc(mdtc_path, cfg))
-    if mopinion_path:
-        frames.append(load_mopinion(mopinion_path, cfg))
+    for chemin, charger_v1, nom in ((mdtc_path, load_mdtc, "MDTC"),
+                                    (mopinion_path, load_mopinion, "Mopinion")):
+        if not chemin:
+            continue
+        frames.append(_charger_une_source(chemin, charger_v1, nom, cfg))
     if not frames:
         raise ValueError("Aucun fichier source fourni (mdtc et mopinion absents).")
     combined = pd.concat(frames, ignore_index=True, sort=False)
     return combined
+
+
+def load_many(chemins: Sequence[str | Path], cfg: Dict[str, Any]) -> pd.DataFrame:
+    """Charge un nombre quelconque d'exports dans un seul lot.
+
+    Chaque fichier est identifié **par son jeu de colonnes** : il n'y a plus à
+    déclarer lequel est MDTC et lequel est Mopinion, ni à se limiter à un de
+    chaque. Un mois complet — post-achat ancien et nouveau, post-réception
+    ancien et nouveau, Mopinion desktop et mobile — se dépose en une fois.
+
+    Un fichier au format Cultura 2026 part vers le chargeur 2026 ; les autres
+    sont routés vers le chargeur historique d'après leurs colonnes. Un fichier
+    qui n'est reconnu par aucun des deux **fait échouer le lot** avec son nom :
+    traiter un mois amputé d'une source sans le dire fausserait les volumes, et
+    les volumes sont la raison d'être de l'outil.
+    """
+    if not chemins:
+        raise ValueError("Aucun fichier source fourni.")
+
+    frames, erreurs, resume = [], [], []
+    for chemin in chemins:
+        nom = Path(chemin).name
+        try:
+            df = _charger_un_fichier(chemin, cfg)
+        except Exception as exc:
+            erreurs.append(f"{nom} : {exc}")
+            continue
+        frames.append(df)
+        sources = sorted(set(df[COL_SOURCE].dropna().unique())) if COL_SOURCE in df.columns else []
+        resume.append(f"{nom} -> {', '.join(sources) or 'source inconnue'} ({len(df)})")
+
+    if erreurs:
+        raise ValueError(
+            "Fichier(s) non exploitable(s) : " + " | ".join(erreurs) +
+            ". Le lot n'est pas lancé : un mois amputé d'une source fausserait "
+            "les volumes.")
+
+    logger.info("Lot multi-fichiers : %s", " · ".join(resume))
+    combined = pd.concat(frames, ignore_index=True, sort=False)
+    return combined
+
+
+def _charger_un_fichier(chemin: str | Path, cfg: Dict[str, Any]) -> pd.DataFrame:
+    """Charge un export sans savoir à l'avance de quelle source il vient."""
+    schema = detecter_schema_2026(chemin, cfg)
+    if schema:
+        logger.info("%s : format Cultura 2026 (%s).", Path(chemin).name, schema)
+        return load_cultura_2026(chemin, cfg)
+
+    # Format historique : on choisit le chargeur d'après les colonnes présentes,
+    # et non d'après le nom du fichier, qui ne garantit rien.
+    colonnes = set(_lire_entetes(chemin))
+    mdtc = cfg["sources"]["mdtc"]
+    mopinion = cfg["sources"]["mopinion"]
+    if mdtc["text_col_primary"] in colonnes:
+        logger.info("%s : format historique MDTC.", Path(chemin).name)
+        return load_mdtc(chemin, cfg)
+    if any(c in colonnes for c in mopinion["text_cols_primary"]):
+        logger.info("%s : format historique Mopinion.", Path(chemin).name)
+        return load_mopinion(chemin, cfg)
+    raise ValueError(
+        f"aucun format reconnu (ni Cultura 2026, ni historique). "
+        f"Colonnes lues : {sorted(colonnes)[:8]}")
+
+
+def _lire_entetes(chemin: str | Path) -> List[str]:
+    """En-têtes d'un fichier, sans charger son contenu."""
+    from .cultura_loader import read_table
+
+    df, _ = read_table(Path(chemin), ["utf-8-sig", "cp1252", "iso-8859-1"], ";")
+    return [str(c) for c in df.columns]
+
+
+def _charger_une_source(chemin: str | Path, charger_v1, nom: str,
+                        cfg: Dict[str, Any]) -> pd.DataFrame:
+    """Aiguille un fichier vers le chargeur qui sait le lire.
+
+    Le format est déduit du JEU DE COLONNES, jamais de l'extension ni du nom :
+    un export au format Cultura 2026 part vers `load_cultura_2026`, tout le reste
+    vers le chargeur historique. Aucun réglage à faire côté utilisateur — il
+    dépose son fichier, l'application reconnaît ce que c'est.
+    """
+    schema = detecter_schema_2026(chemin, cfg)
+    if schema:
+        logger.info("[%s] %s : format Cultura 2026 reconnu (%s).",
+                    nom, Path(chemin).name, schema)
+        return load_cultura_2026(chemin, cfg)
+    logger.info("[%s] %s : format historique.", nom, Path(chemin).name)
+    return charger_v1(chemin, cfg)

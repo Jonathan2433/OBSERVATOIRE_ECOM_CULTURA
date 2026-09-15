@@ -182,7 +182,8 @@ def _to_engine_pred(batch_id, result_id, row_index, engine_label, role, pred, la
 
 def process_batch_job(batch_id: int) -> dict:
     """Traite un lot complet et persiste les résultats. Renvoie un résumé."""
-    from src.preprocessing.loader import COL_SATISFACTION, COL_SOURCE, COL_TEXT, load_for_batch
+    from src.preprocessing.loader import (
+        COL_SATISFACTION, COL_SOURCE, COL_TEXT, load_for_batch, load_many)
 
     cfg = build_worker_cfg()
     with SessionLocal() as db:
@@ -229,7 +230,13 @@ def process_batch_job(batch_id: int) -> dict:
             llm_in_chain = (active is not None and active.kind == "lmstudio") or (refiner_predictor is not None)
             chunk = LMSTUDIO_PROGRESS_CHUNK if llm_in_chain else PROGRESS_CHUNK
             files = batch.source_files or {}
-            df = load_for_batch(files.get("mdtc"), files.get("mopinion"), cfg)
+            # Deux formes acceptées : `fichiers` (dépôt multiple, identifiés à la
+            # lecture) et `mdtc`/`mopinion` (forme historique). Les lots déjà en
+            # base gardent la seconde — elle reste lue telle quelle.
+            multiples = list(files.get("fichiers") or [])
+            multiples += [files[k] for k in ("mdtc", "mopinion") if files.get(k)]
+            df = (load_many(multiples, cfg) if len(multiples) > 2 or files.get("fichiers")
+                  else load_for_batch(files.get("mdtc"), files.get("mopinion"), cfg))
             total = len(df)
             batch.n_total = total
             db.commit()

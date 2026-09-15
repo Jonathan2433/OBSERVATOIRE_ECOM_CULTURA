@@ -44,7 +44,7 @@ exposé, **uniquement sur `127.0.0.1`**.
         │                          enqueue RQ │      └──▶ [db] PostgreSQL
         │                                     ▼
         │                            [redis] ◀── [worker] RQ + moteur ML (src/)
-        │                                              │  CamemBERT / ONNX int8
+        │                                              │  CamemBERT (PyTorch)
         ▼                                              ▼
    build React (Vite)                  volumes : models (RO) · uploads · output
                           Aucun trafic réseau sortant (offline strict)
@@ -57,6 +57,16 @@ exposé, **uniquement sur `127.0.0.1`**.
 - **`redis`** : file de jobs.
 - Package partagé **`app/common`** (engine SQLAlchemy + modèles ORM) importé par `api` **et** `worker` → schéma unique, pas de duplication.
 - Tant qu'aucun modèle CamemBERT n'est déposé, un **classifieur stub** (heuristique, sans torch) rend l'app démontrable de bout en bout.
+- **Plusieurs modèles CamemBERT coexistent** dans le sélecteur : chacun porte son
+  référentiel, son seuil et sa couche de décision (profils `moteurs_camembert`).
+  Un nouveau modèle s'**ajoute**, il ne remplace pas le précédent — le retour arrière
+  est une simple resélection. Cf. [`docs/COUCHE_DECISION.md`](docs/COUCHE_DECISION.md) §8.
+
+> ⚠️ **ONNX int8 n'est pas utilisé pour l'inférence** (`onnx.use_for_inference: false`).
+> Mesuré : les modèles servis via ONNX ne s'accordent avec PyTorch que sur 55 % / 13 % /
+> 74 % des argmax selon la tâche, pour un débit **3,3× plus lent** sur cette machine.
+> Les artefacts sont conservés mais inertes ; les réactiver exige une requalification
+> sur le matériel cible.
 
 ## 3. Pile technique
 
@@ -64,7 +74,7 @@ exposé, **uniquement sur `127.0.0.1`**.
 |---|---|
 | Front | React 18 + TypeScript + Vite ; **design system maison** (tokens CSS, 0 dépendance UI) |
 | API | FastAPI, uvicorn, SQLAlchemy 2, Alembic, argon2, JWT (cookie httpOnly) |
-| Worker / ML | RQ + Redis ; **CamemBERT** (HuggingFace Transformers), **ONNX Runtime int8** (optimum), scikit-learn (signaux), spaCy (NER d'anonymisation) |
+| Worker / ML | RQ + Redis ; **CamemBERT** (HuggingFace Transformers, backend **PyTorch**), scikit-learn **1.6.1 épinglé** (signaux — cf. §6), spaCy (NER d'anonymisation). ONNX Runtime présent mais **désactivé** à l'inférence |
 | Données | PostgreSQL 16, openpyxl (Excel) |
 | Infra | Docker Compose (5 services), nginx, offline strict |
 
@@ -76,17 +86,22 @@ cultura-verbatim-classifier/
 │   ├── preprocessing/      # loader Excel, nettoyage, anonymisation (PII)
 │   ├── modeling/           # architecture, export ONNX int8
 │   ├── training/           # prepare_dataset, train_{classifier,sentiment,signals}
-│   ├── inference/          # predictor (build_output = logique de décision pure)
-│   └── utils/              # config, taxonomie (hiérarchie contrainte)
+│   ├── inference/          # predictor (build_output) + decision.py (couche de décision)
+│   └── utils/              # config, taxonomie, profils de moteurs (moteurs.py)
 ├── app/
 │   ├── api/                # service FastAPI (routes, core, migrations Alembic)
 │   ├── worker/             # service RQ (tâches, registre de modèles, classifieurs)
 │   ├── common/             # package partagé : DB + modèles ORM + rétention
 │   ├── web/                # front React/TS (ui/ design system, pages, styles)
-│   └── tests/              # recettes V1 / V3 (torch-free, SQLite)
+│   └── tests/              # recettes V1→V6, L1a, L2, couche de décision
 ├── scripts/                # setup_models, run_training, validate_pipeline,
 │                           # make_demo_data, package_app, restore_app
-├── config/config.yaml      # hyperparamètres, seuils, mapping colonnes (source unique)
+│                           # — refonte : entrainer_cultura, evaluer_cultura,
+│                           #   ablation_leviers, calibrer_regle_source,
+│                           #   courbe_seuil, publier_eval_report
+├── config/config.yaml      # hyperparamètres, seuils, profils de moteurs, couche de
+│                           # décision, cibles métier (source unique — aucun nombre
+│                           # magique dans le code)
 ├── data/                   # raw (entrée), models (RO), processed, output, uploads
 ├── docs/                   # cahier des charges, plans, guides, recettes, passation
 └── docker-compose.yml
@@ -119,12 +134,20 @@ d'autres comptes (Analyste / Admin) dans **Utilisateurs** et changer son mot de 
 dans **Mon compte**.
 
 ### Quel moteur de classification ?
-- **Par défaut** : aucun modèle entraîné n'est livré dans le dépôt → l'app tourne en
-  **mode démonstration** (classifieur heuristique *stub*, thèmes approximatifs). Suffisant
-  pour valider l'installation et l'interface.
-- **CamemBERT** (qualité) : entraîner le modèle (§6) puis l'activer (Administration → Modèles).
-- **LM Studio** (LLM local, V4) : installer LM Studio sur l'hôte, charger un modèle,
-  passer `LMSTUDIO_ENABLED=true` dans `.env` ; voir [`docs/EXPLOITATION.md`](docs/EXPLOITATION.md) §4 bis.
+Le sélecteur (*Administration → Modèles*) liste tous les moteurs présents. Ils
+**coexistent** : en activer un n'en supprime aucun.
+
+| Moteur | Ce qu'il apporte | Activable en production |
+|---|---|---|
+| **stub** (heuristique) | aucun modèle requis — valide l'installation et l'interface | oui, mode démonstration |
+| **CamemBERT** *(un par modèle déposé)* | la qualité ; chaque modèle porte son référentiel et ses seuils | oui |
+| **LM Studio** (LLM local, V4) | second moteur, ou raffineur en cascade | oui, si `LMSTUDIO_ENABLED=true` |
+| **Claude** (API, V5) | référence de qualité et juge de comparaison | **non** — refus serveur (offline strict) |
+
+Aucun modèle entraîné n'est livré dans le dépôt : à l'installation l'app tourne en
+**mode démonstration**. Entraîner et déposer un CamemBERT : §6 et
+[`docs/GUIDE_ENTRAINEMENT.md`](docs/GUIDE_ENTRAINEMENT.md). LM Studio :
+[`docs/EXPLOITATION.md`](docs/EXPLOITATION.md) §4 bis.
 
 Arrêt : `Ctrl+C` puis `docker compose down` (les données persistent). Détails et dépannage :
 [`docs/EXPLOITATION.md`](docs/EXPLOITATION.md). Guide utilisateur :
@@ -143,9 +166,31 @@ python scripts/run_training.py --smoke    # validation rapide de la chaîne (min
 python scripts/run_training.py            # entraînement réel (CPU, plusieurs heures)
 ```
 Produit `data/models/{classifier_niv1,classifier_niv2,sentiment,signals}/<version>/`
-(+ ONNX int8) et `data/processed/eval_report.json`. Dépôt → `docker compose restart worker`
+et `data/processed/eval_report.json`. Dépôt → `docker compose restart worker`
 → activation dans l'UI (Administration → Modèles). Détail complet :
 [`docs/GUIDE_ENTRAINEMENT.md`](docs/GUIDE_ENTRAINEMENT.md).
+
+**Deux règles pour qu'un modèle déposé soit exploitable :**
+
+1. **Il embarque son référentiel** — `<racine>/taxonomy.json`. C'est ce fichier qui
+   alimente les listes de la revue humaine. Sans lui, la revue proposerait le
+   référentiel d'un autre modèle, dont les libellés peuvent n'avoir aucun rapport.
+2. **Il est déclaré comme profil** dans `config.yaml → moteurs_camembert`, avec sa
+   racine sous `data/models` (seul répertoire monté dans les conteneurs) et ses
+   écarts au réglage global (seuils, couche de décision).
+
+> ⚠️ **`scikit-learn` est épinglé** (`==1.6.1`). Les détecteurs de signaux sont des
+> pipelines sérialisés avec joblib : les recharger sous une autre version fait dire à
+> scikit-learn lui-même *« might lead to breaking code or invalid results »*. Relever
+> cette borne **exige de réentraîner les détecteurs**.
+
+**Refonte Cultura 2026** — chaîne dédiée, protocole sans fuite, découpage gelé :
+
+```bash
+python scripts/entrainer_cultura.py       # préparation + entraînement
+python scripts/evaluer_cultura.py         # évaluation sur le jeu de test gelé
+python scripts/ablation_leviers.py --split val   # apport de chaque levier de décision
+```
 
 Validation **sans torch** (stub) et jeu de démo synthétique :
 ```bash
@@ -156,9 +201,10 @@ python scripts/validate_pipeline.py --mdtc data/demo/mdtc_demo.xlsx --mopinion d
 ## 7. Données & RGPD
 
 - **Anonymisation PII en tête de pipeline** (e-mails, téléphones, n° de commande, noms via NER) → marqueurs `[EMAIL]`, `[TEL]`, `[COMMANDE]`, `[NOM]`.
+- **Liste blanche à l'ingestion** (D-18) : sur un export au format Cultura 2026, seules les colonnes **déclarées** sont lues. Les colonnes `Commande`, `Client`, `User Agent` et les captures d'écran des exports réels n'entrent donc ni en base ni dans l'export enrichi — elles ne sont pas anonymisées, elles ne sont pas lues.
 - La base ne stocke **que le texte anonymisé** (`verbatim_analyse`) ; jamais le brut.
 - **Rétention** configurable (défaut 13 mois) + **purge** auto (démarrage worker) et manuelle (admin).
-- **Classes contraintes** : toute prédiction respecte la hiérarchie de `taxonomy_cultura_poc.json` (un niv.2 appartient à un seul niv.1).
+- **Classes contraintes** : toute prédiction respecte la hiérarchie du référentiel **du modèle qui l'a produite** (un niv.2 appartient à un seul niv.1). Chaque modèle embarque le sien (`<racine>/taxonomy.json`) ; la revue humaine sert **celui du lot relu**, pas celui du moteur actif du moment.
 
 ## 8. Sécurité
 
@@ -178,11 +224,30 @@ Voir [`docs/TRANSMISSION.md`](docs/TRANSMISSION.md).
 
 ## 10. Tests & recettes
 
-Recettes **torch-free** (SQLite, classifieur stub), reproductibles hors ligne :
+**Recettes applicatives** — torch-free (SQLite, classifieur stub), hors ligne :
+
 ```bash
-python app/tests/recette_v1.py   # conformité V1 (garde-fous §10 + DoD §11) -> 48/48
-python app/tests/recette_v3.py   # ajouts V3 (annulation, reprise, ops, mot de passe) -> 13/13
+python app/tests/recette_v1.py   # conformité V1 (garde-fous §10 + DoD §11)   -> 48 OK
+python app/tests/recette_v3.py   # V3 : annulation, reprise, ops, mot de passe -> 13 OK
+python app/tests/recette_v4.py   # V4 : moteur LM Studio                       -> 50 OK
+python app/tests/recette_v5.py   # V5 : cascade, comparaison, juge Claude      -> 112 OK
+python app/tests/recette_v6.py   # V6 : revue, export, cohérence des totaux    -> 26 OK
 ```
+
+**Recettes du modèle** — nécessitent l'environnement ML (`requirements.txt`) :
+
+```bash
+python app/tests/recette_l1a_chargeur.py     # ingestion de la livraison Cultura  -> 29 OK · 1 échec connu
+python app/tests/recette_l2_protocole.py     # découpage sans fuite, plafonnement -> 15 OK
+python app/tests/recette_couche_decision.py  # leviers, coexistence des moteurs   -> 46 OK
+```
+
+L'échec connu de L1a porte sur le jeu factice, devenu obsolète après le changement de
+référentiel — il est journalisé, pas masqué.
+
+La recette de la couche de décision porte l'invariant central : **ce que
+`build_output` décide en production est exactement ce que l'évaluation rejoue**.
+
 Front : `cd app/web && npx tsc --noEmit && npm run build`.
 
 ## 11. Documentation
@@ -191,13 +256,37 @@ Tout est dans [`docs/`](docs/). Point d'entrée : **[`docs/PASSATION.md`](docs/P
 Cahier des charges, plans (V1/V2/V3), guides (utilisateur, entraînement, exploitation,
 transmission), charte UI, recettes, suivi des lots.
 
+### Modèle Cultura 2026 (refonte)
+
+| Document | Objet |
+|---|---|
+| [`CADRAGE_NOUVEAU_MODELE.md`](docs/CADRAGE_NOUVEAU_MODELE.md) | cahier des charges de la refonte |
+| [`SPEC_CHARGEUR.md`](docs/SPEC_CHARGEUR.md) · [`RAPPORT_L1a_CHARGEUR.md`](docs/RAPPORT_L1a_CHARGEUR.md) | ingestion de la livraison Cultura |
+| [`RAPPORT_L2_BASELINE.md`](docs/RAPPORT_L2_BASELINE.md) | protocole sans fuite, baseline du modèle V1 |
+| [`RAPPORT_L6_REENTRAINEMENT.md`](docs/RAPPORT_L6_REENTRAINEMENT.md) | réentraînement, trois itérations |
+| **[`COUCHE_DECISION.md`](docs/COUCHE_DECISION.md)** | **les trois leviers de décision : ce qu'ils font, ce qu'ils rapportent** |
+| [`OPTIMISATION_SANS_CULTURA.md`](docs/OPTIMISATION_SANS_CULTURA.md) | campagne d'optimisation, pistes écartées *(chiffres du §1 corrigés par le précédent)* |
+| [`RECETTE_NOUVEAU_MODELE.md`](docs/RECETTE_NOUVEAU_MODELE.md) | recette L9, critères d'acceptation, activation |
+
 ## 12. Versions
 
 - **V1** — application fonctionnelle (auth, ingestion, traitement async, résultats/exports, revue, dashboards, admin/RGPD).
 - **V2** — couche design UI/UX (design system turquoise Cultura, navigation latérale, vue lot à onglets).
 - **V3** (`v3.0`) — « POC avancée » : moteur ML prouvé, transmission avec historique, robustesse (annulation/reprise), exploitation, passation.
 - **V4** (`v4.0`) — second moteur **LM Studio** (LLM local, API compatible OpenAI), sélectionnable côté admin, additif et désactivé par défaut. Voir [`docs/SPEC_V4_LMSTUDIO.md`](docs/SPEC_V4_LMSTUDIO.md).
-- **Reste** : run d'entraînement réel + mesure d'un lot ~11k **< 1 h** (DoD §11). Trajectoire : V1.1 (SSO Entra ID, serveur multi-utilisateur), V2 (MLOps depuis l'UI).
+- **V5** (`v5.0`) — **multi-moteur** : cascade proposeur/raffineur, page de comparaison de moteurs sur échantillon, moteur **Claude** en comparaison/test uniquement (jamais activable en production). Voir [`docs/SPEC_V5_MULTI_MOTEUR.md`](docs/SPEC_V5_MULTI_MOTEUR.md).
+- **V6** — revue humaine et exports consolidés (cohérence des totaux liste/export).
+- **Modèle Cultura 2026** (septembre 2026) — refonte complète du moteur sur le
+  référentiel Cultura (11 thèmes / 59 sous-thèmes) : chargeur dédié, protocole
+  d'évaluation **sans fuite**, réentraînement, **couche de décision** à trois leviers.
+  Recette technique et métier prononcées ; **mise à disposition additive** (le modèle V1
+  reste sélectionnable). Voir le tableau du §11.
+
+**Reste à faire.** Bascule du modèle par défaut (décision humaine, tracée à l'audit) ·
+mesure d'un lot ~11k **< 1 h** en conditions réelles (DoD §11) · atelier de
+référentiel L3 côté Cultura (recouvrements de libellés) · validation par Cultura de
+la table de correspondance des libellés de satisfaction MDTC (hypothèse eXalt). Trajectoire : V1.1 (SSO
+Entra ID, serveur multi-utilisateur), V2 (MLOps depuis l'UI).
 
 ---
 

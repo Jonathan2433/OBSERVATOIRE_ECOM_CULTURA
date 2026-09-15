@@ -22,6 +22,11 @@ import numpy as np
 from ..inference.predictor import build_output, VerbatimPredictor
 from ..training.prepare_dataset import ProcessedDataset
 from ..utils import load_config, resolve_path, sentiment_input
+from .decision_niv1 import (
+    distribution_nb_themes,
+    matrice_decidee,
+    precision_second_theme,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,13 +82,39 @@ def evaluate(cfg: Dict[str, Any], predictor: Optional[VerbatimPredictor] = None)
     report: Dict[str, Any] = {}
 
     # --- 1. Classification niv.1 (multi-label) --------------------------------
+    # CORRECTION (L2, §7.1 point 6 du cadrage) : les métriques portent sur la
+    # DÉCISION RÉELLE — seuil, repli sur l'argmax, puis plafond `max_themes` — et
+    # non sur le seul seuillage. L'ancien calcul évaluait une décision que le
+    # produit ne prend jamais, ce qui masquait la sur-activation des thèmes
+    # (précision micro implicite de 0,336 sur le prototype, jamais publiée).
+    # Les valeurs d'avant plafonnement restent exposées sous `avant_plafond`,
+    # pour que l'écart avec les chiffres historiques soit vérifiable.
     thr1 = cfg["thresholds"]["classification_niv1"]
+    max_themes = int(cfg["thresholds"]["max_themes"])
     y1_true = data.niv1_matrix(test).astype(int)
-    y1_pred = (niv1_probs >= thr1).astype(int)
+    y1_seuil = (niv1_probs >= thr1).astype(int)
+    y1_pred = matrice_decidee(niv1_probs, thr1, max_themes)
     report["niv1"] = {
+        "seuil": float(thr1),
+        "max_themes": max_themes,
         "f1_macro": float(f1_score(y1_true, y1_pred, average="macro", zero_division=0)),
         "f1_micro": float(f1_score(y1_true, y1_pred, average="micro", zero_division=0)),
         "f1_weighted": float(f1_score(y1_true, y1_pred, average="weighted", zero_division=0)),
+        "precision_micro": float(precision_score(y1_true, y1_pred, average="micro",
+                                                 zero_division=0)),
+        "recall_micro": float(recall_score(y1_true, y1_pred, average="micro",
+                                           zero_division=0)),
+        "avant_plafond": {
+            "f1_macro": float(f1_score(y1_true, y1_seuil, average="macro", zero_division=0)),
+            "f1_micro": float(f1_score(y1_true, y1_seuil, average="micro", zero_division=0)),
+            "precision_micro": float(precision_score(y1_true, y1_seuil, average="micro",
+                                                     zero_division=0)),
+            "recall_micro": float(recall_score(y1_true, y1_seuil, average="micro",
+                                               zero_division=0)),
+            "themes_actives_par_verbatim": round(float(y1_seuil.sum(axis=1).mean()), 4),
+        },
+        "distribution_nb_themes": distribution_nb_themes(y1_pred),
+        "second_theme": precision_second_theme(y1_true, niv1_probs, thr1, max_themes),
         "per_theme_f1": {},
     }
     f1_per = f1_score(y1_true, y1_pred, average=None, zero_division=0)
@@ -196,6 +227,22 @@ def print_report(report: Dict[str, Any], niv1_labels: List[str], cm: np.ndarray)
     print(f"\n[NIVEAU 1 — classification thématique (multi-label)]")
     print(f"  F1-macro    : {n['f1_macro']:.4f}    F1-micro : {n['f1_micro']:.4f}    "
           f"F1-weighted : {n['f1_weighted']:.4f}")
+    ap = n.get("avant_plafond", {})
+    if ap:
+        print(f"  (avant plafond max_themes={n.get('max_themes')} : F1-micro {ap['f1_micro']:.4f} · "
+              f"précision micro {ap['precision_micro']:.4f} · "
+              f"{ap['themes_actives_par_verbatim']:.2f} thèmes activés/verbatim)")
+    d = n.get("distribution_nb_themes", {})
+    if d:
+        print(f"  Distribution : {d['part_mono_theme']*100:.1f} % mono-thème · "
+              f"{d['part_bi_theme']*100:.1f} % bi-thèmes · "
+              f"{d['moyenne_themes_par_verbatim']:.2f} thèmes/verbatim")
+    st = n.get("second_theme", {})
+    if st:
+        print(f"  2e thème     : précision {st['precision_second_theme']} · "
+              f"taux de faux 2e thème {st['taux_faux_second_theme']} · "
+              f"rappel {st['rappel_second_theme']} "
+              f"(n bi-thèmes annotés = {st['verbatims_bi_themes_annotes']})")
     print(f"  Top-1 accuracy : {n['top1_accuracy']:.4f}")
     worst = sorted(n["per_theme_f1"].items(), key=lambda x: x[1])[:5]
     print("  5 thèmes les plus difficiles :")

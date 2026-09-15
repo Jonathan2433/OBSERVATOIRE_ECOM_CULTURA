@@ -8,11 +8,18 @@ const METRIC_LABELS: Record<string, string> = {
   f1_macro_niv1: "F1-macro niv.1",
   f1_macro_niv2: "F1-macro niv.2",
   accuracy_sentiment: "Accuracy sentiment",
+  f1_macro_sentiment: "F1-macro sentiment",
   recall_rupture: "Rappel rupture",
 };
 // Seuils cibles (cahier §6.1). Défaut 0,70 pour les métriques connues.
+//
+// Chaque moteur ne publie que les métriques VALIDEMENT mesurées sur le jeu de
+// test gelé : le moteur V1 n'expose que le sentiment, faute d'évaluation
+// thématique fiable (celle du 18/06 portait sur un découpage fuité à 99,6 %).
+// Une case absente veut donc dire « non mesuré », jamais « zéro ».
 const SEUILS: Record<string, number> = {
-  f1_macro_niv1: 0.70, f1_macro_niv2: 0.55, accuracy_sentiment: 0.70, recall_rupture: 0.60,
+  f1_macro_niv1: 0.70, f1_macro_niv2: 0.55, accuracy_sentiment: 0.70,
+  f1_macro_sentiment: 0.60, recall_rupture: 0.60,
 };
 
 export default function DashboardsPage() {

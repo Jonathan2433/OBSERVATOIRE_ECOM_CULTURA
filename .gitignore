@@ -13,9 +13,24 @@ data/models/
 # --- Données intermédiaires et sorties (peuvent contenir des verbatims) ------
 data/processed/
 data/output/
-# On garde data/raw/ versionné pour le POC (données simulées, aucune PII réelle).
-# En production : décommenter la ligne suivante pour ne JAMAIS versionner de données clients.
+# ⚠️ data/raw/ CONTIENT DÉSORMAIS DES DONNÉES CLIENTS RÉELLES.
+# Le commentaire précédent (« données simulées, aucune PII réelle ») était vrai
+# du POC ; il ne l'est plus depuis la livraison Cultura du 09/09/2026, qui porte
+# des adresses e-mail et des numéros de commande en clair (audit §8).
+#
+# Les livraisons réelles sont protégées par data/raw/cultura_2026/.gitignore.
+# Les fichiers du POC et le jeu factice restent versionnés volontairement.
+# N'ajouter AUCUN nouveau fichier de données clients sous data/raw/ sans y
+# déposer d'abord un .gitignore protecteur. Cf. ENF-5, R-14.
 # data/raw/
+
+# Vérifié le 15/09/2026 : ces fichiers portent de vrais verbatims clients, avec
+# numéros de commande et téléphones en clair. Ils n'étaient protégés par rien.
+data/raw/NEW_FILES/
+
+# Sauvegardes et variantes locales : jamais versionnées.
+*.bak_*
+*.disabled
 
 # --- Environnements virtuels -------------------------------------------------
 .venv/

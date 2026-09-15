@@ -106,11 +106,18 @@ export async function createBatch(opts: {
   refinerLabel?: string | null;   // cascade V5 (LLM local) — optionnel
   mdtc?: File | null;
   mopinion?: File | null;
+  /**
+   * Dépôt multiple : autant d'exports que nécessaire dans un seul lot. Rien à
+   * déclarer sur leur nature — chaque fichier est identifié à la lecture, sur
+   * son jeu de colonnes. `mdtc` / `mopinion` restent acceptés.
+   */
+  fichiers?: File[];
 }): Promise<Batch> {
   const form = new FormData();
   if (opts.label) form.append("label", opts.label);
   form.append("seuil_revue", String(opts.seuilRevue));
   if (opts.refinerLabel) form.append("refiner_label", opts.refinerLabel);
+  for (const f of opts.fichiers ?? []) form.append("fichiers", f);
   if (opts.mdtc) form.append("mdtc", opts.mdtc);
   if (opts.mopinion) form.append("mopinion", opts.mopinion);
   // Pas de Content-Type manuel : le navigateur pose le boundary multipart.
@@ -282,7 +289,17 @@ export const predict = (text: string, satisfaction?: number | null, modelId?: nu
 
 // --- Revue humaine ---
 export interface TaxonomyTheme { niv1: string; niv2: string[] }
-export const getTaxonomy = () => request<{ themes: TaxonomyTheme[] }>("/api/taxonomy");
+/**
+ * Référentiel pour les listes de la revue.
+ *
+ * `batchId` cible le référentiel du moteur qui a produit CE lot — pas celui du
+ * moteur actif. Depuis que plusieurs modèles coexistent, les deux ne partagent
+ * aucun sous-thème : relire un ancien lot avec la liste du modèle courant
+ * proposerait des libellés sans rapport avec ce qui est affiché.
+ */
+export const getTaxonomy = (batchId?: number) =>
+  request<{ themes: TaxonomyTheme[]; model_label?: string | null }>(
+    batchId != null ? `/api/taxonomy?batch_id=${batchId}` : "/api/taxonomy");
 export const getReviewQueue = (batchId: number, offset = 0, limit = 1) =>
   request<ResultsResponse>(`/api/batches/${batchId}/review?limit=${limit}&offset=${offset}`);
 
@@ -361,6 +378,13 @@ export const getOps = () => request<OpsKpi>("/api/admin/ops");
 export interface AppMeta {
   default_seuil_revue: number;
   active_model: { label: string; kind: string } | null;
+  /**
+   * Signaux du contrat de sortie SANS détecteur entraîné (D-41) : noms courts
+   * "rupture" | "churn" | "insatisfaction". Ils sortent toujours à `false` —
+   * l'interface doit les afficher « non mesuré » et non « absent », sans quoi
+   * une absence de modèle se lit comme une absence de signal.
+   */
+  signaux_non_mesures?: string[];
 }
 export const getMeta = () => request<AppMeta>("/api/meta");
 
