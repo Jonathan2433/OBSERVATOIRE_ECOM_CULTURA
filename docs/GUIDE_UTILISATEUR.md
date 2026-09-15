@@ -21,17 +21,20 @@ L'écran d'accueil résume l'activité (derniers lots, KPI modèle).
 ## 2. Lancer un traitement mensuel (le run type)
 
 1. Menu **Lots → Nouveau lot**.
-2. Glisser-déposer les **deux exports** du mois — **`.xlsx` ou `.csv`** :
-   - **MDTC** — retours post-commande ;
-   - **Mopinion** — formulaire du site.
-   > Au moins un des deux est requis. Les colonnes obligatoires sont vérifiées :
-   > un fichier au mauvais format est **refusé avec un message explicite**.
+2. Glisser-déposer **tous les exports du mois d'un coup** — `.xlsx` ou `.csv`,
+   autant de fichiers que nécessaire : post-achat et post-réception, ancien et
+   nouveau format, Mopinion desktop et mobile.
+   > **Vous n'avez rien à déclarer.** L'application reconnaît chaque export à son
+   > jeu de colonnes, pas à son nom ni à son extension : elle distingue seule un
+   > post-achat d'un post-réception, un desktop d'un mobile, l'ancien format du
+   > nouveau. Les CSV sont lus quel que soit leur encodage (UTF-8, Windows-1252…).
    >
-   > **Vous n'avez rien à déclarer sur le format.** L'application reconnaît
-   > l'export à son jeu de colonnes, pas à son nom ni à son extension : elle
-   > distingue seule un post-achat d'un post-réception, un Mopinion desktop d'un
-   > mobile, et l'ancien format du nouveau. Les CSV sont lus quel que soit leur
-   > encodage (UTF-8, Windows-1252…).
+   > La liste des fichiers déposés s'affiche sous la zone ; on peut en retirer un.
+   > Déposer deux fois le même fichier ne le compte qu'une fois.
+   >
+   > **Un fichier non reconnu arrête le lot en le nommant**, plutôt que de le
+   > traiter amputé d'une source : un mois incomplet fausserait les volumes, qui
+   > sont la raison d'être de l'outil.
 3. Régler éventuellement le **seuil de revue** : en dessous de ce score de
    confiance, un verbatim part en file de revue.
    > Le défaut **dépend du moteur**, parce que les modèles ne sont pas également

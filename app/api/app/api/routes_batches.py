@@ -89,9 +89,10 @@ async def create_batch(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if mdtc is None and mopinion is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Fournir au moins un fichier (MDTC ou Mopinion).")
+    if mdtc is None and mopinion is None and not fichiers:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Fournir au moins un fichier (.xlsx ou .csv).")
     if not (0.0 <= seuil_revue <= 1.0):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="seuil_revue doit être entre 0 et 1.")
 

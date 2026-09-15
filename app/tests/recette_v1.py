@@ -231,6 +231,78 @@ def test_results_export(admin, SessionLocal) -> None:
         db.commit()
         bid = b.id
 
+    # ------------------------------------------------------------------ #
+    #  Dépôt de fichiers : formats acceptés et dépôt MULTIPLE
+    # ------------------------------------------------------------------ #
+    # Le parcours réel : un analyste dépose tous les exports du mois d'un coup.
+    # Ces contrôles existent parce qu'une validation d'entrée oubliée a rejeté le
+    # premier dépôt multiple réel avec « Fournir au moins un fichier », alors que
+    # sept fichiers étaient bien présents.
+    import io as _io
+
+    def _classeur(colonnes: dict) -> bytes:
+        import pandas as _pd
+
+        tampon = _io.BytesIO()
+        _pd.DataFrame(colonnes).to_excel(tampon, index=False)
+        return tampon.getvalue()
+
+    xlsx_mdtc = _classeur({"Niveau de satisfaction général": [2],
+                           "Verbatim justification": ["Colis abîmé à la livraison"]})
+    xlsx_mopi = _classeur({"Niveau de satisfaction général": [4],
+                           "Suggestion": ["Site agréable et rapide"]})
+    csv_2026 = ("Date d'achat;Date de réponse;Satisfaction;Recommandation;"
+                "Justification niveau de satisfaction;Produits non trouvés;"
+                "Suggestion d'amélioration;Commande\n"
+                "2026-09-12;2026-09-14;Très satisfait(e);10;"
+                "Livraison rapide et bien emballée;;Rien à redire;P90000001\n"
+                ).encode("utf-8-sig")
+
+    def _dernier_lot():
+        """Dernier lot créé. Le lot est enregistré AVANT la mise en file : sans
+        Redis (cas de cette recette), la route répond 503 mais le dépôt a bien
+        eu lieu. C'est le dépôt qu'on teste ici, pas la file."""
+        with SessionLocal() as db:
+            return db.query(Batch).order_by(Batch.id.desc()).first()
+
+    #: 201 quand Redis répond, 503 sinon — les deux valent acceptation du dépôt.
+    ACCEPTE = (201, 503)
+
+    r = admin.post("/api/batches", data={"label": "multi", "seuil_revue": "0.7"},
+                   files=[("fichiers", ("a.xlsx", xlsx_mdtc)),
+                          ("fichiers", ("b.xlsx", xlsx_mopi)),
+                          ("fichiers", ("c.csv", csv_2026))])
+    check("Dépôt MULTIPLE (3 fichiers) accepté", r.status_code in ACCEPTE,
+          f"HTTP {r.status_code} · {r.text[:120]}")
+    lot = _dernier_lot()
+    deposes = [str(c) for c in ((lot.source_files or {}).get("fichiers") or [])] if lot else []
+    check("Les 3 fichiers sont enregistrés pour le lot", len(deposes) == 3,
+          f"{len(deposes)} chemin(s)")
+    check("L'extension d'origine est conservée",
+          any(c.endswith(".csv") for c in deposes) and any(c.endswith(".xlsx") for c in deposes),
+          str([c.split("/")[-1] for c in deposes]))
+
+    # Un CSV seul doit passer : les exports MDTC arrivent désormais dans ce format.
+    r = admin.post("/api/batches", data={"seuil_revue": "0.7"},
+                   files={"mdtc": ("export.csv", csv_2026)})
+    check("Dépôt d'un CSV seul accepté", r.status_code in ACCEPTE,
+          f"HTTP {r.status_code} · {r.text[:120]}")
+    lot = _dernier_lot()
+    check("Le CSV est enregistré avec son extension",
+          str((lot.source_files or {}).get("mdtc", "")).endswith(".csv") if lot else False,
+          str((lot.source_files or {}) if lot else {}))
+
+    # Une extension non supportée reste refusée, avec un message explicite.
+    r = admin.post("/api/batches", data={"seuil_revue": "0.7"},
+                   files=[("fichiers", ("notes.txt", b"du texte"))])
+    check("Extension non supportée -> 400", r.status_code == 400, r.text[:120])
+    check("Le message nomme les formats acceptés",
+          ".csv" in r.text and ".xlsx" in r.text, r.text[:120])
+
+    # Aucun fichier du tout : refus, sans planter.
+    r = admin.post("/api/batches", data={"seuil_revue": "0.7"})
+    check("Dépôt vide -> 400", r.status_code == 400, r.text[:120])
+
     # Détail / liste : confiance + statut de revue exposés (#6)
     r = admin.get(f"/api/batches/{bid}/results?limit=50&offset=0")
     check("Liste résultats -> 200", r.status_code == 200, r.text[:120])
