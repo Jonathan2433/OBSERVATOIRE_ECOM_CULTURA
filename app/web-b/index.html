@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Observatoire Ecom Studio — Classification des verbatims</title>
+  <link rel="stylesheet" href="assets/colors_and_type.css">
+  <style>
+    :root { --mono:'JetBrains Mono','SF Mono',ui-monospace,Menlo,Consolas,monospace; }
+    html, body { height:100%; margin:0; }
+    #approot { height:100vh; overflow:hidden; font-family:var(--font-body); background:var(--gray-50); color:var(--text-primary); }
+    .scrl { scrollbar-width:thin; scrollbar-color:#d0d5dd transparent; }
+    .scrl::-webkit-scrollbar { width:10px; height:10px; }
+    .scrl::-webkit-scrollbar-thumb { background:#d0d5dd; border-radius:9999px; border:2px solid #fff; }
+    input:focus, select:focus, textarea:focus, button:focus-visible { outline:none; box-shadow:0 0 0 4px rgba(158,119,237,.24); }
+    input, select, textarea, button { font-family:var(--font-body); }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.35;} }
+    .h-brand:hover  { background:#6941c6 !important; }
+    .h-soft:hover   { background:#f9fafb !important; }
+    .h-row:hover    { background:#fcfcfd !important; }
+    .h-back:hover   { color:#344054 !important; }
+    .h-danger:hover { background:#fef3f2 !important; }
+    .h-purge:hover  { background:#b42318 !important; }
+    .h-acct:hover   { background:#1f242f !important; }
+    .h-logout:hover { color:#fff !important; }
+  </style>
+</head>
+<body>
+  <div id="approot"></div>
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

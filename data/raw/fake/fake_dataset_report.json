@@ -1,0 +1,116 @@
+{
+ "genere_le": "2026-08-12T12:01:51",
+ "referentiel": "data/raw/taxonomy_cultura_poc.json",
+ "seed": 42,
+ "invariants": {
+  "I-1_zero_doublon": {
+   "valeur": 0,
+   "conforme": true,
+   "detail": "textes non vides strictement uniques"
+  },
+  "I-2_zero_fuite": {
+   "valeur": 0,
+   "conforme": true,
+   "detail": "intersection des textes entre splits"
+  },
+  "I-3_sentiment_non_deductible": {
+   "valeur": 0.3626,
+   "conforme": true,
+   "detail": "part de verbatims dont la note ne predit pas le sentiment (cible >= 0,25)"
+  },
+  "I-4_couples_valides": {
+   "valeur": 0,
+   "conforme": true,
+   "detail": "couples hors referentiel"
+  },
+  "I-5_desequilibre": {
+   "valeur": 5.8,
+   "conforme": true,
+   "detail": "rapport entre le theme le plus et le moins frequent (cible >= 4)"
+  },
+  "I-6_bitheme_divergent": {
+   "valeur": "157/289 = 0.5433",
+   "conforme": true,
+   "detail": "part des bi-themes a sentiments opposes (cible >= 0,30)"
+  },
+  "I-7_couverture_train": {
+   "valeur": 0,
+   "conforme": true,
+   "detail": "sous-themes absents du train : []"
+  },
+  "I-7_couverture_test": {
+   "valeur": 0,
+   "conforme": true,
+   "detail": "sous-themes absents du test : []"
+  },
+  "I-8_pieges_references": {
+   "valeur": "55/55",
+   "conforme": true,
+   "detail": "chaque cas piege est present et reference au manifeste"
+  },
+  "_conforme_global": true
+ },
+ "statistiques": {
+  "n_verbatims": 1445,
+  "n_textes_uniques": 1445,
+  "split": {
+   "train": 1019,
+   "val": 214,
+   "test": 212
+  },
+  "source": {
+   "MDTC-postachat": 436,
+   "Mopinion-desktop": 389,
+   "MDTC-postrecep": 315,
+   "Mopinion-mobile": 305
+  },
+  "nb_themes": {
+   "1": 1156,
+   "2": 289
+  },
+  "sentiment_theme1": {
+   "Négatif": 773,
+   "Positif": 341,
+   "Neutre": 331
+  },
+  "longueur_caracteres": {
+   "count": 1445.0,
+   "mean": 87.7,
+   "std": 54.3,
+   "min": 0.0,
+   "25%": 62.0,
+   "50%": 75.0,
+   "75%": 96.0,
+   "95%": 147.8,
+   "max": 502.0
+  },
+  "distribution_niv1": {
+   "Trouver son produit": 232,
+   "Fiche produit & Contenu": 118,
+   "Programme de fidélité": 98,
+   "Tunnel de vente - Paiement": 91,
+   "Produit": 80,
+   "Site / Application": 70,
+   "Click & Collect": 69,
+   "Suivi de commande et livraison": 68,
+   "Prix produit": 60,
+   "Carte cadeau physique": 58,
+   "Expérience omnicanale": 57,
+   "Compte client & Connexion": 56,
+   "Retour / Remboursement": 55,
+   "Prix de la livraison": 54,
+   "Communication & Emails Cultura": 50,
+   "Disponibilité & Stock": 50,
+   "Annulation commande": 49,
+   "Personnalisation & Recommandations": 46,
+   "Catalogue & Offre produit": 44,
+   "Service client": 40
+  },
+  "taux_signaux": {
+   "signal_rupture_client": 0.0104,
+   "signal_churn": 0.1516,
+   "signal_insatisfaction_forte": 0.3723
+  },
+  "n_cas_pieges": 55
+ }
+}

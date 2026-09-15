@@ -1,0 +1,607 @@
+[
+ {
+  "categorie": "texte_vide",
+  "texte": "",
+  "comportement_attendu": "nb_themes = 0, revue_humaine_requise = true, aucune exception",
+  "sentiment": "Négatif",
+  "trap_id": "T-001",
+  "couple": [
+   "Trouver son produit",
+   "Facile"
+  ]
+ },
+ {
+  "categorie": "texte_vide",
+  "texte": "   ",
+  "comportement_attendu": "nb_themes = 0, revue_humaine_requise = true, aucune exception",
+  "sentiment": "Négatif",
+  "trap_id": "T-002",
+  "couple": [
+   "Communication & Emails Cultura",
+   "Trop d'emails promotionnels"
+  ]
+ },
+ {
+  "categorie": "texte_vide",
+  "texte": "...",
+  "comportement_attendu": "nb_themes = 0, revue_humaine_requise = true, aucune exception",
+  "sentiment": "Négatif",
+  "trap_id": "T-003",
+  "couple": [
+   "Disponibilité & Stock",
+   "Délai de réapprovisionnement inconnu"
+  ]
+ },
+ {
+  "categorie": "texte_vide",
+  "texte": "a",
+  "comportement_attendu": "nb_themes = 0, revue_humaine_requise = true, aucune exception",
+  "sentiment": "Négatif",
+  "trap_id": "T-004",
+  "couple": [
+   "Carte cadeau physique",
+   "Carte cadeau non acceptée en ligne"
+  ]
+ },
+ {
+  "categorie": "texte_vide",
+  "texte": "???",
+  "comportement_attendu": "nb_themes = 0, revue_humaine_requise = true, aucune exception",
+  "sentiment": "Négatif",
+  "trap_id": "T-005",
+  "couple": [
+   "Communication & Emails Cultura",
+   "Contenu email non pertinent"
+  ]
+ },
+ {
+  "categorie": "texte_vide",
+  "texte": "  ",
+  "comportement_attendu": "nb_themes = 0, revue_humaine_requise = true, aucune exception",
+  "sentiment": "Négatif",
+  "trap_id": "T-006",
+  "couple": [
+   "Site / Application",
+   "Ergonomie mobile"
+  ]
+ },
+ {
+  "categorie": "tres_long",
+  "texte": "Côté communication, ça ne suit pas pour email en magasin j'attends toujours. j'ai refait la manipulation trois fois j'ai essayé sur deux navigateurs différents et c'est pareil j'espère une réponse rapide de votre part ce n'est pas la première fois que cela arrive je joins une capture si besoin",
+  "comportement_attendu": "traite sans erreur, troncature a 512 tokens sans casse de la sortie",
+  "sentiment": "Négatif",
+  "trap_id": "T-007",
+  "couple": [
+   "Communication & Emails Cultura",
+   "Email important non reçu"
+  ]
+ },
+ {
+  "categorie": "tres_long",
+  "texte": "Je ne comprends pas, aucune information sur réponse depuis 3 jours je ne recommande pas. je précise que je suis client depuis plusieurs années j'ai refait la manipulation trois fois merci de me tenir informé par retour j'ai refait la manipulation trois fois j'espère une réponse rapide de votre part ce n'est pas la première fois que cela arrive",
+  "comportement_attendu": "traite sans erreur, troncature a 512 tokens sans casse de la sortie",
+  "sentiment": "Négatif",
+  "trap_id": "T-008",
+  "couple": [
+   "Service client",
+   "Réponse insatisfaisante"
+  ]
+ },
+ {
+  "categorie": "tres_long",
+  "texte": "Cest pénible, j'ai un souci avec la carte ce matin ca gâche tout. ce n'est pas la première fois que cela arrive ce n'est pas la première fois que cela arrive merci de me tenir informé par retour j'ai refait la manipulation trois fois j'ai essayé sur deux navigateurs différents et c'est pareil j'espère une réponse rapide de votre part",
+  "comportement_attendu": "traite sans erreur, troncature a 512 tokens sans casse de la sortie",
+  "sentiment": "Négatif",
+  "trap_id": "T-009",
+  "couple": [
+   "Carte cadeau physique",
+   "Carte cadeau non acceptée en ligne"
+  ]
+ },
+ {
+  "categorie": "tres_long",
+  "texte": "Gros problème : l'ergonomie me fait perdre du temps depuis la refonte je ne recommande pas. j'espère une réponse rapide de votre part je joins une capture si besoin j'ai déjà contacté le service client sans succès je précise que je suis client depuis plusieurs années je joins une capture si besoin merci de me tenir informé par retour je précise que je suis client depuis plusieurs années je joins une capture si besoin",
+  "comportement_attendu": "traite sans erreur, troncature a 512 tokens sans casse de la sortie",
+  "sentiment": "Négatif",
+  "trap_id": "T-010",
+  "couple": [
+   "Site / Application",
+   "Ergonomie mobile"
+  ]
+ },
+ {
+  "categorie": "tres_long",
+  "texte": "Franchement la carte n'est pas au niveau ce matin a revoir complètement. j'ai refait la manipulation trois fois j'ai essayé sur deux navigateurs différents et c'est pareil merci de me tenir informé par retour j'ai essayé sur deux navigateurs différents et c'est pareil j'ai déjà contacté le service client sans succès merci de me tenir informé par retour",
+  "comportement_attendu": "traite sans erreur, troncature a 512 tokens sans casse de la sortie",
+  "sentiment": "Négatif",
+  "trap_id": "T-011",
+  "couple": [
+   "Carte cadeau physique",
+   "Carte cadeau non acceptée en ligne"
+  ]
+ },
+ {
+  "categorie": "tres_long",
+  "texte": "C'est la 2e fois, manque : plutôt compliqué après la mise a jour lamentable. je précise que je suis client depuis plusieurs années je précise que je suis client depuis plusieurs années j'espère une réponse rapide de votre part je précise que je suis client depuis plusieurs années j'ai essayé sur deux navigateurs différents et c'est pareil j'ai essayé sur deux navigateurs différents et c'est pareil j'espère une réponse rapide de votre part j'ai essayé sur deux navigateurs différents et c'est pareil",
+  "comportement_attendu": "traite sans erreur, troncature a 512 tokens sans casse de la sortie",
+  "sentiment": "Négatif",
+  "trap_id": "T-012",
+  "couple": [
+   "Trouver son produit",
+   "Manque de visibilité des promotions"
+  ]
+ },
+ {
+  "categorie": "tres_court",
+  "texte": "rien",
+  "comportement_attendu": "traite ; verbatim sous le seuil min_tokens = 5, doit etre signale",
+  "sentiment": "Négatif",
+  "trap_id": "T-013",
+  "couple": [
+   "Catalogue & Offre produit",
+   "Référence manquante au catalogue"
+  ]
+ },
+ {
+  "categorie": "tres_court",
+  "texte": "ok",
+  "comportement_attendu": "traite ; verbatim sous le seuil min_tokens = 5, doit etre signale",
+  "sentiment": "Négatif",
+  "trap_id": "T-014",
+  "couple": [
+   "Produit",
+   "Qualité décevante"
+  ]
+ },
+ {
+  "categorie": "tres_court",
+  "texte": "??",
+  "comportement_attendu": "traite ; verbatim sous le seuil min_tokens = 5, doit etre signale",
+  "sentiment": "Négatif",
+  "trap_id": "T-015",
+  "couple": [
+   "Fiche produit & Contenu",
+   "Photos insuffisantes ou trompeuses"
+  ]
+ },
+ {
+  "categorie": "tres_court",
+  "texte": "mouais",
+  "comportement_attendu": "traite ; verbatim sous le seuil min_tokens = 5, doit etre signale",
+  "sentiment": "Négatif",
+  "trap_id": "T-016",
+  "couple": [
+   "Prix produit",
+   "Prix différent entre site et magasin"
+  ]
+ },
+ {
+  "categorie": "tres_court",
+  "texte": "bof",
+  "comportement_attendu": "traite ; verbatim sous le seuil min_tokens = 5, doit etre signale",
+  "sentiment": "Négatif",
+  "trap_id": "T-017",
+  "couple": [
+   "Prix produit",
+   "Prix trop élevé vs concurrence"
+  ]
+ },
+ {
+  "categorie": "majuscules",
+  "texte": "CÔTÉ TUNNEL, ÇA NE SUIT PAS POUR PROBLÈME.",
+  "comportement_attendu": "classe normalement ; permet de mesurer l'effet de cleaning.lowercase",
+  "sentiment": "Négatif",
+  "trap_id": "T-018",
+  "couple": [
+   "Tunnel de vente - Paiement",
+   "Problème e-carte cadeau"
+  ]
+ },
+ {
+  "categorie": "majuscules",
+  "texte": "J'HALLUCINE, LE PROBLÈME POSE PROBLÈME C'EST INADMISSIBLE.",
+  "comportement_attendu": "classe normalement ; permet de mesurer l'effet de cleaning.lowercase",
+  "sentiment": "Négatif",
+  "trap_id": "T-019",
+  "couple": [
+   "Tunnel de vente - Paiement",
+   "Problème de remboursement"
+  ]
+ },
+ {
+  "categorie": "majuscules",
+  "texte": "AUCUNE EXCUSE : AUCUNE INFORMATION SUR DÉLAI SUR LA PAGE PRODUIT J'ATTENDS TOUJOURS.",
+  "comportement_attendu": "classe normalement ; permet de mesurer l'effet de cleaning.lowercase",
+  "sentiment": "Négatif",
+  "trap_id": "T-020",
+  "couple": [
+   "Disponibilité & Stock",
+   "Délai de réapprovisionnement inconnu"
+  ]
+ },
+ {
+  "categorie": "majuscules",
+  "texte": "FRANCHEMENT LE SOLDE POSE PROBLÈME SUR LA PAGE PRODUIT PERSONNE NE RÉPOND.",
+  "comportement_attendu": "classe normalement ; permet de mesurer l'effet de cleaning.lowercase",
+  "sentiment": "Négatif",
+  "trap_id": "T-021",
+  "couple": [
+   "Carte cadeau physique",
+   "Solde incorrect ou inconnu"
+  ]
+ },
+ {
+  "categorie": "majuscules",
+  "texte": "CÔTÉ PRIX, ÇA NE SUIT PAS POUR ERREUR AU MOMENT DE VALIDER PERSONNE NE RÉPOND.",
+  "comportement_attendu": "classe normalement ; permet de mesurer l'effet de cleaning.lowercase",
+  "sentiment": "Négatif",
+  "trap_id": "T-022",
+  "couple": [
+   "Prix produit",
+   "Erreur de prix affiché"
+  ]
+ },
+ {
+  "categorie": "ponctuation",
+  "texte": "Je suis déçu, le trouver n'est pas au niveau avec mon compte c'est inadmissible!!!!! ?????",
+  "comportement_attendu": "nettoyage effectif, pas d'exception",
+  "sentiment": "Négatif",
+  "trap_id": "T-023",
+  "couple": [
+   "Trouver son produit",
+   "Facile"
+  ]
+ },
+ {
+  "categorie": "ponctuation",
+  "texte": "C'est la 2e fois, j'ai un souci avec le prix au moment de valider a revoir complètement!!!!! ?????",
+  "comportement_attendu": "nettoyage effectif, pas d'exception",
+  "sentiment": "Négatif",
+  "trap_id": "T-024",
+  "couple": [
+   "Prix produit",
+   "Prix trop élevé vs concurrence"
+  ]
+ },
+ {
+  "categorie": "ponctuation",
+  "texte": "C'est pénible, l'annulation est carrément pénible en click and collect a revoir complètement!!!!! ?????",
+  "comportement_attendu": "nettoyage effectif, pas d'exception",
+  "sentiment": "Négatif",
+  "trap_id": "T-025",
+  "couple": [
+   "Annulation commande",
+   "Annulation sans explication"
+  ]
+ },
+ {
+  "categorie": "ponctuation",
+  "texte": "Alors là problème de colis lors de ma dernière commande c'est inadmissible!!!!! ?????",
+  "comportement_attendu": "nettoyage effectif, pas d'exception",
+  "sentiment": "Négatif",
+  "trap_id": "T-026",
+  "couple": [
+   "Suivi de commande et livraison",
+   "Colis endommagé"
+  ]
+ },
+ {
+  "categorie": "emoji",
+  "texte": "😡😡😡 Gros problème : photos : hyper opaque très décevant. 😡😡😡",
+  "comportement_attendu": "emojis supprimes par le cleaner, texte conserve",
+  "sentiment": "Négatif",
+  "trap_id": "T-027",
+  "couple": [
+   "Fiche produit & Contenu",
+   "Photos insuffisantes ou trompeuses"
+  ]
+ },
+ {
+  "categorie": "emoji",
+  "texte": "👍 Encore une fois impossible de gérer la carte au moment de valider c'est inadmissible. 👍",
+  "comportement_attendu": "emojis supprimes par le cleaner, texte conserve",
+  "sentiment": "Négatif",
+  "trap_id": "T-028",
+  "couple": [
+   "Carte cadeau physique",
+   "Carte cadeau non acceptée en ligne"
+  ]
+ },
+ {
+  "categorie": "emoji",
+  "texte": "🤬  Le problème devrait être revu en click and collect. 🤬 ",
+  "comportement_attendu": "emojis supprimes par le cleaner, texte conserve",
+  "sentiment": "Négatif",
+  "trap_id": "T-029",
+  "couple": [
+   "Tunnel de vente - Paiement",
+   "Problème de remboursement"
+  ]
+ },
+ {
+  "categorie": "emoji",
+  "texte": "😐 J'ai attendu pour commande a la caisse et personne ne répond a revoir complètement. 😐",
+  "comportement_attendu": "emojis supprimes par le cleaner, texte conserve",
+  "sentiment": "Négatif",
+  "trap_id": "T-030",
+  "couple": [
+   "Expérience omnicanale",
+   "Commande web non gérable en magasin"
+  ]
+ },
+ {
+  "categorie": "emoji_seul",
+  "texte": "😡😡😡",
+  "comportement_attendu": "aucun texte apres nettoyage -> nb_themes = 0 + revue",
+  "sentiment": "Négatif",
+  "trap_id": "T-031",
+  "couple": [
+   "Produit",
+   "Contenu manquant ou incomplet"
+  ]
+ },
+ {
+  "categorie": "unicode",
+  "texte": "l é c h e c   d u   p a i e m e n t !",
+  "comportement_attendu": "normalisation NFKC effective, pas d'exception",
+  "sentiment": "Négatif",
+  "trap_id": "T-032",
+  "couple": [
+   "Tunnel de vente - Paiement",
+   "Problème e-carte cadeau"
+  ]
+ },
+ {
+  "categorie": "email",
+  "texte": "contactez moi sur jean.dupont@example.com le paiement a echoue",
+  "comportement_attendu": "[EMAIL] masque avant tout stockage",
+  "sentiment": "Négatif",
+  "trap_id": "T-033",
+  "couple": [
+   "Tunnel de vente - Paiement",
+   "Problème e-carte cadeau"
+  ]
+ },
+ {
+  "categorie": "email",
+  "texte": "mon adresse est m.durand93@orange.fr, aucune reponse recue",
+  "comportement_attendu": "[EMAIL] masque avant tout stockage",
+  "sentiment": "Négatif",
+  "trap_id": "T-034",
+  "couple": [
+   "Programme de fidélité",
+   "Points non crédités"
+  ]
+ },
+ {
+  "categorie": "telephone",
+  "texte": "rappelez moi au 06 12 34 56 78, la commande n'arrive pas",
+  "comportement_attendu": "[TEL] masque avant tout stockage",
+  "sentiment": "Négatif",
+  "trap_id": "T-035",
+  "couple": [
+   "Fiche produit & Contenu",
+   "Photos insuffisantes ou trompeuses"
+  ]
+ },
+ {
+  "categorie": "telephone",
+  "texte": "mon numero 01.42.85.96.31 ne recoit rien du tout",
+  "comportement_attendu": "[TEL] masque avant tout stockage",
+  "sentiment": "Négatif",
+  "trap_id": "T-036",
+  "couple": [
+   "Trouver son produit",
+   "Recherche peu efficace"
+  ]
+ },
+ {
+  "categorie": "commande_P",
+  "texte": "ma commande P12345678 est bloquee depuis 10 jours",
+  "comportement_attendu": "REGRESSION A VERIFIER : le format P######## n'a jamais ete rencontre par le regex ORDER_ID (0 masquage sur les 7 000 du prototype)",
+  "sentiment": "Négatif",
+  "trap_id": "T-037",
+  "couple": [
+   "Programme de fidélité",
+   "Règles peu claires"
+  ]
+ },
+ {
+  "categorie": "commande_P",
+  "texte": "aucune nouvelle de P87654321 ni de P11223344",
+  "comportement_attendu": "les deux numeros au format P######## doivent etre masques",
+  "sentiment": "Négatif",
+  "trap_id": "T-038",
+  "couple": [
+   "Tunnel de vente - Paiement",
+   "Bug paiement"
+  ]
+ },
+ {
+  "categorie": "nom_propre",
+  "texte": "monsieur Lefebvre en magasin a ete tres desagreable",
+  "comportement_attendu": "[NOM] masque par spaCy ; echec silencieux si spaCy absent",
+  "sentiment": "Négatif",
+  "trap_id": "T-039",
+  "couple": [
+   "Annulation commande",
+   "Erreur de prix"
+  ]
+ },
+ {
+  "categorie": "marque_a_ne_pas_masquer",
+  "texte": "j'ai commande un Ravensburger chez Cultura, colis perdu",
+  "comportement_attendu": "les noms de marque ne doivent PAS etre masques (stoplist)",
+  "sentiment": "Négatif",
+  "trap_id": "T-040",
+  "couple": [
+   "Catalogue & Offre produit",
+   "Nouveautés difficiles à trouver"
+  ]
+ },
+ {
+  "categorie": "hors_sujet",
+  "texte": "il fait beau aujourd'hui et mon chat va bien",
+  "comportement_attendu": "confiance basse + revue ; le repli argmax retourne malgre tout un theme, comportement a documenter (pas de sortie 'non classable' cote CamemBERT)",
+  "sentiment": "Négatif",
+  "trap_id": "T-041",
+  "couple": [
+   "Personnalisation & Recommandations",
+   "Recommandations non pertinentes"
+  ]
+ },
+ {
+  "categorie": "hors_sujet",
+  "texte": "1234567890 0987654321 1111",
+  "comportement_attendu": "idem",
+  "sentiment": "Négatif",
+  "trap_id": "T-042",
+  "couple": [
+   "Click & Collect",
+   "Délai de préparation trop long"
+  ]
+ },
+ {
+  "categorie": "hors_sujet",
+  "texte": "https://www.cultura.com/livre/livres-scolaires.html",
+  "comportement_attendu": "idem",
+  "sentiment": "Négatif",
+  "trap_id": "T-043",
+  "couple": [
+   "Retour / Remboursement",
+   "Procédure complexe"
+  ]
+ },
+ {
+  "categorie": "hors_sujet",
+  "texte": "azerty qsdfgh wxcvbn",
+  "comportement_attendu": "idem",
+  "sentiment": "Négatif",
+  "trap_id": "T-044",
+  "couple": [
+   "Service client",
+   "Difficile à joindre"
+  ]
+ },
+ {
+  "categorie": "spam",
+  "texte": "GAGNEZ 1000 EUROS CLIQUEZ ICI www.spam-exemple.tld",
+  "comportement_attendu": "idem",
+  "sentiment": "Négatif",
+  "trap_id": "T-045",
+  "couple": [
+   "Click & Collect",
+   "Délai de préparation trop long"
+  ]
+ },
+ {
+  "categorie": "homonymie_niv2_absente",
+  "texte": "referentiel sans libelle niv.2 partage",
+  "comportement_attendu": "AUCUN homonyme dans ce referentiel : le cas critique B2 n'est pas couvert. A regenerer des reception du referentiel Cultura definitif.",
+  "sentiment": "Négatif",
+  "trap_id": "T-046",
+  "couple": [
+   "Programme de fidélité",
+   "Points non crédités"
+  ]
+ },
+ {
+  "categorie": "frontiere_poreuse",
+  "texte": "ma commande retiree en magasin avait 4 jours de retard, personne ne previent",
+  "comportement_attendu": "cas ambigu entre themes voisins ; documente le comportement et alimente l'atelier de regles d'arbitrage (sollicitation B4)",
+  "sentiment": "Négatif",
+  "trap_id": "T-047",
+  "couple": [
+   "Retour / Remboursement",
+   "Procédure complexe"
+  ]
+ },
+ {
+  "categorie": "frontiere_poreuse",
+  "texte": "le produit etait en rupture au moment du retrait alors qu'il etait annonce dispo",
+  "comportement_attendu": "cas ambigu entre themes voisins ; documente le comportement et alimente l'atelier de regles d'arbitrage (sollicitation B4)",
+  "sentiment": "Négatif",
+  "trap_id": "T-048",
+  "couple": [
+   "Fiche produit & Contenu",
+   "Informations produit insuffisantes"
+  ]
+ },
+ {
+  "categorie": "frontiere_poreuse",
+  "texte": "commande annulee par vos soins pour rupture, sans aucune explication",
+  "comportement_attendu": "cas ambigu entre themes voisins ; documente le comportement et alimente l'atelier de regles d'arbitrage (sollicitation B4)",
+  "sentiment": "Négatif",
+  "trap_id": "T-049",
+  "couple": [
+   "Prix de la livraison",
+   "Clarifier l'information sur les livraisons"
+  ]
+ },
+ {
+  "categorie": "frontiere_poreuse",
+  "texte": "le colis devait arriver en magasin, il est parti a mon domicile",
+  "comportement_attendu": "cas ambigu entre themes voisins ; documente le comportement et alimente l'atelier de regles d'arbitrage (sollicitation B4)",
+  "sentiment": "Négatif",
+  "trap_id": "T-050",
+  "couple": [
+   "Disponibilité & Stock",
+   "Stock en ligne différent du magasin"
+  ]
+ },
+ {
+  "categorie": "frontiere_poreuse",
+  "texte": "j'ai voulu retirer en magasin mais le stock affiche en ligne etait faux",
+  "comportement_attendu": "cas ambigu entre themes voisins ; documente le comportement et alimente l'atelier de regles d'arbitrage (sollicitation B4)",
+  "sentiment": "Négatif",
+  "trap_id": "T-051",
+  "couple": [
+   "Carte cadeau physique",
+   "Carte cadeau non acceptée en ligne"
+  ]
+ },
+ {
+  "categorie": "trois_sujets",
+  "texte": "Le click est carrement inacceptable ce week-end et l'annulation pose probleme a la caisse et colis : particulierement confus.",
+  "comportement_attendu": "le plafond max_themes = 2 s'applique ; verifie qu'aucune information ne casse la sortie",
+  "sentiment": "Négatif",
+  "trap_id": "T-052",
+  "couple": [
+   "Site / Application",
+   "Ergonomie mobile"
+  ]
+ },
+ {
+  "categorie": "trois_sujets",
+  "texte": "Aucune information sur prix en click and collect et stock : un peu inacceptable sur l'appli et concernant colis, ce n'est pas ce qui etait annonce en click and collect.",
+  "comportement_attendu": "le plafond max_themes = 2 s'applique ; verifie qu'aucune information ne casse la sortie",
+  "sentiment": "Négatif",
+  "trap_id": "T-053",
+  "couple": [
+   "Service client",
+   "Difficile à joindre"
+  ]
+ },
+ {
+  "categorie": "trois_sujets",
+  "texte": "J'ai attendu pour donnees sur la page produit et personne ne repond et aucune information sur joindre au moment de valider et cote retour, ca ne suit pas pour procedure sur l'appli.",
+  "comportement_attendu": "le plafond max_themes = 2 s'applique ; verifie qu'aucune information ne casse la sortie",
+  "sentiment": "Négatif",
+  "trap_id": "T-054",
+  "couple": [
+   "Prix produit",
+   "Prix différent entre site et magasin"
+  ]
+ },
+ {
+  "categorie": "trois_sujets",
+  "texte": "Probleme de reference sur l'appli et j'ai attendu pour colis sur l'appli et personne ne repond et impossible de gerer le manque apres la mise a jour.",
+  "comportement_attendu": "le plafond max_themes = 2 s'applique ; verifie qu'aucune information ne casse la sortie",
+  "sentiment": "Négatif",
+  "trap_id": "T-055",
+  "couple": [
+   "Programme de fidélité",
+   "Règles peu claires"
+  ]
+ }
+]

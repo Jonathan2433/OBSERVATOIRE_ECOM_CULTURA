@@ -1,0 +1,17 @@
+# =============================================================================
+#  PROTECTION RGPD — NE PAS SUPPRIMER
+# -----------------------------------------------------------------------------
+#  Ce dossier contient des VERBATIMS CLIENTS RÉELS Cultura, non anonymisés,
+#  déposés le 09/09/2026. Des adresses e-mail et des numéros de commande y
+#  figurent en clair (vérifié : colonne « Dites-nous en plus sur votre
+#  problème » du fichier mopinion-mobile-0101au13052026.csv, entre autres).
+#
+#  Le .gitignore racine du projet NE COUVRE PAS data/raw/ — il porte le
+#  commentaire « données simulées, aucune PII réelle », qui n'est plus vrai.
+#  Ce fichier empêche que ces données partent dans Git.
+#
+#  Ne versionner ces fichiers qu'après anonymisation, et jamais dans un dépôt
+#  distant. Cf. docs/CADRAGE_NOUVEAU_MODELE.md — ENF-5, R-14.
+# =============================================================================
+*
+!.gitignore
