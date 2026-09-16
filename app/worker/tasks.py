@@ -127,7 +127,64 @@ def _jsonable(value):
     return str(value)
 
 
-def _to_result(batch_id: int, gidx: int, source, pred: dict, original: dict) -> Result:
+def _colonnes_origine(colonnes, cfg) -> list:
+    """Colonnes du fichier source à recopier dans ``original_columns``.
+
+    Deux exclusions, et elles n'ont pas le même statut.
+
+    * Les colonnes techniques ``__*__`` sont internes au pipeline.
+    * Les colonnes de **texte libre** sont exclues parce qu'elles portent le
+      verbatim BRUT, c'est-à-dire non anonymisé. Les recopier telles quelles
+      remettait en base les adresses, téléphones et numéros de commande que
+      l'anonymiseur venait de masquer, et les renvoyait dans l'export enrichi à
+      côté de leur version masquée — le masquage n'y survivait pas. Le contrat
+      du modèle est explicite : seul le texte anonymisé est persisté.
+
+    Les colonnes de texte sont lues dans la configuration, jamais écrites ici :
+    si Cultura renomme « Verbatim justification », c'est `config.yaml` qui
+    change, pas ce fichier.
+
+    ⚠️ Cette exclusion est une LISTE NOIRE, et ne vaut donc que pour les colonnes
+    déclarées. Le chemin Cultura 2026 est, lui, protégé par une liste blanche
+    (D-18) : c'est la forme robuste, et la cible pour ce chemin historique.
+    """
+    exclues = set()
+    for conf in (cfg.get("sources") or {}).values():
+        if not isinstance(conf, dict):
+            continue
+        for cle in ("text_col_primary", "text_col_secondary"):
+            if conf.get(cle):
+                exclues.add(str(conf[cle]))
+        for nom in conf.get("text_cols_primary") or []:
+            exclues.add(str(nom))
+    exclues.add("verbatim_original")   # chargeur historique (jeu d'entraînement)
+    return [c for c in colonnes
+            if not str(c).startswith("__") and str(c) not in exclues]
+
+
+def _note_satisfaction(valeur) -> "int | None":
+    """Note normalisée 1-4 prête à persister, ou ``None`` si le client n'a pas noté.
+
+    Le chargeur produit déjà la note sur l'échelle commune (D-20) ; il reste à
+    absorber les formes que pandas fait circuler pour une case vide (``NaN``,
+    ``NA``, chaîne vide). Une note absente doit rester ``None`` : la compter 0
+    ferait plonger toute moyenne de satisfaction.
+    """
+    if valeur is None:
+        return None
+    try:
+        if isinstance(valeur, float) and math.isnan(valeur):
+            return None
+    except (TypeError, ValueError):
+        pass
+    try:
+        return int(round(float(valeur)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_result(batch_id: int, gidx: int, source, pred: dict, original: dict,
+               satisfaction=None) -> Result:
     def _s(key):
         v = pred.get(key)
         return v if v not in ("", None) else None
@@ -136,6 +193,7 @@ def _to_result(batch_id: int, gidx: int, source, pred: dict, original: dict) -> 
         batch_id=batch_id, row_index=int(gidx), source=source,
         verbatim_analyse=pred.get("verbatim_analysé", ""),
         nb_themes=int(pred.get("nb_themes", 0)),
+        satisfaction=_note_satisfaction(satisfaction),
         theme1_niv1=_s("theme1_niv1"), theme1_niv2=_s("theme1_niv2"),
         theme1_sentiment=_s("theme1_sentiment"),
         theme1_score=pred.get("theme1_score_confiance") or None,
@@ -243,7 +301,7 @@ def process_batch_job(batch_id: int) -> dict:
 
             texts = df[COL_TEXT].tolist() if COL_TEXT in df.columns else [""] * total
             sats = df[COL_SATISFACTION].tolist() if COL_SATISFACTION in df.columns else [None] * total
-            orig_cols = [c for c in df.columns if not str(c).startswith("__")]
+            orig_cols = _colonnes_origine(df.columns, cfg)
 
             pii = Counter()
             n_review = 0
@@ -284,7 +342,8 @@ def process_batch_job(batch_id: int) -> dict:
                         gidx = start + i
                         row = rows.iloc[i]
                         original = {c: _jsonable(row[c]) for c in orig_cols}
-                        db.add(_to_result(batch_id, gidx, _jsonable(row.get(COL_SOURCE)), pred, original))
+                        db.add(_to_result(batch_id, gidx, _jsonable(row.get(COL_SOURCE)),
+                                          pred, original, sat_chunk[i]))
                         if pred.get("revue_humaine_requise"):
                             n_review += 1
                 else:
@@ -305,7 +364,8 @@ def process_batch_job(batch_id: int) -> dict:
                         final, disagree = merge_cascade(prop, refined[i])
                         if disagree:
                             batch.chain_disagreements = (batch.chain_disagreements or 0) + 1
-                        result = _to_result(batch_id, gidx, _jsonable(row.get(COL_SOURCE)), final, original)
+                        result = _to_result(batch_id, gidx, _jsonable(row.get(COL_SOURCE)),
+                                            final, original, sat_chunk[i])
                         db.add(result)
                         if final.get("revue_humaine_requise"):
                             n_review += 1
@@ -346,12 +406,22 @@ def process_batch_job(batch_id: int) -> dict:
 # --------------------------------------------------------------------------- #
 #  Comparaison de moteurs (V5, lot C4) — replay objectif d'un échantillon
 # --------------------------------------------------------------------------- #
-def _satisfaction_from_original(original) -> "float | None":
-    """Best-effort : récupère la satisfaction depuis original_columns (clé ~ 'satisf').
+def _satisfaction_du_resultat(result) -> "float | None":
+    """Note de satisfaction d'un résultat déjà en base, pour un replay de comparaison.
 
-    La satisfaction n'est pas stockée en colonne dédiée (SPEC_V5 §14) : on tente une
-    clé d'origine contenant « satisf », sinon None (n'affecte pas la prod).
+    Depuis la migration 0010 la note est persistée en colonne dédiée : c'est la
+    source de vérité, et la seule disponible pour les lots au format Cultura
+    2026 (leur liste blanche ne laisse passer aucune colonne d'origine).
+
+    Repli best-effort sur ``original_columns`` pour les lots ANTÉRIEURS à la
+    migration, dont la colonne est restée NULL : on y cherche une clé contenant
+    « satisf ». Sans repli, comparer deux moteurs sur un ancien lot priverait
+    le modèle de sentiment de son préfixe et fausserait la comparaison.
     """
+    note = getattr(result, "satisfaction", None)
+    if note is not None:
+        return note
+    original = getattr(result, "original_columns", None)
     if not isinstance(original, dict):
         return None
     for k, v in original.items():
@@ -470,7 +540,7 @@ def run_comparison_job(run_id: int) -> dict:
             idx = comparison_lib.sample_indices(len(results), run.sample_size, run.seed)
             sample = [results[i] for i in idx]
             texts = [r.verbatim_analyse or "" for r in sample]
-            sats = [_satisfaction_from_original(r.original_columns) for r in sample]
+            sats = [_satisfaction_du_resultat(r) for r in sample]
 
             theme_by, niv2_by, conf_by, sent_by, lat_by = {}, {}, {}, {}, {}
             for label in engines:

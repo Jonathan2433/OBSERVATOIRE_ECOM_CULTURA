@@ -88,7 +88,7 @@ n'en supprime aucun ; **le retour arrière est une resélection**.
 (`fastapi httpx sqlalchemy pydantic pydantic-settings argon2-cffi PyJWT python-multipart pandas numpy openpyxl pyyaml redis rq`) :
 
 ```bash
-python app/tests/recette_v1.py   # -> 48 OK    python app/tests/recette_v4.py  # -> 50 OK
+python app/tests/recette_v1.py   # -> 86 OK    python app/tests/recette_v4.py  # -> 50 OK
 python app/tests/recette_v3.py   # -> 13 OK    python app/tests/recette_v5.py  # -> 112 OK
 python app/tests/recette_v6.py   # -> 26 OK
 ```
@@ -96,7 +96,7 @@ python app/tests/recette_v6.py   # -> 26 OK
 **Modèle** — environnement ML complet (`pip install -r requirements.txt`) :
 
 ```bash
-python app/tests/recette_l1a_chargeur.py     # -> 29 OK · 1 échec connu (jeu factice obsolète)
+python app/tests/recette_l1a_chargeur.py     # -> 38 OK · 1 échec connu (jeu factice obsolète)
 python app/tests/recette_l2_protocole.py     # -> 15 OK
 python app/tests/recette_couche_decision.py  # -> 46 OK
 ```
@@ -112,6 +112,25 @@ python app/tests/recette_couche_decision.py  # -> 46 OK
   quatre schémas sur leur jeu de colonnes, convertit la satisfaction textuelle, et
   produit la **source fine** — ce qui rend enfin active la règle d'arbitrage
   contextuel. Le format historique reste lu par son chargeur d'origine.
+- ~~**Restitution du second thème et de la satisfaction**~~ — **fait le
+  15/09/2026.** Les écrans de résultats et les tableaux de bord ne s'arrêtaient
+  plus au premier thème. Depuis le **16/09/2026**, la revue permet également
+  d'ajouter, corriger ou supprimer le second thème, son sous-thème et son
+  sentiment. La satisfaction déclarée est devenue un indicateur à
+  part entière (migration `0010`, colonne `results.satisfaction`). Les lots
+  traités avant cette migration n'ont **pas** de note conservée : leur panneau
+  satisfaction affiche « aucune note », il faut relancer le traitement pour
+  l'alimenter.
+- **Faire valider la conversion des échelles de satisfaction (Q-17)** — le taux
+  de satisfaction agrégé repose sur une hypothèse eXalt pour Mopinion 1-5, qui
+  pèse l'essentiel des notes de certains lots. L'écran le signale ; la validation
+  Cultura reste à obtenir.
+- **`signaux_non_mesures` est inerte en production** — `/api/meta` le calcule en
+  important `src.inference.predictor`, absent de l'image API (volontairement sans
+  torch). L'appel échoue silencieusement et renvoie `[]` : le badge « non mesuré »
+  arbitré le 11/09 ne s'affiche donc **jamais** dans le déploiement Docker, alors
+  qu'il fonctionne en recette. À rendre indépendant de `src/`, comme vient de
+  l'être le statut des échelles de satisfaction (lecture YAML directe).
 - **Atelier de référentiel (L3)** côté Cultura — recouvrements de libellés
   (`Cartes cadeaux` / `Passer commande`, `Choix produit` / `Recherche produit`).
 - **Confort** : `torch` non épinglé tire les wheels CUDA sur un déploiement CPU

@@ -25,6 +25,16 @@ class Result(Base):
     verbatim_analyse: Mapped[str] = mapped_column(Text, default="")
     nb_themes: Mapped[int] = mapped_column(Integer, default=0)
 
+    #: Note de satisfaction NORMALISÉE sur l'échelle commune 1-4 (D-20), telle
+    #: qu'elle a été donnée au modèle. Ce n'est pas une sortie du modèle mais
+    #: une donnée d'entrée : elle est persistée pour que le pilotage puisse
+    #: croiser la classification avec la note réellement déposée par le client.
+    #: Non personnelle (une note sur 4), et seule forme comparable entre
+    #: sources — MDTC est en 4 modalités, Mopinion en 1-5 (conversion D-20,
+    #: hypothèse eXalt tant que Q-17 n'est pas tranchée).
+    #: ``None`` = le client n'a pas noté, JAMAIS « zéro ».
+    satisfaction: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
     theme1_niv1: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     theme1_niv2: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     theme1_sentiment: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)

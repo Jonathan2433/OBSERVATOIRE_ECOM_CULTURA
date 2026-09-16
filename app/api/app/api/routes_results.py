@@ -17,6 +17,16 @@ from common.models import Batch, Result
 
 router = APIRouter(prefix="/api/batches", tags=["results"], dependencies=[Depends(get_current_user)])
 
+#: Colonnes de CONTEXTE exportées avant les colonnes modèle. Ce ne sont pas des
+#: sorties du modèle — le bloc `_MODEL_COLUMNS` reste identique au contrat POC,
+#: colonne pour colonne. `satisfaction` est la note du client normalisée 1-4 :
+#: elle arrivait autrefois par les colonnes d'origine, que la liste blanche des
+#: exports Cultura 2026 (D-18) ne laisse plus passer.
+_CONTEXT_COLUMNS = [
+    ("source", "source"),
+    ("satisfaction", "satisfaction"),
+]
+
 # Colonnes modèle exportées (noms EXACTS du format POC) -> attribut ORM.
 _MODEL_COLUMNS = [
     ("verbatim_analysé", "verbatim_analyse"),
@@ -50,15 +60,28 @@ def _like_escape(s: str) -> str:
     return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def _apply_filters(query, niv1, sentiment, revue, rupture, churn, insatisfaction, q):
+def _apply_filters(query, niv1, sentiment, revue, rupture, churn, insatisfaction, q,
+                   bi_theme=False, satisfaction=None):
     if niv1:
         # Recherche « contient » sur le thème (niv.1 OU niv.2), pas une égalité
         # exacte : taper « Programme » doit matcher « Programme de fidélité ».
+        # Le SECOND thème est inclus : filtrer « Livraison » doit ramener les
+        # verbatims qui en parlent en second, sinon le filtre contredit la
+        # répartition affichée juste au-dessus, qui compte les mentions.
         like = f"%{_like_escape(niv1)}%"
         query = query.filter(or_(Result.theme1_niv1.ilike(like, escape="\\"),
-                                 Result.theme1_niv2.ilike(like, escape="\\")))
+                                 Result.theme1_niv2.ilike(like, escape="\\"),
+                                 Result.theme2_niv1.ilike(like, escape="\\"),
+                                 Result.theme2_niv2.ilike(like, escape="\\")))
     if sentiment:
-        query = query.filter(Result.theme1_sentiment == sentiment)
+        # Même logique : le sentiment du second thème peut différer de celui du
+        # premier (une passe de sentiment par thème depuis la V4).
+        query = query.filter(or_(Result.theme1_sentiment == sentiment,
+                                 Result.theme2_sentiment == sentiment))
+    if bi_theme:
+        query = query.filter(Result.theme2_niv1.isnot(None), Result.theme2_niv1 != "")
+    if satisfaction is not None:
+        query = query.filter(Result.satisfaction == satisfaction)
     if revue is not None:
         query = query.filter(Result.revue_requise == revue)
     if rupture:
@@ -83,12 +106,15 @@ def list_results(
     churn: bool = False,
     insatisfaction: bool = False,
     q: Optional[str] = None,
+    bi_theme: bool = False,
+    satisfaction: Optional[int] = None,
     limit: int = Query(50, le=500),
     offset: int = 0,
 ):
     _get_batch_or_404(db, batch_id)
     base = db.query(Result).filter(Result.batch_id == batch_id)
-    base = _apply_filters(base, niv1, sentiment, revue, rupture, churn, insatisfaction, q)
+    base = _apply_filters(base, niv1, sentiment, revue, rupture, churn, insatisfaction, q,
+                          bi_theme, satisfaction)
     total = base.with_entities(func.count(Result.id)).scalar() or 0
     items = base.order_by(Result.row_index).offset(offset).limit(limit).all()
     return ResultsResponse(total=total, limit=limit, offset=offset,
@@ -105,11 +131,14 @@ def _enriched_rows(results: list[Result]):
                 seen.add(k)
                 orig_keys.append(k)
 
-    headers = ["source"] + orig_keys + [name for name, _ in _MODEL_COLUMNS]
+    headers = ([name for name, _ in _CONTEXT_COLUMNS] + orig_keys
+               + [name for name, _ in _MODEL_COLUMNS])
     rows = []
     for r in results:
         oc = r.original_columns or {}
-        row = [r.source or ""] + [oc.get(k, "") for k in orig_keys]
+        row = [("" if getattr(r, attr) is None else getattr(r, attr))
+               for _, attr in _CONTEXT_COLUMNS]
+        row += [oc.get(k, "") for k in orig_keys]
         for _, attr in _MODEL_COLUMNS:
             val = getattr(r, attr)
             row.append("" if val is None else val)
@@ -129,12 +158,15 @@ def export_results(
     churn: bool = False,
     insatisfaction: bool = False,
     q: Optional[str] = None,
+    bi_theme: bool = False,
+    satisfaction: Optional[int] = None,
 ):
     """Export enrichi. Les mêmes filtres que la liste sont honorés : si des
     filtres sont passés, l'export ne contient QUE les lignes correspondantes."""
     batch = _get_batch_or_404(db, batch_id)
     query = db.query(Result).filter(Result.batch_id == batch_id)
-    query = _apply_filters(query, niv1, sentiment, revue, rupture, churn, insatisfaction, q)
+    query = _apply_filters(query, niv1, sentiment, revue, rupture, churn, insatisfaction, q,
+                           bi_theme, satisfaction)
     results = query.order_by(Result.row_index).all()
     headers, rows = _enriched_rows(results)
     stem = f"classifications_{batch.label}".replace(" ", "_")

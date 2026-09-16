@@ -1,14 +1,23 @@
 /** Petit graphe en barres horizontales (sans dépendance, piloté par les tokens).
  *  `max` : échelle fixe (ex. 100 pour des pourcentages) ; par défaut, normalisé sur
- *  la plus grande valeur. `suffix` : unité affichée après la valeur (ex. " %"). */
-export default function BarList({ data, color = "var(--cu-primary-500)", max, suffix = "" }: {
+ *  la plus grande valeur. `suffix` : unité affichée après la valeur (ex. " %").
+ *  `order` : force l'ordre des libellés au lieu du tri par volume, et affiche à
+ *  zéro ceux qui manquent. Indispensable pour une échelle ORDINALE — une note de
+ *  satisfaction se lit 1, 2, 3, 4, jamais du plus fréquent au moins fréquent, et
+ *  une note que personne n'a donnée doit rester visible. */
+export default function BarList({ data, color = "var(--cu-primary-500)", max, suffix = "", order }: {
   data: Record<string, number>;
   color?: string;
   max?: number;
   suffix?: string;
+  order?: string[];
 }) {
-  const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
-  if (entries.length === 0) return <p className="ui-muted">Aucune donnée.</p>;
+  const entries = order
+    ? order.map((k) => [k, data[k] ?? 0] as [string, number])
+    : Object.entries(data).sort((a, b) => b[1] - a[1]);
+  // Un axe ordinal entièrement à zéro n'est pas un graphe à afficher : c'est une
+  // absence de mesure, et quatre barres vides se liraient comme quatre vrais zéros.
+  if (entries.length === 0 || entries.every(([, v]) => !v)) return <p className="ui-muted">Aucune donnée.</p>;
   const top = max ?? Math.max(...entries.map(([, v]) => v), 1);
   return (
     <div style={{ display: "grid", gap: "var(--sp-2)" }}>

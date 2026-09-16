@@ -190,8 +190,20 @@ Transformer le POC en **application conteneurisée, utilisable par le métier**,
 
 ### 6.2 KPI Résultats du lot
 - Volume traité, % en revue humaine, % d'erreurs, durée, vitesse (s/verbatim).
-- Distribution des thèmes niv.1 (top 5 + complet), des sous-thèmes, des sentiments.
+- Distribution des thèmes niv.1 (top 5 + complet), des sous-thèmes, des sentiments,
+  publiée sous **deux angles distincts** : *thème principal* (un verbatim, une voix)
+  et *toutes mentions* (thème 1 + thème 2). Le modèle retenant jusqu'à deux thèmes,
+  le seul angle « principal » sous-compte structurellement les thèmes qui sortent
+  en appui — mesuré : sur un lot de 561 verbatims, un thème n'apparaît qu'en
+  second. Le **second thème est aussi publié seul**.
+- Taux de **bi-thèmes**, rapporté aux verbatims classés.
 - Comptage des signaux : rupture / churn / insatisfaction (n et %).
+- **Satisfaction déclarée** : note moyenne, part de satisfaits (≥ 3) et
+  d'insatisfaits (< 3), répartition des notes sur l'échelle commune 1-4,
+  ventilation par source. Distincte du signal `insatisfaction`, qui est une
+  déduction du modèle sur le texte et non une déclaration du client. Une note
+  absente est comptée à part et ne pèse sur aucune moyenne ; un agrégat entre
+  sources porte la mention « conversion à valider » tant que Q-17 est ouverte.
 - Répartition par source (MDTC / Mopinion) et par score de satisfaction.
 - Nombre de corrections effectuées (taux de correction).
 
@@ -255,7 +267,8 @@ Transformer le POC en **application conteneurisée, utilisable par le métier**,
 ### 7.4 Modèle de données (entités principales)
 - `users` (id, username, password_hash, role, active, created_at)
 - `batches` (id, label, statut, created_by, dates, model_version, seuil_revue, n_total, n_processed, n_review, n_errors, duration_s, source_files)
-- `results` (id, batch_id, row_index, source, **verbatim_analyse (anonymisé)**, nb_themes, theme1_niv1/niv2/sentiment/score, theme2_*, signaux, confidence_globale, revue_humaine_requise, corrected, original_columns (jsonb))
+- `results` (id, batch_id, row_index, source, **verbatim_analyse (anonymisé)**, nb_themes, **satisfaction (note client normalisée 1-4, nullable)**, theme1_niv1/niv2/sentiment/score, theme2_*, signaux, confidence_globale, revue_humaine_requise, corrected, original_columns (jsonb))
+  > `original_columns` ne reçoit **jamais** les colonnes de texte libre du fichier source : elles portent le verbatim **brut**, et les recopier remettrait en base les PII que l'anonymiseur vient de masquer.
 - `corrections` (id, result_id, user_id, champ, ancienne_valeur, nouvelle_valeur, created_at)
 - `model_versions` (id, version, path, metrics (jsonb), active, registered_at)
 - `audit_log` (id, user_id, action, entity, entity_id, timestamp, details)

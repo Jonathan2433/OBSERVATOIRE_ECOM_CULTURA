@@ -58,15 +58,41 @@ L'écran d'accueil résume l'activité (derniers lots, KPI modèle).
 
 Menu **Lots → (un lot) → Résultats**.
 
-- **Tableau paginé** : verbatim anonymisé, thème niv.1/niv.2 + scores, sentiment,
-  signaux (rupture / churn / insatisfaction), confiance, statut.
-- **Filtres** : thème (recherche « contient » sur niv.1 **ou** niv.2), sentiment,
-  signaux, statut de revue, texte libre. *(< 2 s même sur 11k.)*
+- **Tableau paginé** : verbatim anonymisé, **thèmes** (principal *et* second),
+  sentiment de chaque thème, **note du client**, signaux, confiance, statut.
+- **Filtres** : thème (recherche « contient » sur les **quatre** champs de thème :
+  niv.1 et niv.2, du thème principal comme du second), sentiment, note du client,
+  bi-thème, signaux, statut de revue, texte libre. *(< 2 s même sur 11k.)*
 - **Exports** :
   - **CSV** (UTF-8 BOM, ré-ouvrable dans Excel FR sans casser les accents) ;
   - **XLSX**.
-  Les exports contiennent **les colonnes d'origine + les colonnes du modèle**
-  (format identique au POC).
+  Les exports contiennent **la source, la note du client, les colonnes d'origine
+  et les colonnes du modèle** (bloc modèle identique au POC, colonne pour colonne).
+
+### Deux thèmes par verbatim, et ils comptent tous les deux
+
+Le modèle retient **jusqu'à deux thèmes** par verbatim. Le second est marqué
+**« 2e »** dans le tableau, avec son propre sous-thème et son propre sentiment —
+un client peut être satisfait de la livraison et mécontent du produit dans la
+même phrase, et la V4 calcule bien un sentiment par thème retenu.
+
+Le filtre « Thème » ramène aussi les verbatims qui n'évoquent le sujet **qu'en
+second**. Sans cela, un thème presque toujours cité en appui resterait
+introuvable à l'écran alors qu'il figure dans l'export.
+
+### La note du client n'est pas le signal d'insatisfaction
+
+Deux colonnes voisines, deux natures différentes :
+
+| | Origine | Ce que ça dit |
+|---|---|---|
+| **Note client** | déposée par le client dans le formulaire | ce qu'il a coché |
+| **Insatisf.** (signal) | déduit par le modèle du **texte** | ce qu'il a écrit |
+
+Les deux divergent régulièrement, et c'est précisément l'écart qui est
+intéressant. Les notes sont ramenées sur une **échelle commune 1-4** pour être
+comparables entre sources (MDTC est en 4 modalités en toutes lettres, Mopinion
+en 1-5). Une note **absente** s'affiche « — », jamais 0.
 
 > 🔒 Le tableau n'affiche **jamais** le texte brut : seul le **texte anonymisé**
 > (e-mails, téléphones, n° de commande, noms remplacés par `[EMAIL]`, `[TEL]`,
@@ -91,7 +117,11 @@ la vérité — survolez l'info-bulle pour le détail.
 Menu **Lots → (un lot) → Revue**.
 
 1. Les verbatims **sous le seuil** sont présentés, **du moins confiant au plus confiant**.
-2. Pour chacun : corriger le **thème niv.1/niv.2**, le **sentiment**, les **signaux**.
+2. Pour chacun : corriger le **thème principal niv.1/niv.2**, son **sentiment**,
+   le **second thème** éventuel et les **signaux**.
+   - Le second thème est présenté séparément avec son propre sous-thème et son
+     propre sentiment. Il peut être corrigé, ajouté à un verbatim mono-thème ou
+     supprimé. Le nombre de thèmes est recalculé automatiquement.
    - Le sous-thème (niv.2) proposé est **contraint par le niv.1 choisi** : impossible
      de sélectionner un couple invalide.
    - **Les thèmes proposés sont ceux du moteur qui a produit CE lot**, pas ceux du
@@ -119,11 +149,46 @@ Menu **Tableaux de bord** (global) et **Lots → (un lot) → Tableau de bord**.
   > le sentiment, faute d'évaluation thématique fiable (la sienne portait sur un
   > découpage où 99,6 % des textes de test se retrouvaient à l'entraînement).
   > Comparer les deux moteurs sur les cases communes, pas sur les cases vides.
-- **KPI résultats** : volume, % en revue, distribution des thèmes/sentiments,
-  comptage des signaux, taux de correction.
+- **KPI résultats** : volume, % en revue, **bi-thèmes**, distribution des
+  thèmes/sentiments, comptage des signaux, taux de correction.
 - **Volumétrie & tendances** : évolution mensuelle, top thèmes vs mois précédent.
 - **Thèmes × sentiment (volumétrie)** : barres empilées croisant le **volume** de
-  chaque thème et la **répartition de sentiment** (Négatif / Neutre / Positif).
+  chaque thème et la **répartition de sentiment** (Négatif / Neutre / Positif),
+  **toutes mentions confondues** — chaque thème y apparaît avec *son* sentiment.
+
+### « Thème principal » ou « toutes mentions » : deux questions différentes
+
+La carte *Répartition des thèmes* propose deux angles, qui ne se remplacent pas :
+
+- **Thème principal** — un verbatim, une voix : son thème de tête. La somme fait
+  le nombre de verbatims classés.
+- **Toutes mentions** — thème principal **et** second thème. La somme dépasse le
+  nombre de verbatims, et c'est normal : un verbatim bi-thème compte deux fois.
+
+Le second angle n'est pas un raffinement cosmétique. Sur un lot de 561 verbatims
+de septembre, le thème **Académie** n'apparaît **jamais** en thème principal et
+quatre fois en second : la vue « thème principal » seule le rendait invisible.
+La carte *Second thème seul* isole exactement ces sujets-là.
+
+### Satisfaction client déclarée
+
+Le panneau *Satisfaction* restitue ce que les clients ont **coché** : note
+moyenne, part de satisfaits (note ≥ 3) et d'insatisfaits (note < 3), répartition
+des notes, et ventilation **par source**. Il répond à la question que le seul
+compteur d'« insatisfaction forte » laissait ouverte — combien de clients sont
+satisfaits.
+
+Trois précautions portées par l'écran lui-même :
+
+- une **note absente** n'est pas un zéro : elle est comptée à part (« Sans note »)
+  et ne pèse sur aucune moyenne. Les lots traités **avant** la mise en place de
+  cet indicateur n'en portent aucune — relancer le traitement les fera apparaître ;
+- un taux calculé sur zéro note s'affiche **« non renseigné »** ;
+- le badge **« conversion à valider »** signale que la mise à l'échelle commune
+  d'une source repose sur une **hypothèse eXalt**, faute de table officielle
+  Cultura (Q-17). Aujourd'hui c'est le cas de l'échelle Mopinion 1-5, qui pèse
+  souvent l'essentiel des notes d'un lot : les comparaisons de **niveau** entre
+  sources en dépendent, les **volumes** non.
 
 ---
 

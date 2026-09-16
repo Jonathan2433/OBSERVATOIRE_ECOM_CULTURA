@@ -364,7 +364,7 @@
  },
  {
   "categorie": "email",
-  "texte": "mon adresse est m.durand93@orange.fr, aucune reponse recue",
+  "texte": "mon adresse est m.durand93@exemple.fr, aucune reponse recue",
   "comportement_attendu": "[EMAIL] masque avant tout stockage",
   "sentiment": "Négatif",
   "trap_id": "T-034",

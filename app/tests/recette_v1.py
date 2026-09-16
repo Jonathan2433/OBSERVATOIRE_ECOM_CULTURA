@@ -331,6 +331,149 @@ def test_results_export(admin, SessionLocal) -> None:
 
 
 # --------------------------------------------------------------------------- #
+#  5 bis. Second thème & satisfaction déclarée — restitution du lot
+# --------------------------------------------------------------------------- #
+def test_second_theme_et_satisfaction(admin, SessionLocal) -> None:
+    """Le second thème et la note du client doivent EXISTER à l'écran.
+
+    Ces contrôles existent parce que la restitution est longtemps restée
+    accrochée au seul ``theme1`` : le modèle retenait deux thèmes, l'export les
+    contenait, et les répartitions n'en comptaient qu'un — un thème qui sort
+    surtout en second était donc structurellement invisible. Même écueil côté
+    satisfaction : seul le signal d'insatisfaction forte était publié, ce qui ne
+    dit rien des clients satisfaits.
+
+    Le piège inverse est tout aussi grave et vérifié ici : une note ABSENTE ne
+    doit jamais être comptée 0, sans quoi chaque non-réponse ferait baisser la
+    moyenne.
+    """
+    section("Second thème & satisfaction déclarée (restitution)")
+    from common.models import Batch, Result
+
+    with SessionLocal() as db:
+        b = Batch(label="recette-2e-theme", status="done", seuil_revue=0.70,
+                  n_total=4, n_processed=4, n_review=0)
+        db.add(b)
+        db.flush()
+        commun = dict(batch_id=b.id, signal_rupture=False, signal_churn=False,
+                      signal_insatisfaction=False, confidence_globale=0.90,
+                      revue_requise=False)
+        db.add_all([
+            # Bi-thème, sentiments DIVERGENTS entre les deux thèmes.
+            Result(row_index=0, source="MDTC-postrecep", nb_themes=2, satisfaction=4,
+                   verbatim_analyse="Livraison rapide mais article décevant",
+                   theme1_niv1="Livraison", theme1_niv2="Délai",
+                   theme1_sentiment="Positif", theme1_score=0.91,
+                   theme2_niv1="Produit", theme2_niv2="Qualité",
+                   theme2_sentiment="Négatif", theme2_score=0.72, **commun),
+            # Mono-thème sur le thème qui n'apparaît qu'en second ailleurs.
+            Result(row_index=1, source="MDTC-postrecep", nb_themes=1, satisfaction=1,
+                   verbatim_analyse="Article cassé",
+                   theme1_niv1="Produit", theme1_niv2="Qualité",
+                   theme1_sentiment="Négatif", theme1_score=0.88, **commun),
+            Result(row_index=2, source="Mopinion-desktop", nb_themes=1, satisfaction=3,
+                   verbatim_analyse="Site agréable",
+                   theme1_niv1="Site", theme1_niv2="Navigation",
+                   theme1_sentiment="Positif", theme1_score=0.80, **commun),
+            # Client qui n'a pas noté : ne doit peser sur AUCUNE moyenne.
+            Result(row_index=3, source="Mopinion-desktop", nb_themes=1, satisfaction=None,
+                   verbatim_analyse="Sans avis",
+                   theme1_niv1="Site", theme1_niv2="Navigation",
+                   theme1_sentiment="Neutre", theme1_score=0.61, **commun),
+        ])
+        db.commit()
+        bid = b.id
+
+    k = admin.get(f"/api/batches/{bid}/kpi")
+    check("KPI du lot -> 200", k.status_code == 200, k.text[:160])
+    kpi = k.json() if k.status_code == 200 else {}
+
+    # ---- Second thème dans les répartitions ------------------------------- #
+    check("Le second thème est compté dans les mentions",
+          (kpi.get("themes_mentions") or {}).get("Produit") == 2,
+          str(kpi.get("themes_mentions")))
+    check("La vue « thème principal » reste le comptage d'origine",
+          (kpi.get("themes") or {}).get("Produit") == 1,
+          str(kpi.get("themes")))
+    check("Le second thème est publié seul",
+          (kpi.get("themes_secondaires") or {}) == {"Produit": 1},
+          str(kpi.get("themes_secondaires")))
+    check("Les sous-thèmes suivent la même logique de mentions",
+          (kpi.get("subthemes_mentions") or {}).get("Qualité") == 2,
+          str(kpi.get("subthemes_mentions")))
+    check("Bi-thèmes comptés", kpi.get("n_bi_themes") == 1, str(kpi.get("n_bi_themes")))
+    check("Taux de bi-thèmes rapporté aux verbatims CLASSÉS",
+          abs((kpi.get("taux_bi_themes") or 0) - 0.25) < 1e-9, str(kpi.get("taux_bi_themes")))
+
+    # Le sentiment du second thème lui est propre : il ne doit pas être recopié
+    # de celui du premier dans le croisement thème × sentiment.
+    ts = kpi.get("theme_sentiment") or {}
+    check("Le croisement thème × sentiment empile le sentiment DU second thème",
+          (ts.get("Produit") or {}).get("Négatif") == 2,
+          str(ts.get("Produit")))
+    check("Le sentiment du thème principal n'est pas recopié sur le second",
+          (ts.get("Livraison") or {}) == {"Positif": 1}, str(ts.get("Livraison")))
+
+    # ---- Satisfaction déclarée -------------------------------------------- #
+    sat = kpi.get("satisfaction") or {}
+    check("Bloc satisfaction présent", bool(sat), str(kpi.keys()))
+    check("Seules les lignes NOTÉES sont comptées", sat.get("n_notes") == 3,
+          str(sat.get("n_notes")))
+    check("Les verbatims sans note sont comptés à part", sat.get("n_sans_note") == 1,
+          str(sat.get("n_sans_note")))
+    # (4 + 1 + 3) / 3 = 2,67 — une note absente comptée 0 donnerait 2,00.
+    check("Une note absente ne tire PAS la moyenne vers zéro",
+          sat.get("moyenne") == 2.67, str(sat.get("moyenne")))
+    check("Répartition des notes sur l'échelle 1-4",
+          (sat.get("distribution") or {}) == {"1": 1, "3": 1, "4": 1},
+          str(sat.get("distribution")))
+    check("Satisfaits / insatisfaits séparés au seuil de l'échelle",
+          sat.get("n_satisfaits") == 2 and sat.get("n_insatisfaits") == 1,
+          f"{sat.get('n_satisfaits')} / {sat.get('n_insatisfaits')}")
+    check("Taux de satisfaction calculé sur les seules notes",
+          abs((sat.get("taux_satisfaction") or 0) - 2 / 3) < 1e-9,
+          str(sat.get("taux_satisfaction")))
+    check("Satisfaction ventilée par source",
+          (sat.get("par_source") or {}).get("MDTC-postrecep", {}).get("n_notes") == 2,
+          str(sat.get("par_source")))
+    check("Aucune note hors de l'échelle 1-4", sat.get("hors_echelle") == 0,
+          str(sat.get("hors_echelle")))
+
+    # ---- Filtres : le second thème doit être atteignable ------------------ #
+    f = admin.get(f"/api/batches/{bid}/results?niv1=Produit")
+    check("Filtrer un thème ramène aussi ses mentions EN SECOND",
+          (f.json().get("total") or 0) == 2, f.text[:160])
+    f = admin.get(f"/api/batches/{bid}/results?bi_theme=true")
+    check("Filtre « bi-thème »", (f.json().get("total") or 0) == 1, f.text[:160])
+    f = admin.get(f"/api/batches/{bid}/results?satisfaction=1")
+    check("Filtre par note client", (f.json().get("total") or 0) == 1, f.text[:160])
+    f = admin.get(f"/api/batches/{bid}/results?sentiment=Négatif")
+    check("Filtre sentiment inclut le sentiment du second thème",
+          (f.json().get("total") or 0) == 2, f.text[:160])
+
+    r = admin.get(f"/api/batches/{bid}/results?limit=10")
+    item = (r.json().get("items") or [{}])[0]
+    check("La note du client est exposée sur la ligne de résultat",
+          item.get("satisfaction") == 4, str(item.get("satisfaction")))
+    check("Le score du second thème est exposé",
+          item.get("theme2_score") is not None, str(item.get("theme2_score")))
+
+    # ---- Export : la note survit, le contrat modèle ne bouge pas ---------- #
+    ex = admin.get(f"/api/batches/{bid}/export?format=csv")
+    entete = ex.content.decode("utf-8-sig").splitlines()[0].split(",")
+    check("La note du client figure à l'export", "satisfaction" in entete, str(entete))
+    check("Les colonnes modèle du contrat POC sont inchangées et dans l'ordre",
+          [c for c in entete if c.startswith(("theme", "signal", "nb_themes",
+                                              "verbatim_analysé", "confidence", "revue"))]
+          == ["verbatim_analysé", "nb_themes", "theme1_niv1", "theme1_niv2",
+              "theme1_sentiment", "theme1_score_confiance", "theme2_niv1", "theme2_niv2",
+              "theme2_sentiment", "theme2_score_confiance", "signal_rupture_client",
+              "signal_churn", "signal_insatisfaction_forte", "confidence_globale",
+              "revue_humaine_requise"],
+          str(entete))
+
+
+# --------------------------------------------------------------------------- #
 #  6. Config / purge rétention / audit — DoD + §10 #7
 # --------------------------------------------------------------------------- #
 def test_config_purge_audit(admin, SessionLocal) -> None:
@@ -419,6 +562,27 @@ def test_pipeline_e2e(SessionLocal) -> None:
         pii_leak = any(("CMD998877" in (r.verbatim_analyse or "")) or
                        ("06 11 22 33 44" in (r.verbatim_analyse or "")) for r in rows)
         check("Aucune PII brute persistée en base (#2)", not pii_leak)
+        # ... et pas davantage dans les colonnes d'origine recopiées à côté.
+        # Ce contrôle a été élargi après constat : le chargeur historique
+        # recopiait TOUTES les colonnes du fichier, y compris celles du verbatim
+        # BRUT, ce qui remettait en base les PII que l'anonymiseur venait de
+        # masquer. Ne regarder que `verbatim_analyse` laissait la fuite passer.
+        empreinte = " ".join(str((r.original_columns or {})) for r in rows)
+        check("Aucune PII brute dans les colonnes d'origine persistées (#2)",
+              "CMD998877" not in empreinte and "06 11 22 33 44" not in empreinte,
+              empreinte[:200])
+        check("Le verbatim BRUT n'est pas recopié à côté du verbatim anonymisé (#2)",
+              all("Verbatim justification" not in (r.original_columns or {}) for r in rows),
+              str(sorted((rows[0].original_columns or {}).keys()) if rows else []))
+        # La note du client, elle, doit bien survivre au traitement : sans elle,
+        # aucun indicateur de satisfaction n'est calculable.
+        notes = sorted(r.satisfaction for r in rows if r.satisfaction is not None)
+        check("La note de satisfaction est persistée par le worker",
+              2 in notes, str([r.satisfaction for r in rows]))
+        # Les colonnes de contexte non textuelles restent, elles, disponibles.
+        check("Les colonnes de contexte d'origine sont conservées",
+              any("Niveau de satisfaction général" in (r.original_columns or {}) for r in rows),
+              str(sorted((rows[0].original_columns or {}).keys()) if rows else []))
         # #3 : tout couple prédit est valide dans la taxonomie
         bad = [(r.theme1_niv1, r.theme1_niv2) for r in rows
                if r.theme1_niv1 and r.theme1_niv2 and not tax.is_valid_pair(r.theme1_niv1, r.theme1_niv2)]
@@ -435,6 +599,7 @@ def main() -> int:
     admin, SessionLocal = test_api()
     if admin is not None:
         test_results_export(admin, SessionLocal)
+        test_second_theme_et_satisfaction(admin, SessionLocal)
         test_config_purge_audit(admin, SessionLocal)
     if SessionLocal is None:
         # SessionLocal n'a pas pu être créé (couche API absente) : on tente

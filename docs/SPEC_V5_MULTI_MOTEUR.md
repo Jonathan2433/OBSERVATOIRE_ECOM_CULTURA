@@ -242,7 +242,7 @@ production ; supprimer l'offline strict (il reste vrai pour tout run réel).
 ### 7.1 Run de comparaison (`run_comparison_job`)
 1. Tire `sample_size` résultats du lot (`seed` pour reproductibilité).
 2. Pour chaque moteur sélectionné : `predict_cleaned_batch(verbatim_analyse, satisfaction)`
-   — `satisfaction` récupérée depuis `results.original_columns` si disponible.
+   — `satisfaction` lue dans la colonne dédiée `results.satisfaction` (migration `0010`) ; repli sur `original_columns` pour les lots antérieurs.
 3. Stocke les prédictions dans `engine_predictions` (rôle `compare`) + latences.
 4. Calcule les **métriques objectives** : matrice d'accord `theme1_niv1`, distributions de
    confiance, latence/coût par moteur.
@@ -359,7 +359,7 @@ Chemin critique : **C1 → C2 → C3 → C4 → C5 → C6** (C2 ∥ C3 possibles
 | **Biais d'auto-évaluation** du juge (Claude juge Claude) | Comparaison faussée | Aveuglement + permutation (V5-D11) ; afficher clairement « juge = Claude » ; ne pas survendre le verdict. |
 | **Coût API** non maîtrisé | Budget | Échantillon plafonné, juge sur divergences seules, run admin-only, traçé. |
 | **Régression du moteur LM Studio** lors du refactor `llm_common` | Casse V4 | Extraction iso-comportement + `recette_v4` 50/50 obligatoire au lot C1. |
-| **Satisfaction absente** au replay (non stockée en colonne) | Sentiment dégradé en comparaison | Récupérer depuis `original_columns` ; sinon documenter l'écart (n'affecte pas la prod). |
+| **Satisfaction absente** au replay | Sentiment dégradé en comparaison | **Levé le 15/09/2026** : la note est persistée en colonne dédiée (`results.satisfaction`, migration `0010`). Repli `original_columns` conservé pour les lots antérieurs, qui restent sans note. |
 | **Égress worker** bloqué chez le client | Comparaison/juge KO | Documenter le domaine `api.anthropic.com` à autoriser ; mode dégradé sinon. |
 
 ---

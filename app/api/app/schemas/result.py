@@ -13,6 +13,8 @@ class ResultOut(BaseModel):
     source: Optional[str] = None
     verbatim_analyse: str = ""
     nb_themes: int = 0
+    #: Note du client, normalisée 1-4 (D-20). ``None`` = non renseignée.
+    satisfaction: Optional[int] = None
     theme1_niv1: Optional[str] = None
     theme1_niv2: Optional[str] = None
     theme1_sentiment: Optional[str] = None
@@ -42,6 +44,9 @@ class CorrectionRequest(BaseModel):
     theme1_niv1: Optional[str] = None
     theme1_niv2: Optional[str] = None
     theme1_sentiment: Optional[str] = None
+    theme2_niv1: Optional[str] = None
+    theme2_niv2: Optional[str] = None
+    theme2_sentiment: Optional[str] = None
     signal_rupture: Optional[bool] = None
     signal_churn: Optional[bool] = None
     signal_insatisfaction: Optional[bool] = None

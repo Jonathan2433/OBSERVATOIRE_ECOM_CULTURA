@@ -55,9 +55,16 @@ services:
       UPLOADS_DIR: /data/uploads
       OUTPUT_DIR: /data/output
       TAXONOMY_PATH: /app/taxonomy.json
+      # Configuration métier de RÉFÉRENCE, en lecture seule. L'API n'embarque
+      # pas `src/` (image volontairement sans torch) : sans ce montage, elle ne
+      # peut pas savoir quelles échelles de satisfaction reposent sur une
+      # hypothèse eXalt, et le taux de satisfaction s'afficherait sans son
+      # avertissement (Q-17).
+      CONFIG_PATH: /app/config/config.yaml
     volumes:
       - ./data/uploads:/data/uploads      # fichiers déposés (partagé avec worker)
       - ./data/output:/data/output        # CSV enrichis (export L4)
+      - ./config/config.yaml:/app/config/config.yaml:ro
       # Référentiel de REPLI, servi quand le modèle actif n'embarque pas le sien.
       - ./data/raw/taxonomy_cultura_poc.json:/app/taxonomy.json:ro
       # Référentiels des modèles, en LECTURE SEULE. Chaque modèle embarque le

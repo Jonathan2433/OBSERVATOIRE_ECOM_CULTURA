@@ -207,6 +207,8 @@ export interface ResultRow {
   source?: string | null;
   verbatim_analyse: string;
   nb_themes: number;
+  /** Note du client normalisée 1-4 (D-20). `null` = non renseignée, jamais zéro. */
+  satisfaction?: number | null;
   theme1_niv1?: string | null;
   theme1_niv2?: string | null;
   theme1_sentiment?: string | null;
@@ -214,6 +216,7 @@ export interface ResultRow {
   theme2_niv1?: string | null;
   theme2_niv2?: string | null;
   theme2_sentiment?: string | null;
+  theme2_score?: number | null;
   signal_rupture: boolean;
   signal_churn: boolean;
   signal_insatisfaction: boolean;
@@ -235,6 +238,10 @@ export interface ResultFilters {
   churn?: boolean;
   insatisfaction?: boolean;
   q?: string;
+  /** Ne garder que les verbatims portant un SECOND thème. */
+  bi_theme?: boolean;
+  /** Note exacte sur l'échelle commune 1-4. */
+  satisfaction?: number;
   limit?: number;
   offset?: number;
 }
@@ -248,6 +255,8 @@ function resultFilterParams(f: ResultFilters): URLSearchParams {
   if (f.rupture) p.set("rupture", "true");
   if (f.churn) p.set("churn", "true");
   if (f.insatisfaction) p.set("insatisfaction", "true");
+  if (f.bi_theme) p.set("bi_theme", "true");
+  if (f.satisfaction !== undefined) p.set("satisfaction", String(f.satisfaction));
   if (f.q) p.set("q", f.q);
   return p;
 }
@@ -308,6 +317,10 @@ export interface CorrectionPayload {
   theme1_niv1?: string;
   theme1_niv2?: string;
   theme1_sentiment?: string;
+  /** Chaînes vides sur les trois champs = suppression explicite du second thème. */
+  theme2_niv1?: string;
+  theme2_niv2?: string;
+  theme2_sentiment?: string;
   signal_rupture?: boolean;
   signal_churn?: boolean;
   signal_insatisfaction?: boolean;
@@ -317,6 +330,29 @@ export const correctResult = (id: number, p: CorrectionPayload) =>
 export const exportCorrectionsUrl = () => "/api/corrections/export";
 
 // --- KPI / tableaux de bord ---
+/**
+ * Indicateurs de satisfaction DÉCLARÉE par le client (D-20), à ne pas confondre
+ * avec le signal `insatisfaction`, qui est une déduction du modèle sur le texte.
+ *
+ * `moyenne` et `taux_satisfaction` valent `null` quand aucune note n'est
+ * renseignée : l'écran doit alors afficher « non renseigné » et surtout pas
+ * « 0 ». Les lots traités avant la persistance de la note tombent dans ce cas.
+ */
+export interface SatisfactionKpi {
+  n_notes: number;
+  n_sans_note: number;
+  /** Clés "1".."4" — une note absente n'apparaît pas, elle n'est pas un zéro. */
+  distribution: Record<string, number>;
+  moyenne: number | null;
+  n_satisfaits: number;
+  n_insatisfaits: number;
+  taux_satisfaction: number | null;
+  hors_echelle: number;
+  par_source: Record<string, { n_notes: number; moyenne: number | null; taux_satisfaction: number | null }>;
+  echelle: { min: number; max: number; seuil_satisfait: number };
+  /** Échelles dont la conversion vers 1-4 est une hypothèse eXalt (Q-17). */
+  sources_hypothese: string[];
+}
 export interface BatchKpi {
   batch_id: number;
   label: string;
@@ -326,24 +362,42 @@ export interface BatchKpi {
   review_rate: number;
   n_errors: number;
   duration_s?: number | null;
+  /** Thème PRINCIPAL : un verbatim, une voix. */
   themes: Record<string, number>;
   subthemes: Record<string, number>;
+  /** Second thème seul — ce que la vue « thème principal » rend invisible. */
+  themes_secondaires: Record<string, number>;
+  subthemes_secondaires: Record<string, number>;
+  /** Toutes MENTIONS : thème 1 + thème 2. La somme dépasse le nombre de verbatims. */
+  themes_mentions: Record<string, number>;
+  subthemes_mentions: Record<string, number>;
+  n_bi_themes: number;
+  taux_bi_themes: number;
   sentiments: Record<string, number>;
+  sentiments_secondaires: Record<string, number>;
   sources: Record<string, number>;
   signals: { rupture: number; churn: number; insatisfaction: number };
   theme_sentiment: Record<string, Record<string, number>>;
+  satisfaction: SatisfactionKpi;
 }
 export interface VolumetrySeriesItem {
   id: number; label: string; created_at?: string | null;
   n_total: number; n_review: number; review_rate: number;
   signals: { rupture: number; churn: number; insatisfaction: number };
+  n_bi_themes: number;
+  satisfaction_moyenne: number | null;
+  taux_satisfaction: number | null;
 }
 export interface Volumetry {
   n_batches: number;
   total_verbatims: number;
   series: VolumetrySeriesItem[];
   global_themes: Record<string, number>;
+  global_themes_mentions: Record<string, number>;
+  global_themes_secondaires: Record<string, number>;
+  n_bi_themes: number;
   theme_sentiment: Record<string, Record<string, number>>;
+  satisfaction: SatisfactionKpi;
 }
 export interface ModelKpi {
   active: null | { label: string; kind: string; available: boolean; metrics?: Record<string, number> | null };
