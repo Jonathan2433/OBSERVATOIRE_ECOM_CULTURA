@@ -371,12 +371,14 @@ sources:
   mdtc:
     date_col: "Date de commande"
     satisfaction_col: "Niveau de satisfaction général"
+    client_status_col: "Client"
     # Colonne principale à classifier + colonne secondaire concaténée si présente
     text_col_primary: "Verbatim justification"
     text_col_secondary: "Verbatim suggestion"
   mopinion:
     date_col: "Date du retour"
     satisfaction_col: "Niveau de satisfaction général"
+    respondent_id_col: "id"
     # Insatisfaits -> "Description du bug" ; satisfaits -> "Suggestion".
     # On prend la première non-vide (cf. loader.py).
     text_cols_primary: ["Description du bug", "Suggestion"]
@@ -616,6 +618,7 @@ cultura_sources:
         __produit_non_trouve__: "produits non trouvés"
       satisfaction_col: "satisfaction"
       echelle_satisfaction: "mdtc_1_4"
+      client_status_col: "client"
       respondent_id_col: null        # aucun identifiant -> généré (§5)
       meta:
         __date__: "date de réponse"
@@ -630,6 +633,7 @@ cultura_sources:
       champs_contexte: {}
       satisfaction_col: "satisfaction"
       echelle_satisfaction: "mdtc_1_4"
+      client_status_col: "client"
       respondent_id_col: null
       meta:
         __date__: "date de réponse"
@@ -645,6 +649,7 @@ cultura_sources:
       champs_contexte: {}
       satisfaction_col: "quel est votre degré de satisfaction concernant cultura"
       echelle_satisfaction: "mopinion_1_5"
+      client_status_col: null
       respondent_id_col: "id"
       meta:
         __date__: "datetime"
@@ -664,6 +669,7 @@ cultura_sources:
       champs_contexte: {}
       satisfaction_col: "quel est votre degré de satisfaction concernant le site de cultura"
       echelle_satisfaction: "mopinion_1_5"
+      client_status_col: null
       respondent_id_col: "id"
       meta:
         __date__: "datetime"
@@ -677,6 +683,7 @@ cultura_sources:
   # ---------------------------------------------------------------------------
   echelles_satisfaction:
     mdtc_1_4:
+      maximum_natif: 4
       valeurs_attendues: [1, 2, 3, 4]
       conversion: null               # identité
       hypothese: false
@@ -705,13 +712,20 @@ cultura_sources:
         "Plutôt satisfait(e)": 3
         "Très satisfait(e)": 4
     mopinion_1_5:
+      maximum_natif: 5
       valeurs_attendues: [1, 2, 3, 4, 5]
       # ⚠️ HYPOTHÈSE eXalt — aucune table officielle Cultura (Q-17 / Q-23, A6 sans
       # réponse). Le 3 est rabattu vers l'insatisfaction : ces formulaires
-      # recueillent des irritants. Influence toute comparaison de volumes entre
-      # sources (O-3) : à faire valider avant de communiquer un chiffre agrégé.
+      # recueillent des irritants. Cette conversion alimente uniquement le modèle
+      # ML historique; les KPI utilisent la note native 1-5.
       conversion: {1: 1, 2: 2, 3: 2, 4: 3, 5: 4}
       hypothese: true
+
+  # Seuls ces libellés explicites sont interprétés. Toute autre valeur, ainsi
+  # que l'absence de colonne, devient `non_renseigne` sans aucune déduction.
+  statuts_client:
+    ancien: ["ancien"]
+    nouveau: ["nouveau"]
 
 # =============================================================================
 #  NORMALISATION DES LABELS — lot L1a, §8 de SPEC_CHARGEUR (D-31)

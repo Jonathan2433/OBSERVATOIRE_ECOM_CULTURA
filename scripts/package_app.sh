@@ -48,7 +48,7 @@ docker compose exec -T db pg_dump -U "${PGUSER}" -d "${PGDB}" --no-owner --clean
 # Manifeste d'intégrité (comptages de référence pour vérif post-restauration)
 {
   echo "# Manifeste d'intégrité — ${STAMP}"
-  for t in users batches results corrections audit_log model_versions; do
+  for t in users batches survey_responses results corrections audit_log model_versions; do
     n="$(docker compose exec -T db psql -tAU "${PGUSER}" -d "${PGDB}" -c "SELECT count(*) FROM ${t};" 2>/dev/null | tr -d '[:space:]' || echo '?')"
     echo "${t}=${n}"
   done

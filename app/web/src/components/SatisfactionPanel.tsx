@@ -1,109 +1,212 @@
-import type { SatisfactionKpi } from "../api";
-import { Badge, Card, InfoTip, StatCard } from "../ui";
-import BarList from "./BarList";
+import type {
+  SatisfactionComparison, SatisfactionSourceComparison, SatisfactionSourceKpi,
+  SatisfactionKpi,
+} from "../api";
+import { DASHBOARD_SOURCE_GROUPS } from "../dashboardSources";
+import {
+  CLIENT_STATUS_LABELS, formatCompactOnTen, formatDeltaOnTen, formatPeriod,
+  SOURCE_LABELS, SOURCE_SHORT_LABELS,
+} from "../satisfactionDisplay";
+import { Badge, Card, InfoTip } from "../ui";
 
-/** Notes de l'échelle commune, dans l'ORDRE de l'échelle et non du volume. */
-const NOTES = ["1", "2", "3", "4"];
-const LIBELLES: Record<string, string> = {
-  "1": "1 — pas du tout satisfait",
-  "2": "2 — plutôt pas satisfait",
-  "3": "3 — plutôt satisfait",
-  "4": "4 — très satisfait",
-};
+function DeltaBadge({ item }: { item?: SatisfactionSourceComparison }) {
+  if (!item?.comparable || item.delta_on_10 == null) {
+    return <Badge tone="neutral">non comparable</Badge>;
+  }
+  const tone = item.delta_on_10 > 0
+    ? "success" : item.delta_on_10 < 0 ? "danger" : "neutral";
+  return <Badge tone={tone}>{formatDeltaOnTen(item.delta_on_10)}</Badge>;
+}
 
-const pct = (v: number | null | undefined) =>
-  v == null ? "non renseigné" : `${(v * 100).toFixed(1)} %`;
+function ScoreGauge({ value }: { value: number | null }) {
+  const percent = value == null ? 0 : Math.max(0, Math.min(100, value * 10));
+  return (
+    <div className="satisfaction-score">
+      <div className="satisfaction-score__value">{formatCompactOnTen(value)}</div>
+      <div className="satisfaction-score__track" aria-hidden="true">
+        <span style={{ width: `${percent}%` }} />
+      </div>
+    </div>
+  );
+}
 
-/**
- * Satisfaction DÉCLARÉE par les clients d'un périmètre (un lot, ou tous).
- *
- * Ce panneau répond à la question que le seul compteur d'« insatisfaction forte »
- * laissait sans réponse : combien de clients sont satisfaits. Le signal
- * d'insatisfaction est une déduction du modèle sur le texte ; la note, elle, est
- * ce que le client a coché. Les deux sont affichés côte à côte sans être mêlés.
- *
- * Trois précautions de lecture sont portées par le composant lui-même :
- *
- * * une moyenne sur zéro note s'affiche « non renseigné », jamais 0 ;
- * * les verbatims sans note sont comptés à part, pour qu'un taux calculé sur un
- *   dixième du lot ne se lise pas comme un taux sur le lot entier ;
- * * la conversion des échelles sources vers 1-4 est une hypothèse eXalt tant que
- *   Cultura ne l'a pas validée (Q-17) — le bandeau le dit, parce qu'un taux de
- *   satisfaction est exactement le chiffre qui circule sans son avertissement.
- */
-export default function SatisfactionPanel({ sat, titre = "Satisfaction client déclarée" }: {
-  sat: SatisfactionKpi;
-  titre?: string;
+function SourceSummary({ source, compared }: {
+  source: SatisfactionSourceKpi;
+  compared?: SatisfactionSourceComparison;
 }) {
-  const couverture = sat.n_notes + sat.n_sans_note;
-  const distribution = Object.fromEntries(
-    NOTES.map((n) => [LIBELLES[n], sat.distribution[n] ?? 0]));
-  const horsEchelle = Object.entries(sat.distribution)
-    .filter(([n]) => !NOTES.includes(n));
+  const segmentComparison = new Map(
+    (compared?.by_client_status ?? []).map((item) => [item.client_status, item]),
+  );
+  const isMdtc = source.source_type.startsWith("MDTC-");
+  const visibleSegments = isMdtc
+    ? source.by_client_status
+    : source.by_client_status.filter((segment) => (
+      segment.client_status === "non_renseigne" && segment.respondent_count > 0
+    ));
 
   return (
-    <Card title={titre} actions={
-      sat.sources_hypothese.length > 0 ? (
-        <span className="ui-row" style={{ gap: 4 }}>
-          <Badge tone="warning">conversion à valider</Badge>
-          <InfoTip text={`La mise à l'échelle commune 1-4 de ${sat.sources_hypothese.join(", ")} est une hypothèse eXalt : Cultura n'a pas fourni de table officielle (Q-17). Les comparaisons de niveau ENTRE sources reposent donc sur cette hypothèse ; les volumes, eux, ne sont pas concernés.`} />
-        </span>
-      ) : undefined
-    }>
-      <div className="ui-stack">
-        {sat.n_notes === 0 ? (
-          <p className="ui-muted">
-            Aucune note conservée sur ce périmètre. Les lots traités avant la mise en
-            place de cet indicateur n'en portent pas : relancer un traitement les fera
-            apparaître. Une note absente n'est pas un zéro — rien n'est déduit ici.
+    <section className="satisfaction-source">
+      <div className="satisfaction-source__heading">
+        <div>
+          <h4>{SOURCE_SHORT_LABELS[source.source_type] ?? source.source_type}</h4>
+          <p>
+            {formatPeriod(source.period.start, source.period.end)} · {source.respondent_count ?? "—"} répondant(s)
           </p>
-        ) : (
-          <>
-            <div className="ui-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
-              <StatCard label="Note moyenne"
-                        value={sat.moyenne != null ? `${sat.moyenne.toFixed(2)} / ${sat.echelle.max}` : "non renseigné"}
-                        hint={`sur ${sat.n_notes} note(s)`} />
-              <StatCard label="Clients satisfaits" value={pct(sat.taux_satisfaction)}
-                        hint={`${sat.n_satisfaits} note(s) ≥ ${sat.echelle.seuil_satisfait}`} />
-              <StatCard label="Clients insatisfaits"
-                        value={sat.n_notes ? pct(sat.n_insatisfaits / sat.n_notes) : "non renseigné"}
-                        hint={`${sat.n_insatisfaits} note(s) < ${sat.echelle.seuil_satisfait}`} />
-              <StatCard label="Sans note" value={sat.n_sans_note}
-                        hint={couverture ? `${((sat.n_notes / couverture) * 100).toFixed(0)} % du périmètre noté` : undefined} />
-            </div>
-
-            <BarList data={distribution} order={NOTES.map((n) => LIBELLES[n])} />
-
-            {horsEchelle.length > 0 && (
-              <p className="ui-field__error">
-                {sat.hors_echelle} note(s) hors de l'échelle 1-{sat.echelle.max} :{" "}
-                {horsEchelle.map(([n, v]) => `${n} (${v})`).join(", ")}. Donnée source non
-                conforme — à signaler plutôt qu'à rabattre sur la borne la plus proche.
-              </p>
-            )}
-
-            {Object.keys(sat.par_source).length > 1 && (
-              <div className="ui-table-wrap">
-                <table className="ui-table">
-                  <thead>
-                    <tr><th>Source</th><th>Notes</th><th>Moyenne</th><th>Satisfaits</th></tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(sat.par_source).map(([source, s]) => (
-                      <tr key={source}>
-                        <td>{source}</td>
-                        <td className="ui-table__num">{s.n_notes}</td>
-                        <td className="ui-table__num">{s.moyenne != null ? s.moyenne.toFixed(2) : "—"}</td>
-                        <td className="ui-table__num">{pct(s.taux_satisfaction)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </>
-        )}
+        </div>
+        {source.availability_status === "source_not_provided"
+          ? <Badge tone="neutral">source non reçue</Badge>
+          : compared ? <DeltaBadge item={compared} /> : null}
       </div>
-    </Card>
+
+      {!source.native_detail_available ? (
+        <p className="business-notice">{source.availability_message}</p>
+      ) : (
+        <>
+          <div className="satisfaction-source__scoreline">
+            <ScoreGauge value={source.mean_on_10} />
+            <div className="satisfaction-source__meta">
+              <strong>{source.rated_respondent_count.toLocaleString("fr-FR")}</strong>
+              <span>répondant(s) noté(s)</span>
+              <small>
+                {source.mean_native != null
+                  ? `${source.mean_native.toFixed(2).replace(".", ",")} / ${source.native_scale_max} en natif`
+                  : "aucune note exploitable"}
+              </small>
+            </div>
+          </div>
+
+          {visibleSegments.length > 0 && (
+            <div className="satisfaction-segments">
+              {visibleSegments.map((segment) => {
+                const previous = segmentComparison.get(segment.client_status);
+                return (
+                  <div key={segment.client_status} className="satisfaction-segment">
+                    <div>
+                      <strong>{CLIENT_STATUS_LABELS[segment.client_status]}</strong>
+                      <span>
+                        {segment.respondent_count} répondant(s) · {segment.rated_respondent_count} noté(s)
+                      </span>
+                    </div>
+                    <span className="satisfaction-segment__score">
+                      {segment.respondent_count === 0
+                        ? "aucune donnée"
+                        : segment.rated_respondent_count === 0
+                          ? "aucune note"
+                          : formatCompactOnTen(segment.mean_on_10)}
+                    </span>
+                    {compared && (
+                      <small>{formatDeltaOnTen(previous?.delta_on_10 ?? null)}</small>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <p className="satisfaction-source__footnote">
+            {source.unrated_respondent_count ?? 0} sans note · {source.invalid_rating_count} note(s) invalide(s)
+            {compared?.reference_rated_respondent_count != null
+              ? ` · référence : ${compared.reference_rated_respondent_count} noté(s)` : ""}
+          </p>
+          {compared?.reason && <p className="ui-muted">Comparaison indisponible : {compared.reason}</p>}
+          {compared?.warning && <p className="ui-field__error">{compared.warning}</p>}
+          {source.availability_message && <p className="ui-muted">{source.availability_message}</p>}
+        </>
+      )}
+    </section>
+  );
+}
+
+/** Satisfaction déclarée : une réponse de questionnaire compte exactement une fois. */
+export default function SatisfactionPanel({
+  sat, titre = "Satisfaction client déclarée", comparison = null, referenceLabel = null,
+}: {
+  sat: SatisfactionKpi;
+  titre?: string;
+  comparison?: SatisfactionComparison | null;
+  referenceLabel?: string | null;
+}) {
+  const comparisonBySource = new Map(
+    (comparison?.by_source ?? []).map((item) => [item.source_type, item]),
+  );
+  const knownSources = new Set(DASHBOARD_SOURCE_GROUPS.flatMap((group) => group.sources));
+  const historicalGroups = sat.by_source
+    .filter((source) => !knownSources.has(source.source_type))
+    .map((source) => ({
+      key: `historical-${source.source_type}`,
+      title: SOURCE_LABELS[source.source_type] ?? source.source_type,
+      sources: [source.source_type],
+    }));
+  const groups = [...DASHBOARD_SOURCE_GROUPS, ...historicalGroups]
+    .map((group) => ({
+      ...group,
+      rows: group.sources
+        .map((source) => sat.by_source.find((item) => item.source_type === source))
+        .filter((source): source is SatisfactionSourceKpi => source != null),
+    }))
+    .filter((group) => group.rows.length > 0);
+  const missingSources = sat.by_source.filter(
+    (source) => source.availability_status === "source_not_provided",
+  );
+
+  return (
+    <section className="business-section" aria-labelledby="satisfaction-title">
+      <div className="business-section__header">
+        <div>
+          <p className="business-section__eyebrow">Notes clients</p>
+          <h2 id="satisfaction-title">{titre}</h2>
+          <p className="ui-muted">
+            Une voix par répondant, affichée sur 10 depuis l’échelle native.
+            {referenceLabel ? ` Évolution comparée à ${referenceLabel}.` : ""}
+          </p>
+        </div>
+        <InfoTip text="Chaque moyenne est calculée sur les répondants notés ayant produit au moins un verbatim analysé. La note native est divisée par le maximum de son échelle, puis multipliée par 10. « Statut client non disponible » signifie que la source ne permet pas de distinguer Ancien et Nouveau ; la note peut néanmoins être renseignée." />
+      </div>
+
+      {missingSources.length > 0 && (
+        <p className="business-notice">
+          Données non reçues dans ce lot : {missingSources
+            .map((source) => SOURCE_LABELS[source.source_type] ?? source.source_type)
+            .join(" · ")}.
+        </p>
+      )}
+
+      {sat.historical_data_unavailable && (
+        <p className="business-notice">
+          Certains lots historiques ne conservent ni note native ni identifiant répondant :
+          leur détail reste indisponible jusqu’à un retraitement explicite.
+        </p>
+      )}
+
+      {groups.length === 0 ? (
+        <Card><p className="ui-muted">Aucune réponse de questionnaire disponible sur ce périmètre.</p></Card>
+      ) : (
+        <div className="business-card-grid">
+          {groups.map((group) => (
+            <article key={group.key} className="business-card satisfaction-card">
+              <header className="business-card__header">
+                <h3>{group.title}</h3>
+                <Badge tone="info">
+                  {group.rows.reduce((total, source) => total + (source.respondent_count ?? 0), 0).toLocaleString("fr-FR")} répondant(s)
+                </Badge>
+              </header>
+              <div className="business-card__body">
+                {group.rows.map((source) => (
+                  <SourceSummary key={source.source_type} source={source}
+                                 compared={comparisonBySource.get(source.source_type)} />
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+
+      {sat.global.mean_on_10 != null && (
+        <p className="business-section__footnote">
+          Indication secondaire multi-source : {formatCompactOnTen(sat.global.mean_on_10)} sur {sat.global.rated_respondent_count.toLocaleString("fr-FR")} répondant(s) noté(s).
+          Chaque répondant est pondéré une seule fois. {sat.global.scope}
+        </p>
+      )}
+    </section>
   );
 }

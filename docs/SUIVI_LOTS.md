@@ -331,6 +331,27 @@ Détail : [COUCHE_DECISION.md](COUCHE_DECISION.md) · [RECETTE_NOUVEAU_MODELE.md
 
 ---
 
+## Restitution métier — satisfaction et analyse ✅ *(17 septembre 2026)*
+
+| Élément | État livré |
+|---|---|
+| Satisfaction | Une voix par `survey_response`, note native conservée, affichage sur 10 explicite |
+| Sources | Les quatre sources attendues restent visibles ; une source non reçue est distinguée d'un zéro mesuré |
+| Statut client | `Ancien`, `Nouveau` et « Statut client non disponible » restent visibles pour MDTC ; Mopinion n'invente aucun statut |
+| Comparaison | Période issue des dates de réponse, référence automatique ou explicite, delta en points sur 10 |
+| Classifications | Top 5 par source sur les réponses textuelles ouvertes uniquement ; questions fermées exclues |
+| Historique | Migrations additives `0011` et `0012`, sans rétro-remplissage impossible |
+
+**Validation du 17/09/2026** : `recette_v1` **89/89**, tests KPI répondant
+**10/10**, build Vite et type-check TypeScript OK, build Docker API/Web OK,
+contrôle live du lot 20 effectué. Recette L1a locale : **3 OK · 0 ÉCHEC ·
+1 SKIP**, le parcours réel étant explicitement ignoré sans `fr_core_news_sm`.
+
+**Décision restant au métier** : les questions fermées ne sont pas assimilées à
+des thèmes. Leur éventuelle restitution exige un mapping validé séparément.
+
+---
+
 ## Journal de décisions (ADR-lite)
 
 | # | Date | Décision | Justification |
@@ -374,3 +395,7 @@ Détail : [COUCHE_DECISION.md](COUCHE_DECISION.md) · [RECETTE_NOUVEAU_MODELE.md
 | D37 | 2026-09-15 | **La restitution compte les DEUX thèmes.** Chaque répartition est publiée sous deux angles explicites — *thème principal* (un verbatim, une voix) et *toutes mentions* (thème 1 + thème 2) — et le second thème est aussi publié seul | Le modèle retient jusqu'à deux thèmes ; ne compter que le premier sous-comptait structurellement les thèmes d'appui. Mesuré sur un lot réel de 561 verbatims : le thème `Académie` n'apparaît **jamais** en principal et 4 fois en second, donc il était invisible. Les deux angles sont gardés séparés parce qu'une somme supérieure au volume du lot se lirait sinon comme une erreur de comptage |
 | D38 | 2026-09-15 | **La note de satisfaction est persistée** en colonne dédiée `results.satisfaction` (échelle commune 1-4, migration `0010`), et un indicateur de satisfaction déclarée est publié à côté du signal d'insatisfaction | La note alimentait le modèle mais n'était conservée nulle part : sur le chemin Cultura 2026 la liste blanche (D-18) ne laisse passer aucune colonne d'origine. Sans colonne dédiée, aucun taux de satisfaction n'était calculable — seuls les mécontents étaient comptés. Une note est **nullable** : absente, elle est comptée à part et ne pèse sur aucune moyenne. Les lots antérieurs à la migration restent sans note |
 | D39 | 2026-09-15 | **Les colonnes de texte libre du fichier source ne sont plus recopiées** dans `results.original_columns` | Constat : le chargeur historique y recopiait TOUTES les colonnes, dont le verbatim **brut**. Les PII que l'anonymiseur venait de masquer revenaient donc en base et dans l'export enrichi, à côté de leur version masquée. Vérifié en recette : `CMD998877` et un numéro de téléphone étaient persistés en clair. Exclusion pilotée par `config.yaml` (colonnes de texte déclarées), donc liste **noire** : la liste blanche (D-18) du chemin 2026 reste la forme robuste et la cible |
+| D40 | 2026-09-17 | **Comparaison inter-lots sur la période métier** : la date de réponse est persistée à la maille répondant ; référence automatique = dernier lot terminé strictement antérieur et non chevauchant, référence manuelle possible | La date de création du lot mesure l'upload, pas la période analysée. L'utiliser ferait apparaître un export d'août déposé en septembre comme une évolution de septembre. Les anciens lots sans date restent explicitement non comparables |
+| D41 | 2026-09-17 | **Delta de satisfaction en points sur 10**, séparé par source et accompagné des deux effectifs ; KPI modèle comparés uniquement à modèle compatible, taux de revue également à seuil identique | `+0,1` doit signifier `8,1 → 8,2`, pas `+10 %`. Les volumes et notes déclarées sont indépendants du modèle ; thèmes, signaux et revue ne le sont pas |
+| D42 | 2026-09-17 | **Synthèse métier simplifiée** : cartes de satisfaction par source puis top 5 des sous-thèmes, avec volume, part, rang et évolution ; détails techniques relégués au second niveau | Une évolution de volume seule est trompeuse si le lot change de taille. La part et les deux dénominateurs rendent la comparaison interprétable. Les classifications portent sur tous les verbatims ; elles ne sont jamais confondues avec le signal ML d'insatisfaction |
+| D43 | 2026-09-17 | **Couverture attendue rendue explicite** : les quatre sources et les trois statuts MDTC restent visibles ; une source non reçue est distinguée d'un zéro mesuré ; les classifications sont libellées comme une analyse des seules réponses ouvertes | Masquer les segments vides faisait croire que « Nouveau » ou Mopinion mobile n'étaient pas gérés. Le libellé technique `non_renseigne` était aussi confondu avec une note absente, tandis que les thèmes automatiques pouvaient être interprétés comme intégrant les questions fermées |

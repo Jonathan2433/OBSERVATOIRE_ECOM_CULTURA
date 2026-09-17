@@ -207,8 +207,13 @@ export interface ResultRow {
   source?: string | null;
   verbatim_analyse: string;
   nb_themes: number;
-  /** Note du client normalisée 1-4 (D-20). `null` = non renseignée, jamais zéro. */
+  /** Note normalisée 1-4 conservée pour le modèle ML historique. */
   satisfaction?: number | null;
+  /** Note métier native et maximum de son échelle; absents sur les anciens lots. */
+  satisfaction_native?: number | null;
+  satisfaction_scale_max?: number | null;
+  client_status?: "ancien" | "nouveau" | "non_renseigne" | null;
+  source_file?: string | null;
   theme1_niv1?: string | null;
   theme1_niv2?: string | null;
   theme1_sentiment?: string | null;
@@ -240,7 +245,7 @@ export interface ResultFilters {
   q?: string;
   /** Ne garder que les verbatims portant un SECOND thème. */
   bi_theme?: boolean;
-  /** Note exacte sur l'échelle commune 1-4. */
+  /** Filtre historique sur la valeur normalisée ML 1-4 (non proposé dans l'UI). */
   satisfaction?: number;
   limit?: number;
   offset?: number;
@@ -334,24 +339,142 @@ export const exportCorrectionsUrl = () => "/api/corrections/export";
  * Indicateurs de satisfaction DÉCLARÉE par le client (D-20), à ne pas confondre
  * avec le signal `insatisfaction`, qui est une déduction du modèle sur le texte.
  *
- * `moyenne` et `taux_satisfaction` valent `null` quand aucune note n'est
- * renseignée : l'écran doit alors afficher « non renseigné » et surtout pas
- * « 0 ». Les lots traités avant la persistance de la note tombent dans ce cas.
+ * Une moyenne vaut `null` quand aucune note native valide n'est disponible :
+ * l'écran affiche alors « non renseigné », jamais zéro. Les anciens lots sans
+ * réponse liée exposent explicitement `native_detail_available: false`.
  */
+export type ClientStatus = "ancien" | "nouveau" | "non_renseigne";
+export type SatisfactionAvailabilityStatus =
+  | "available"
+  | "source_not_provided"
+  | "historical_unavailable"
+  | "inconsistent_scale"
+  | "partial_history";
+export interface SatisfactionSegmentKpi {
+  client_status: ClientStatus;
+  respondent_count: number;
+  rated_respondent_count: number;
+  unrated_respondent_count: number;
+  invalid_rating_count: number;
+  mean_native: number | null;
+  mean_on_10: number | null;
+}
+export interface SatisfactionSourceKpi {
+  source_type: string;
+  availability_status: SatisfactionAvailabilityStatus;
+  native_scale_min: number | null;
+  native_scale_max: number | null;
+  respondent_count: number | null;
+  rated_respondent_count: number;
+  unrated_respondent_count: number | null;
+  invalid_rating_count: number;
+  mean_native: number | null;
+  mean_on_10: number | null;
+  native_distribution: Record<string, number>;
+  by_client_status: SatisfactionSegmentKpi[];
+  period: SatisfactionPeriod;
+  native_detail_available: boolean;
+  historical_verbatim_count: number;
+  availability_message: string | null;
+}
+export interface SatisfactionPeriod {
+  start: string | null;
+  end: string | null;
+  dated_respondent_count: number;
+  undated_respondent_count: number | null;
+}
+export interface SatisfactionSegmentComparison {
+  client_status: ClientStatus;
+  current_mean_on_10: number | null;
+  reference_mean_on_10: number | null;
+  delta_on_10: number | null;
+  current_rated_respondent_count: number;
+  reference_rated_respondent_count: number;
+}
+export interface SatisfactionSourceComparison {
+  source_type: string;
+  comparable: boolean;
+  reason: string | null;
+  warning: string | null;
+  current_period: SatisfactionPeriod;
+  reference_period: SatisfactionPeriod | null;
+  current_mean_on_10: number | null;
+  reference_mean_on_10: number | null;
+  delta_on_10: number | null;
+  current_rated_respondent_count: number;
+  reference_rated_respondent_count: number;
+  by_client_status: SatisfactionSegmentComparison[];
+}
+export interface SatisfactionComparison {
+  by_source: SatisfactionSourceComparison[];
+}
+export interface MetricComparison {
+  current: number;
+  reference: number;
+  delta: number;
+  unit: "count" | "ratio";
+  comparable?: boolean;
+  reason?: string | null;
+}
+export interface BatchComparison {
+  reference_mode: "automatic" | "explicit";
+  reference_batch: { id: number; label: string; model_label?: string | null };
+  satisfaction: SatisfactionComparison;
+  lot_metrics: {
+    volume: MetricComparison;
+    review_rate: MetricComparison;
+    bi_theme_rate: MetricComparison;
+    signal_rates: Record<"rupture" | "churn" | "insatisfaction", MetricComparison>;
+  };
+}
+export interface ClassificationEvolutionItem {
+  niv1: string;
+  niv2: string | null;
+  label: string;
+  current_rank: number;
+  reference_rank: number | null;
+  /** Positif = la classification gagne des places. */
+  rank_delta: number | null;
+  current_count: number;
+  reference_count: number | null;
+  count_delta: number | null;
+  current_share: number;
+  reference_share: number | null;
+  share_delta: number | null;
+}
+export interface ClassificationSourceEvolution {
+  source_type: string;
+  availability_status: "available" | "source_not_provided";
+  comparable: boolean;
+  reason: string | null;
+  current_verbatim_count: number;
+  reference_verbatim_count: number | null;
+  items: ClassificationEvolutionItem[];
+}
+export interface ClassificationEvolution {
+  unit: "verbatim";
+  angle: "all_mentions";
+  denominator: "source_verbatims";
+  top_n: number;
+  comparable: boolean;
+  reason: string | null;
+  levels: {
+    niv1: ClassificationSourceEvolution[];
+    niv2: ClassificationSourceEvolution[];
+  };
+}
 export interface SatisfactionKpi {
-  n_notes: number;
-  n_sans_note: number;
-  /** Clés "1".."4" — une note absente n'apparaît pas, elle n'est pas un zéro. */
-  distribution: Record<string, number>;
-  moyenne: number | null;
-  n_satisfaits: number;
-  n_insatisfaits: number;
-  taux_satisfaction: number | null;
-  hors_echelle: number;
-  par_source: Record<string, { n_notes: number; moyenne: number | null; taux_satisfaction: number | null }>;
-  echelle: { min: number; max: number; seuil_satisfait: number };
-  /** Échelles dont la conversion vers 1-4 est une hypothèse eXalt (Q-17). */
-  sources_hypothese: string[];
+  unit: "respondent";
+  display_scale_max: 10;
+  expected_source_types: string[];
+  by_source: SatisfactionSourceKpi[];
+  global: {
+    scope: string;
+    respondent_count: number;
+    rated_respondent_count: number;
+    mean_on_10: number | null;
+  };
+  historical_data_unavailable: boolean;
 }
 export interface BatchKpi {
   batch_id: number;
@@ -379,14 +502,14 @@ export interface BatchKpi {
   signals: { rupture: number; churn: number; insatisfaction: number };
   theme_sentiment: Record<string, Record<string, number>>;
   satisfaction: SatisfactionKpi;
+  classification_evolution: ClassificationEvolution;
+  comparison: BatchComparison | null;
 }
 export interface VolumetrySeriesItem {
   id: number; label: string; created_at?: string | null;
   n_total: number; n_review: number; review_rate: number;
   signals: { rupture: number; churn: number; insatisfaction: number };
   n_bi_themes: number;
-  satisfaction_moyenne: number | null;
-  taux_satisfaction: number | null;
 }
 export interface Volumetry {
   n_batches: number;
@@ -402,7 +525,10 @@ export interface Volumetry {
 export interface ModelKpi {
   active: null | { label: string; kind: string; available: boolean; metrics?: Record<string, number> | null };
 }
-export const getBatchKpi = (id: number) => request<BatchKpi>(`/api/batches/${id}/kpi`);
+export const getBatchKpi = (id: number, referenceBatchId?: number) => {
+  const query = referenceBatchId == null ? "" : `?reference_batch_id=${referenceBatchId}`;
+  return request<BatchKpi>(`/api/batches/${id}/kpi${query}`);
+};
 export const getVolumetry = () => request<Volumetry>("/api/kpi/volumetry");
 export const getModelKpi = () => request<ModelKpi>("/api/kpi/model");
 

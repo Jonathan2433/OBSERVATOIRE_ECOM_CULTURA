@@ -4,7 +4,8 @@
 > normalisation des colonnes et des labels. Remplace le chargeur actuel
 > (`src/preprocessing/loader.py`), dont **aucun mapping ne survit**.
 >
-> **Statut.** v1.0 — 9 septembre 2026. **Auteur.** Agent Product Owner.
+> **Statut.** v1.1 — mise à jour du 17 septembre 2026 (répondant, statut client,
+> date métier). **Auteur.** Agent Product Owner.
 > **Destinataire.** Data scientist. Ce document est exécutable en l'état.
 > **Références.** `docs/AUDIT_DONNEES_NOUVEAU_MODELE.md`, `docs/CADRAGE_NOUVEAU_MODELE.md` (v1.3).
 > **Décisions appliquées.** D-17, D-18, D-19 (annulée), D-20, D-26, D-27 (rendue optionnelle), D-29.
@@ -42,12 +43,16 @@ avec les colonnes techniques préfixées pour éviter toute collision métier.
 | Colonne | Type | Sémantique |
 |---|---|---|
 | `__source__` | texte | `MDTC-postachat` · `MDTC-postrecep` · `Mopinion-desktop` · `Mopinion-mobile` |
-| `__respondent_id__` | texte | identifiant du répondant — **permet de regrouper les verbatims d'une même réponse** |
+| `__respondent_id__` | empreinte SHA-256 | clé opaque stable dans `source + fichier`, permettant de regrouper les verbatims d'une même réponse sans exposer l'identifiant source |
 | `__field__` | texte | nom canonique du champ libre d'origine |
 | `__text_raw__` | texte | verbatim brut, **avant** anonymisation |
-| `__satisfaction__` | entier 1–4 ou vide | note normalisée (§7) |
+| `__satisfaction_native__` | entier ou vide | note native validée : 1–4 pour MDTC, 1–5 pour Mopinion |
+| `__satisfaction_scale_max__` | 4 ou 5 | maximum de l'échelle native |
+| `__satisfaction__` | entier 1–4 ou vide | note normalisée réservée au modèle ML (§7) |
+| `__satisfaction_invalid__` | booléen | valeur présente mais non reconnue ou hors plage |
 | `__satisfaction_raw__` | texte | valeur brute, conservée pour traçabilité |
-| `__date__` | date ISO | date de réponse |
+| `__client_status__` | texte | `ancien`, `nouveau` ou `non_renseigne` |
+| `__date__` | date ISO ou vide | date métier de la réponse, persistée pour les comparaisons de périodes ; jamais remplacée par la date de traitement |
 | `__page_type__` | texte ou vide | métadonnée ingérée (D-18) |
 | `__url__` | texte ou vide | métadonnée ingérée (D-18) |
 | `__device__` | texte ou vide | métadonnée ingérée (D-18) |
@@ -229,8 +234,9 @@ s'appuyer uniquement sur les commentaires pour les 2 outils ») — les sujets c
 ### Cas particulier — `Client`
 
 `Client` (`Nouveau` / `Ancien`) existe dans les schémas A et B, mais est **vide dans 4 fichiers
-sur 6**. Non ingérée : trop lacunaire pour être exploitable. À reconsidérer si Cultura la
-renseigne systématiquement.
+sur 6**. La colonne est désormais ingérée : seuls les deux libellés explicitement configurés
+deviennent `nouveau` ou `ancien`; une valeur vide ou inconnue devient `non_renseigne`.
+L'absence n'est jamais déduite à partir d'une autre donnée.
 
 ### Liste configurable
 
@@ -241,10 +247,10 @@ La liste des colonnes ingérées doit être **déclarée en configuration**, non
 
 ## 7. Échelles de satisfaction — D-20
 
-Trois échelles hétérogènes. **Le score de recommandation n'est pas retenu** (il mesure
+Deux échelles natives couvrent les quatre schémas. **Le score de recommandation n'est pas retenu** (il mesure
 l'intention de recommander la marque, pas le vécu de l'expérience décrite).
 
-| Schéma | Colonne retenue | Valeurs observées | Normalisation |
+| Schéma | Colonne retenue | Échelle native | Normalisation ML historique |
 |---|---|---|---|
 | A, B | `Satisfaction` | 1, 2, 3, 4 | identité |
 | C | `Quel est votre degré de satisfaction concernant Cultura ?` | 1 à 5 | → 1–4 (§7.1) |
@@ -272,10 +278,20 @@ Le 3 de Mopinion est rabattu vers l'insatisfaction plutôt que vers la satisfact
 avec le fait que ces formulaires recueillent des irritants.
 
 > ⚠️ **Cette conversion est une hypothèse eXalt, marquée comme telle.** Elle influence
-> directement la comparaison de volumes entre sources (O-3). À faire valider avant de
-> communiquer le moindre chiffre agrégé à Cultura.
+> uniquement les entrées du modèle historique. Elle ne sert jamais aux moyennes métier.
 
-### 7.2 Le préfixe de satisfaction
+### 7.2 Mesure métier
+
+La note native et son maximum sont conservés jusqu'en base. Les KPI comptent une seule
+`SurveyResponse` par répondant ayant produit au moins un verbatim, même si Mopinion a émis
+plusieurs verbatims. La formule d'affichage est `moyenne(native) / maximum_natif × 10`,
+séparément par source. Une note absente est exclue; une note hors plage est comptée invalide.
+La date ISO `__date__` devient `survey_responses.response_date` (jour, sans heure).
+Si elle manque ou se contredit entre plusieurs verbatims du même répondant, elle
+reste `NULL` et la comparaison temporelle le signale. `batches.created_at` est
+une date technique et ne constitue jamais un repli acceptable.
+
+### 7.3 Le préfixe de satisfaction
 
 `src/utils/features.py` produit `[SATISFACTION 3/10]`. **L'échelle est désormais sur 4, pas
 sur 10.** Le préfixe doit devenir `[SATISFACTION 3/4]`, et la fonction doit être appelée à
@@ -507,6 +523,7 @@ Le chargeur est réputé conforme quand :
 | v1.0 | 09/09/2026 | Version initiale, sur la livraison Cultura du 09/09 (10h27). |
 | **v1.1** | **09/09/2026** | **Livraison v2 (14h17)** enregistrée sous `data/raw/cultura_2026/v2_20260909/`, la v1 conservée pour audit. Delta mesuré : **zéro annotation supplémentaire** (7 068 → 7 068), uniquement des réaffectations — 23 annotations basculées de `Passer commande / Autre passer commande` vers `Académie / Réserver une activité`, 1 exemple ajouté à chacun des 2 sous-thèmes marketplace, 1 correction ponctuelle. Couverture : 52/59 → **56/59**. Référentiel **inchangé** (md5 identique). |
 | v1.1 | 09/09/2026 | Ajout du §8.5 (périmètre des sous-thèmes, D-32) et du code d'anomalie `SOUSTHEME_HORS_PERIMETRE`. Ajout de Q-27 (le fourre-tout `Général / Autre`) et Q-28 (libellé Académie). |
+| **v1.2** | **16/09/2026** | Conservation de la note native, clé répondant opaque, ingestion explicite du statut `Client` et séparation entre normalisation ML et moyenne métier sur 10. |
 
 ---
 

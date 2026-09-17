@@ -22,8 +22,8 @@ L'écran d'accueil résume l'activité (derniers lots, KPI modèle).
 
 1. Menu **Lots → Nouveau lot**.
 2. Glisser-déposer **tous les exports du mois d'un coup** — `.xlsx` ou `.csv`,
-   autant de fichiers que nécessaire : post-achat et post-réception, ancien et
-   nouveau format, Mopinion desktop et mobile.
+   jusqu'à **20 fichiers** : post-achat et post-réception, ancien et nouveau
+   format, Mopinion desktop et mobile.
    > **Vous n'avez rien à déclarer.** L'application reconnaît chaque export à son
    > jeu de colonnes, pas à son nom ni à son extension : elle distingue seule un
    > post-achat d'un post-réception, un desktop d'un mobile, l'ancien format du
@@ -49,8 +49,9 @@ L'écran d'accueil résume l'activité (derniers lots, KPI modèle).
    (anonymisation → nettoyage → classification), l'interface reste libre.
 5. À la fin : nombre de verbatims traités, **% en revue**, durée. 
 
-> ⏱️ Un lot de ~11 000 verbatims se traite en **moins d'une heure** (modèle réel
-> CamemBERT). Le mode *démonstration* (stub, sans modèle déposé) est quasi instantané.
+> ⏱️ La cible d'exploitation est un lot de ~11 000 verbatims en **moins d'une
+> heure**. Cette mesure reste à confirmer sur le poste cible avec le modèle réel
+> CamemBERT. Le mode *démonstration* (stub) est quasi instantané.
 
 ---
 
@@ -90,9 +91,9 @@ Deux colonnes voisines, deux natures différentes :
 | **Insatisf.** (signal) | déduit par le modèle du **texte** | ce qu'il a écrit |
 
 Les deux divergent régulièrement, et c'est précisément l'écart qui est
-intéressant. Les notes sont ramenées sur une **échelle commune 1-4** pour être
-comparables entre sources (MDTC est en 4 modalités en toutes lettres, Mopinion
-en 1-5). Une note **absente** s'affiche « — », jamais 0.
+intéressant. Le tableau affiche la **note native** (`3/4` pour MDTC, `3/5` pour
+Mopinion) et son équivalent sur 10. Une note absente ou un ancien lot sans détail
+natif s'affiche comme indisponible, jamais comme 0.
 
 > 🔒 Le tableau n'affiche **jamais** le texte brut : seul le **texte anonymisé**
 > (e-mails, téléphones, n° de commande, noms remplacés par `[EMAIL]`, `[TEL]`,
@@ -170,25 +171,65 @@ de septembre, le thème **Académie** n'apparaît **jamais** en thème principal
 quatre fois en second : la vue « thème principal » seule le rendait invisible.
 La carte *Second thème seul* isole exactement ces sujets-là.
 
+### Analyse automatique des verbatims
+
+La synthèse affiche ensuite les cinq sous-thèmes les plus présents dans les
+**réponses textuelles ouvertes** pour Mopinion mobile/ordinateur, MDTC
+post-achat et MDTC post-réception. Pour chaque classification, elle montre le
+**nombre de verbatims**, sa **part dans les verbatims de la source**, son rang
+et l'évolution de cette part en points par rapport au lot de référence.
+
+Cette vue porte sur tous les verbatims, et non sur le seul signal ML
+`insatisfaction forte`. Elle compte le thème principal et le second thème. Un
+verbatim peut donc alimenter deux classifications différentes, mais il ne peut
+jamais être compté deux fois dans la même. Si le modèle ou le référentiel a
+changé, les volumes courants restent lisibles mais les deltas sont marqués
+« non comparable ». Les réponses aux **questions fermées** du formulaire ne
+sont pas incluses dans ces thèmes : leur restitution nécessite un indicateur
+distinct et une correspondance métier validée avec les choix du formulaire.
+
+Les quatre emplacements de source restent présents. La mention « Aucune donnée
+reçue pour cette source » signifie que l'export correspondant n'était pas dans
+le lot ; elle ne doit pas être interprétée comme une mesure à zéro.
+
 ### Satisfaction client déclarée
 
-Le panneau *Satisfaction* restitue ce que les clients ont **coché** : note
-moyenne, part de satisfaits (note ≥ 3) et d'insatisfaits (note < 3), répartition
-des notes, et ventilation **par source**. Il répond à la question que le seul
-compteur d'« insatisfaction forte » laissait ouverte — combien de clients sont
-satisfaits.
+Le panneau *Satisfaction* restitue ce que les clients ont **coché**, avec une
+carte par source. La moyenne est affichée sur 10 mais calculée depuis l'échelle
+native (`moyenne native / maximum natif × 10`). L'unité est le **répondant** :
+plusieurs champs Mopinion remplis par la même personne ne lui donnent pas plus
+de poids. Pour MDTC, chaque carte conserve les lignes `Ancien`, `Nouveau` et
+`Statut client non disponible`, même lorsque leur effectif est nul. Dans les
+exports Mopinion actuels, aucun champ ne permet de déterminer si le répondant
+est ancien ou nouveau : toutes les réponses Mopinion sont donc regroupées sous
+`Statut client non disponible`. Ce libellé ne signifie pas que la note de
+satisfaction est manquante.
 
-Trois précautions portées par l'écran lui-même :
+Le bloc **Comparaison inter-lots** permet de choisir un lot de référence. Sans
+choix manuel, l'application retient le dernier lot terminé dont la période
+métier précède la période courante sans la chevaucher. La date de traitement du
+lot n'est jamais utilisée : un export d'août déposé en septembre reste une
+donnée d'août.
 
-- une **note absente** n'est pas un zéro : elle est comptée à part (« Sans note »)
-  et ne pèse sur aucune moyenne. Les lots traités **avant** la mise en place de
-  cet indicateur n'en portent aucune — relancer le traitement les fera apparaître ;
-- un taux calculé sur zéro note s'affiche **« non renseigné »** ;
-- le badge **« conversion à valider »** signale que la mise à l'échelle commune
-  d'une source repose sur une **hypothèse eXalt**, faute de table officielle
-  Cultura (Q-17). Aujourd'hui c'est le cas de l'échelle Mopinion 1-5, qui pèse
-  souvent l'essentiel des notes d'un lot : les comparaisons de **niveau** entre
-  sources en dépendent, les **volumes** non.
+Le badge d'évolution se lit en **points sur 10** : `+0,10 pt` signifie que la
+moyenne est passée, par exemple, de `8,10/10` à `8,20/10`. Il ne s'agit pas d'une
+hausse de 10 %. Les deux périodes et les deux effectifs notés restent affichés
+pour ne pas interpréter de la même façon une évolution sur 20 réponses et une
+évolution sur 10 000 réponses.
+
+Précautions portées par l'écran lui-même :
+
+- une **note absente** n'est pas un zéro : elle est comptée à part et ne pèse sur
+  aucune moyenne ;
+- une **source absente du lot courant** reste affichée comme non reçue, sans
+  fabriquer une moyenne ni transformer son absence en zéro ;
+- une valeur hors plage est signalée comme invalide et exclue du calcul ;
+- les lots antérieurs à cette évolution affichent « détail natif indisponible ».
+  Leur valeur Mopinion normalisée ne permet pas de retrouver la note native : il
+  faut retraiter leurs fichiers source de manière explicite ;
+- une source sans date métier, absente du lot de référence ou dont l'échelle a
+  changé affiche « non comparable ». La date d'upload n'est jamais utilisée en
+  remplacement.
 
 ---
 

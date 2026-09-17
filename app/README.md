@@ -11,7 +11,8 @@ Cultura. Réutilise le moteur ML du POC (`../src`).
 [Exploitation](../docs/EXPLOITATION.md) ·
 [Recette V1](../docs/RECETTE_V1.md) ·
 [Passation](../docs/PASSATION.md) ·
-[Couche de décision](../docs/COUCHE_DECISION.md)
+[Couche de décision](../docs/COUCHE_DECISION.md) ·
+[Migration satisfaction répondant](../docs/MIGRATION_SATISFACTION_REPONDANT.md)
 
 ## Services (docker-compose)
 | Service | Rôle | Exposition |
@@ -48,6 +49,15 @@ humaine, et la seule forme qui suive le modèle dans les conteneurs.
 
 Activer un moteur n'en supprime aucun ; le retour arrière est une resélection.
 
+## Restitution métier
+
+La satisfaction est agrégée dans `survey_responses` à raison d'une voix par
+répondant, en conservant l'échelle native de chaque source. Le tableau de bord
+affiche les quatre sources attendues, y compris une source non reçue, et distingue
+`Ancien`, `Nouveau` et `Statut client non disponible` pour MDTC. Le classement des
+sous-thèmes porte uniquement sur les champs textuels ouverts ; les questions
+fermées n'y sont pas intégrées implicitement.
+
 ## État d'avancement
 Voir [../docs/SUIVI_LOTS.md](../docs/SUIVI_LOTS.md). **V1→V5 livrées**, V6 (revue et
 exports consolidés) incluse. Modèle **Cultura 2026** recetté et mis à disposition dans
@@ -57,9 +67,9 @@ Recettes automatisées :
 
 | Applicatives (torch-free) | Modèle (environnement ML) |
 |---|---|
-| `recette_v1.py` → 48 OK · `recette_v3.py` → 13 OK | `recette_l1a_chargeur.py` → 29 OK · 1 échec connu |
+| `recette_v1.py` → 89 OK · `recette_v3.py` → 13 OK | `recette_l1a_chargeur.py` → dépend de spaCy et des fichiers réels |
 | `recette_v4.py` → 50 OK · `recette_v5.py` → 112 OK | `recette_l2_protocole.py` → 15 OK |
-| `recette_v6.py` → 26 OK | `recette_couche_decision.py` → 46 OK |
+| `recette_v6.py` → 26 OK · `test_satisfaction_respondents.py` → 10 OK | `recette_couche_decision.py` → 46 OK |
 
 ## Dépannage
 
@@ -83,6 +93,6 @@ find app -name '*.py' | xargs python3 -m py_compile   # syntaxe Python
 python3 -m venv .venv_validate && .venv_validate/bin/python -m pip install --upgrade pip
 .venv_validate/bin/python -m pip install --prefer-binary fastapi httpx sqlalchemy \
   "pydantic>=2" pydantic-settings argon2-cffi PyJWT python-multipart pandas numpy openpyxl pyyaml redis rq
-.venv_validate/bin/python app/tests/recette_v1.py     # -> 48 OK · 0 ÉCHEC
+.venv_validate/bin/python app/tests/recette_v1.py     # -> 89 OK · 0 ÉCHEC
 ```
 Détail de la couverture (garde-fous §10 + DoD §11) : [../docs/RECETTE_V1.md](../docs/RECETTE_V1.md).

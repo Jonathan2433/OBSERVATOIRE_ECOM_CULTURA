@@ -198,12 +198,36 @@ Transformer le POC en **application conteneurisée, utilisable par le métier**,
   second. Le **second thème est aussi publié seul**.
 - Taux de **bi-thèmes**, rapporté aux verbatims classés.
 - Comptage des signaux : rupture / churn / insatisfaction (n et %).
-- **Satisfaction déclarée** : note moyenne, part de satisfaits (≥ 3) et
-  d'insatisfaits (< 3), répartition des notes sur l'échelle commune 1-4,
-  ventilation par source. Distincte du signal `insatisfaction`, qui est une
-  déduction du modèle sur le texte et non une déclaration du client. Une note
-  absente est comptée à part et ne pèse sur aucune moyenne ; un agrégat entre
-  sources porte la mention « conversion à valider » tant que Q-17 est ouverte.
+- **Satisfaction déclarée** : unité statistique **répondant**, jamais ligne de
+  verbatim. Moyenne séparée pour les quatre sources, note native conservée
+  (MDTC 1–4, Mopinion 1–5), affichage sur 10 par division par le maximum natif,
+  et ventilation MDTC `ancien` / `nouveau` / `non_renseigne`. Ce dernier code
+  technique est présenté à l'écran comme **« Statut client non disponible »** :
+  il signifie que la source ne porte pas le statut ancien/nouveau, et non que la
+  note de satisfaction est absente. Les quatre sources attendues restent
+  visibles même lorsqu'un export n'a pas été reçu ; cette indisponibilité est
+  distinguée d'un volume mesuré à zéro. Chaque moyenne indique sa source, son
+  échelle et le nombre de répondants notés. Notes nulles exclues, notes hors
+  plage comptées comme invalides. Un agrégat multi-source éventuel reste
+  secondaire et pondère chaque répondant une seule fois après conversion.
+- **Comparaison inter-lots** : le tableau de bord compare le lot courant à un
+  lot terminé de référence, choisi automatiquement ou explicitement. La période
+  affichée vient des dates de réponse des fichiers source, jamais de la date
+  d'upload. Les évolutions de satisfaction sont exprimées en **points sur 10**
+  et portent la période, l'effectif courant et l'effectif de référence. Une
+  source sans date, note native ou échelle compatible est marquée « non
+  comparable », sans valeur fabriquée.
+- **Évolution des classifications** : top 5 des sous-thèmes par source, en
+  *toutes mentions*, avec rang, nombre de verbatims, part dans les verbatims de
+  la source et écart au lot de référence. Un même verbatim ne compte jamais
+  deux fois dans une même classification, même si une sortie anormale répétait
+  le thème dans les deux rangs. Les deltas ne sont publiés que lorsque les lots
+  utilisent le même modèle/référentiel ; les volumes courants restent visibles
+  sinon avec la mention « non comparable ». Cette analyse porte uniquement sur
+  les **réponses textuelles ouvertes** classées par le modèle. Les réponses aux
+  questions fermées ne sont ni fusionnées ni implicitement comptées dans ces
+  thèmes ; leur analyse relève d'un indicateur séparé avec un mapping métier
+  explicite.
 - Répartition par source (MDTC / Mopinion) et par score de satisfaction.
 - Nombre de corrections effectuées (taux de correction).
 
@@ -267,7 +291,8 @@ Transformer le POC en **application conteneurisée, utilisable par le métier**,
 ### 7.4 Modèle de données (entités principales)
 - `users` (id, username, password_hash, role, active, created_at)
 - `batches` (id, label, statut, created_by, dates, model_version, seuil_revue, n_total, n_processed, n_review, n_errors, duration_s, source_files)
-- `results` (id, batch_id, row_index, source, **verbatim_analyse (anonymisé)**, nb_themes, **satisfaction (note client normalisée 1-4, nullable)**, theme1_niv1/niv2/sentiment/score, theme2_*, signaux, confidence_globale, revue_humaine_requise, corrected, original_columns (jsonb))
+- `survey_responses` (id, batch_id, source_type, source_file, respondent_key opaque, **response_date**, satisfaction_native, satisfaction_scale_max, satisfaction_normalized, rating_invalid, client_status) — **une ligne par réponse source ayant produit au moins un verbatim**. `response_date` est la date métier du fichier, nullable et jamais remplacée par la date d'upload.
+- `results` (id, batch_id, survey_response_id, row_index, source, **verbatim_analyse (anonymisé)**, nb_themes, **satisfaction (normalisation ML historique 1-4, nullable)**, theme1_niv1/niv2/sentiment/score, theme2_*, signaux, confidence_globale, revue_humaine_requise, corrected, original_columns (jsonb))
   > `original_columns` ne reçoit **jamais** les colonnes de texte libre du fichier source : elles portent le verbatim **brut**, et les recopier remettrait en base les PII que l'anonymiseur vient de masquer.
 - `corrections` (id, result_id, user_id, champ, ancienne_valeur, nouvelle_valeur, created_at)
 - `model_versions` (id, version, path, metrics (jsonb), active, registered_at)
@@ -282,7 +307,7 @@ Transformer le POC en **application conteneurisée, utilisable par le métier**,
 - `POST /api/batches` (upload + params), `GET /api/batches`, `GET /api/batches/{id}`, `DELETE /api/batches/{id}`
 - `GET /api/batches/{id}/results` (filtres, pagination), `GET /api/batches/{id}/export?format=csv|xlsx`
 - `GET /api/review?batch_id=...`, `PATCH /api/results/{id}` (correction), `GET /api/corrections/export`
-- `GET /api/kpi/model`, `GET /api/kpi/batch/{id}`, `GET /api/kpi/volumetry?from=&to=`
+- `GET /api/kpi/model`, `GET /api/batches/{id}/kpi?reference_batch_id=`, `GET /api/kpi/volumetry?from=&to=`
 - `GET /api/models`, `POST /api/models/{id}/activate` (admin)
 - `GET/PATCH /api/config` (admin), `POST /api/admin/purge` (admin)
 - `GET /health` (sans auth)

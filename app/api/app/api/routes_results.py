@@ -18,13 +18,16 @@ from common.models import Batch, Result
 router = APIRouter(prefix="/api/batches", tags=["results"], dependencies=[Depends(get_current_user)])
 
 #: Colonnes de CONTEXTE exportées avant les colonnes modèle. Ce ne sont pas des
-#: sorties du modèle — le bloc `_MODEL_COLUMNS` reste identique au contrat POC,
-#: colonne pour colonne. `satisfaction` est la note du client normalisée 1-4 :
-#: elle arrivait autrefois par les colonnes d'origine, que la liste blanche des
-#: exports Cultura 2026 (D-18) ne laisse plus passer.
+#: sorties du modèle — le bloc `_MODEL_COLUMNS` reste identique au contrat POC.
+#: La valeur normalisée reste exportée pour la reproductibilité ML ; les champs
+#: natifs portent la mesure métier et sa provenance.
 _CONTEXT_COLUMNS = [
     ("source", "source"),
-    ("satisfaction", "satisfaction"),
+    ("source_file", "source_file"),
+    ("client_status", "client_status"),
+    ("satisfaction_native", "satisfaction_native"),
+    ("satisfaction_scale_max", "satisfaction_scale_max"),
+    ("satisfaction_normalized_ml", "satisfaction"),
 ]
 
 # Colonnes modèle exportées (noms EXACTS du format POC) -> attribut ORM.

@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
-import { getModelKpi, getVolumetry, type ModelKpi, type Volumetry } from "../api";
+import {
+  getBatchKpi, getModelKpi, getVolumetry, type BatchKpi, type ModelKpi, type Volumetry,
+} from "../api";
 import BarList from "../components/BarList";
+import ClassificationEvolutionPanel from "../components/ClassificationEvolutionPanel";
 import SatisfactionPanel from "../components/SatisfactionPanel";
 import StackedSentimentBar from "../components/StackedSentimentBar";
 import { Badge, Card, EmptyState, InfoTip, Spinner, StatCard } from "../ui";
@@ -26,18 +29,26 @@ const SEUILS: Record<string, number> = {
 export default function DashboardsPage() {
   const [model, setModel] = useState<ModelKpi | null>(null);
   const [vol, setVol] = useState<Volumetry | null>(null);
+  const [latest, setLatest] = useState<BatchKpi | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     getModelKpi().then(setModel).catch((e) => setError(String(e.message ?? e)));
-    getVolumetry().then(setVol).catch((e) => setError(String(e.message ?? e)));
+    getVolumetry().then((data) => {
+      setVol(data);
+      const latestBatch = data.series[data.series.length - 1];
+      if (latestBatch) {
+        getBatchKpi(latestBatch.id).then(setLatest)
+          .catch((e) => setError(String(e.message ?? e)));
+      }
+    }).catch((e) => setError(String(e.message ?? e)));
   }, []);
 
   return (
     <div>
       <div className="page-header">
         <h1 className="page-header__title">Tableaux de bord</h1>
-        <p className="page-header__sub">Performance du modèle actif et volumétrie globale des lots traités.</p>
+        <p className="page-header__sub">Notes déclarées, analyse des textes libres et performance du modèle actif.</p>
       </div>
 
       {error && <p className="ui-field__error">{error}</p>}
@@ -82,20 +93,25 @@ export default function DashboardsPage() {
             <div className="ui-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
               <StatCard label="Lots traités" value={vol.n_batches} />
               <StatCard label="Verbatims (total)" value={vol.total_verbatims} />
-              <StatCard label="Note moyenne"
-                        value={vol.satisfaction.moyenne != null
-                          ? `${vol.satisfaction.moyenne.toFixed(2)} / ${vol.satisfaction.echelle.max}`
-                          : "non renseigné"}
-                        hint={`sur ${vol.satisfaction.n_notes} note(s)`} />
-              <StatCard label="Clients satisfaits"
-                        value={vol.satisfaction.taux_satisfaction != null
-                          ? `${(vol.satisfaction.taux_satisfaction * 100).toFixed(1)} %`
-                          : "non renseigné"} />
               <StatCard label={<span className="ui-row" style={{ gap: 4 }}>Bi-thèmes<InfoTip text="Verbatims auxquels le modèle a retenu un second thème, tous lots confondus." /></span>}
                         value={vol.n_bi_themes} />
             </div>
 
-            <SatisfactionPanel sat={vol.satisfaction} titre="Satisfaction client déclarée (tous lots)" />
+            {vol.series.length > 0 && !latest && <Spinner label="Chargement de la synthèse métier…" />}
+            {latest && (
+              <>
+                <SatisfactionPanel
+                  sat={latest.satisfaction}
+                  titre={`Satisfaction client — ${latest.label}`}
+                  comparison={latest.comparison?.satisfaction}
+                  referenceLabel={latest.comparison?.reference_batch.label}
+                />
+                <ClassificationEvolutionPanel
+                  evolution={latest.classification_evolution}
+                  referenceLabel={latest.comparison?.reference_batch.label}
+                />
+              </>
+            )}
 
             <Card title="Thèmes × sentiment (volumétrie globale)"
                   actions={<InfoTip text="Thème principal et second thème empilés, chacun avec son propre sentiment." />}>
@@ -120,7 +136,7 @@ export default function DashboardsPage() {
                 <div className="ui-table-wrap">
                   <table className="ui-table">
                     <thead>
-                      <tr><th>Lot</th><th>Verbatims</th><th>Taux revue</th><th>Bi-thèmes</th><th>Note moy.</th><th>Satisfaits</th><th>Rupture</th><th>Churn</th><th>Insatisf. forte</th></tr>
+                      <tr><th>Lot</th><th>Verbatims</th><th>Taux revue</th><th>Bi-thèmes</th><th>Rupture</th><th>Churn</th><th>Insatisf. forte</th></tr>
                     </thead>
                     <tbody>
                       {vol.series.map((s) => (
@@ -129,8 +145,6 @@ export default function DashboardsPage() {
                           <td className="ui-table__num">{s.n_total}</td>
                           <td className="ui-table__num">{(s.review_rate * 100).toFixed(1)} %</td>
                           <td className="ui-table__num">{s.n_bi_themes}</td>
-                          <td className="ui-table__num">{s.satisfaction_moyenne != null ? s.satisfaction_moyenne.toFixed(2) : "—"}</td>
-                          <td className="ui-table__num">{s.taux_satisfaction != null ? `${(s.taux_satisfaction * 100).toFixed(0)} %` : "—"}</td>
                           <td className="ui-table__num">{s.signals.rupture}</td>
                           <td className="ui-table__num">{s.signals.churn}</td>
                           <td className="ui-table__num">{s.signals.insatisfaction}</td>

@@ -7,6 +7,11 @@ contrainte par un référentiel), un **sentiment**, trois **signaux** (rupture c
 churn, insatisfaction forte), un **score de confiance** et un **routage vers la revue
 humaine**. Le tout **100 % local, hors-ligne, sans GPU**.
 
+Les tableaux de bord séparent explicitement les **notes déclarées** (une voix par
+répondant, échelle native conservée) de l'**analyse automatique des réponses
+textuelles ouvertes**. Une source attendue mais non reçue reste visible et n'est
+jamais transformée en zéro mesuré.
+
 > 🔒 **Confidentialité by design** : anonymisation des PII **avant** tout traitement,
 > base **sans donnée brute**, exposition **localhost uniquement**, aucune sortie réseau.
 
@@ -53,7 +58,8 @@ exposé, **uniquement sur `127.0.0.1`**.
 - **`web`** : nginx, sert le build React et proxifie `/api` (en-têtes de sécurité, CSP).
 - **`api`** : FastAPI/uvicorn — auth, RBAC, orchestration des lots, KPI, admin. **Sans torch** (démarrage léger).
 - **`worker`** : RQ — exécute le pipeline ML lourd (réutilise le moteur `src/` du POC).
-- **`db`** : PostgreSQL (utilisateurs, lots, **résultats anonymisés**, corrections, audit, config).
+- **`db`** : PostgreSQL (utilisateurs, lots, réponses de questionnaire,
+  **résultats anonymisés**, corrections, audit, config).
 - **`redis`** : file de jobs.
 - Package partagé **`app/common`** (engine SQLAlchemy + modèles ORM) importé par `api` **et** `worker` → schéma unique, pas de duplication.
 - Tant qu'aucun modèle CamemBERT n'est déposé, un **classifieur stub** (heuristique, sans torch) rend l'app démontrable de bout en bout.
@@ -203,6 +209,10 @@ python scripts/validate_pipeline.py --mdtc data/demo/mdtc_demo.xlsx --mopinion d
 - **Anonymisation PII en tête de pipeline** (e-mails, téléphones, n° de commande, noms via NER) → marqueurs `[EMAIL]`, `[TEL]`, `[COMMANDE]`, `[NOM]`.
 - **Liste blanche à l'ingestion** (D-18) : sur un export au format Cultura 2026, seules les colonnes **déclarées** sont lues. Les colonnes `Commande`, `Client`, `User Agent` et les captures d'écran des exports réels n'entrent donc ni en base ni dans l'export enrichi — elles ne sont pas anonymisées, elles ne sont pas lues.
 - La base ne stocke **que le texte anonymisé** (`verbatim_analyse`) ; jamais le brut.
+- La table `survey_responses` conserve une ligne par réponse source ayant produit
+  au moins un verbatim : clé répondant opaque, source, date métier, note native et
+  statut client normalisé. Elle évite de surpondérer les réponses Mopinion
+  multi-champs. Voir la [note de migration](docs/MIGRATION_SATISFACTION_REPONDANT.md).
 - **Rétention** configurable (défaut 13 mois) + **purge** auto (démarrage worker) et manuelle (admin).
 - **Classes contraintes** : toute prédiction respecte la hiérarchie du référentiel **du modèle qui l'a produite** (un niv.2 appartient à un seul niv.1). Chaque modèle embarque le sien (`<racine>/taxonomy.json`) ; la revue humaine sert **celui du lot relu**, pas celui du moteur actif du moment.
 
@@ -227,23 +237,25 @@ Voir [`docs/TRANSMISSION.md`](docs/TRANSMISSION.md).
 **Recettes applicatives** — torch-free (SQLite, classifieur stub), hors ligne :
 
 ```bash
-python app/tests/recette_v1.py   # conformité V1 (garde-fous §10 + DoD §11)   -> 48 OK
+python app/tests/recette_v1.py   # conformité applicative + KPI répondant      -> 89 OK
 python app/tests/recette_v3.py   # V3 : annulation, reprise, ops, mot de passe -> 13 OK
 python app/tests/recette_v4.py   # V4 : moteur LM Studio                       -> 50 OK
 python app/tests/recette_v5.py   # V5 : cascade, comparaison, juge Claude      -> 112 OK
 python app/tests/recette_v6.py   # V6 : revue, export, cohérence des totaux    -> 26 OK
+python app/tests/test_satisfaction_respondents.py  # KPI répondant ciblés       -> 10 OK
 ```
 
 **Recettes du modèle** — nécessitent l'environnement ML (`requirements.txt`) :
 
 ```bash
-python app/tests/recette_l1a_chargeur.py     # ingestion de la livraison Cultura  -> 29 OK · 1 échec connu
+python app/tests/recette_l1a_chargeur.py     # chargeur Cultura ; spaCy requis pour la recette réelle
 python app/tests/recette_l2_protocole.py     # découpage sans fuite, plafonnement -> 15 OK
 python app/tests/recette_couche_decision.py  # leviers, coexistence des moteurs   -> 46 OK
 ```
 
-L'échec connu de L1a porte sur le jeu factice, devenu obsolète après le changement de
-référentiel — il est journalisé, pas masqué.
+Sans le modèle spaCy français, L1a valide les garde-fous disponibles puis ignore
+explicitement le chargement réel (`3 OK · 0 ÉCHEC · 1 SKIP` lors de la dernière
+exécution locale). Aucun mode dégradé silencieux n'est accepté.
 
 La recette de la couche de décision porte l'invariant central : **ce que
 `build_output` décide en production est exactement ce que l'évaluation rejoue**.
@@ -267,6 +279,7 @@ transmission), charte UI, recettes, suivi des lots.
 | **[`COUCHE_DECISION.md`](docs/COUCHE_DECISION.md)** | **les trois leviers de décision : ce qu'ils font, ce qu'ils rapportent** |
 | [`OPTIMISATION_SANS_CULTURA.md`](docs/OPTIMISATION_SANS_CULTURA.md) | campagne d'optimisation, pistes écartées *(chiffres du §1 corrigés par le précédent)* |
 | [`RECETTE_NOUVEAU_MODELE.md`](docs/RECETTE_NOUVEAU_MODELE.md) | recette L9, critères d'acceptation, activation |
+| [`MIGRATION_SATISFACTION_REPONDANT.md`](docs/MIGRATION_SATISFACTION_REPONDANT.md) | migrations 0011/0012, déploiement et traitement des lots historiques |
 
 ## 12. Versions
 
@@ -281,11 +294,15 @@ transmission), charte UI, recettes, suivi des lots.
   d'évaluation **sans fuite**, réentraînement, **couche de décision** à trois leviers.
   Recette technique et métier prononcées ; **mise à disposition additive** (le modèle V1
   reste sélectionnable). Voir le tableau du §11.
+- **Restitution métier — septembre 2026** — satisfaction calculée à la maille
+  répondant, quatre sources attendues toujours visibles, statuts MDTC explicites,
+  comparaison sur période métier et classement limité aux questions ouvertes.
 
 **Reste à faire.** Bascule du modèle par défaut (décision humaine, tracée à l'audit) ·
 mesure d'un lot ~11k **< 1 h** en conditions réelles (DoD §11) · atelier de
 référentiel L3 côté Cultura (recouvrements de libellés) · validation par Cultura de
-la table de correspondance des libellés de satisfaction MDTC (hypothèse eXalt). Trajectoire : V1.1 (SSO
+la table de correspondance des libellés de satisfaction MDTC (hypothèse eXalt) ·
+mapping métier des questions fermées si leur restitution est retenue. Trajectoire : V1.1 (SSO
 Entra ID, serveur multi-utilisateur), V2 (MLOps depuis l'UI).
 
 ---

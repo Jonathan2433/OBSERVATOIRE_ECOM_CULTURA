@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { exportUrl, getMeta, listResults, type ResultFilters, type ResultRow, type ResultsResponse } from "../api";
 import { Badge, type BadgeTone, Button, Card, Chip, Drawer, EmptyState, InfoTip, Input, Select, Spinner } from "../ui";
+import { CLIENT_STATUS_LABELS, satisfactionOnTen, SOURCE_LABELS } from "../satisfactionDisplay";
 
 const PAGE = 50;
 
@@ -9,12 +10,8 @@ function sentimentTone(s?: string | null): BadgeTone {
   return s === "Négatif" ? "danger" : s === "Positif" ? "success" : "neutral";
 }
 
-const SATISFACTION_MAX = 4;
-/** Note <= 2 = les deux modalités négatives de l'échelle 4 points (D-20). */
-const SATISFACTION_SEUIL_SATISFAIT = 3;
-
 /**
- * Note déposée par le client, sur l'échelle commune 1-4.
+ * Note déposée par le client, conservée sur son échelle native.
  *
  * Distincte du signal « insatisf. » juste à côté, qui est une DÉDUCTION du
  * modèle sur le texte. Les deux divergent régulièrement — un client peut noter
@@ -23,10 +20,18 @@ const SATISFACTION_SEUIL_SATISFAIT = 3;
  * Une note absente s'affiche « — », jamais 0 : les lots traités avant que la
  * note ne soit conservée n'en portent aucune.
  */
-function SatisfactionPill({ note }: { note?: number | null }) {
-  if (note == null) return <span className="ui-muted">—</span>;
-  const tone: BadgeTone = note >= SATISFACTION_SEUIL_SATISFAIT ? "success" : "danger";
-  return <Badge tone={tone}>{note}/{SATISFACTION_MAX}</Badge>;
+function SatisfactionPill({ note, scale, compact = false }: {
+  note?: number | null;
+  scale?: number | null;
+  compact?: boolean;
+}) {
+  if (note == null || scale == null) return (
+    <span className="ui-muted" title="Détail natif indisponible">
+      {compact ? "—" : "détail natif indisponible"}
+    </span>
+  );
+  const onTen = satisfactionOnTen(note, scale);
+  return <Badge tone="info">{note}/{scale} · {onTen.toFixed(1)}/10</Badge>;
 }
 
 /**
@@ -37,37 +42,26 @@ function SatisfactionPill({ note }: { note?: number | null }) {
  * l'export contient et que les répartitions comptent. Le second est marqué
  * « 2e » pour qu'aucune lecture ne confonde les deux rangs.
  */
-function ThemeCell({ r }: { r: ResultRow }) {
+function ClassificationCell({ r }: { r: ResultRow }) {
   if (!r.theme1_niv1) return <>—</>;
   return (
-    <div className="ui-stack" style={{ gap: 2 }}>
-      <div>
-        {r.theme1_niv1}
+    <div className="result-classifications">
+      <div className="result-classification">
+        <div className="ui-row ui-row--wrap" style={{ gap: 4 }}>
+          <strong>{r.theme1_niv1}</strong>
+          <Badge tone={sentimentTone(r.theme1_sentiment)}>{r.theme1_sentiment ?? "—"}</Badge>
+        </div>
         {r.theme1_niv2 && <><br /><span className="ui-muted">{r.theme1_niv2}</span></>}
       </div>
       {r.theme2_niv1 && (
-        <div style={{ borderTop: "1px dashed var(--cu-neutral-200)", paddingTop: 2 }}>
-          <span className="ui-row" style={{ gap: 4 }}>
+        <div className="result-classification result-classification--secondary">
+          <span className="ui-row ui-row--wrap" style={{ gap: 4 }}>
             <Badge tone="info">2e</Badge>
-            <span>{r.theme2_niv1}</span>
+            <strong>{r.theme2_niv1}</strong>
+            <Badge tone={sentimentTone(r.theme2_sentiment)}>{r.theme2_sentiment ?? "—"}</Badge>
           </span>
           {r.theme2_niv2 && <><br /><span className="ui-muted">{r.theme2_niv2}</span></>}
         </div>
-      )}
-    </div>
-  );
-}
-
-/** Sentiment par thème : la V4 en calcule un par thème retenu, ils peuvent différer. */
-function SentimentCell({ r }: { r: ResultRow }) {
-  return (
-    <div className="ui-stack" style={{ gap: 4 }}>
-      <Badge tone={sentimentTone(r.theme1_sentiment)}>{r.theme1_sentiment ?? "—"}</Badge>
-      {r.theme2_niv1 && (
-        <span className="ui-row" style={{ gap: 4 }}>
-          <span className="ui-muted" style={{ fontSize: "var(--fs-xs)" }}>2e</span>
-          <Badge tone={sentimentTone(r.theme2_sentiment)}>{r.theme2_sentiment ?? "—"}</Badge>
-        </span>
       )}
     </div>
   );
@@ -153,11 +147,6 @@ export default function ResultsPage() {
               <option value="">Sentiment (tous)</option>
               <option>Négatif</option><option>Neutre</option><option>Positif</option>
             </Select>
-            <Select defaultValue="" onChange={(e) => apply({ satisfaction: e.target.value ? Number(e.target.value) : undefined })}>
-              <option value="">Note client (toutes)</option>
-              <option value="1">1 / 4</option><option value="2">2 / 4</option>
-              <option value="3">3 / 4</option><option value="4">4 / 4</option>
-            </Select>
             <span className="ui-toolbar__sep" />
             <Chip active={!!filters.revue} onClick={() => toggle("revue")}>En revue</Chip>
             <Chip active={!!filters.bi_theme} onClick={() => toggle("bi_theme")}>Bi-thème</Chip>
@@ -180,25 +169,30 @@ export default function ResultsPage() {
                   <table className="ui-table">
                     <thead>
                       <tr>
-                        <th>Verbatim (anonymisé)</th>
-                        <th>Thèmes<InfoTip text="Le modèle retient jusqu'à deux thèmes par verbatim. Le second est marqué « 2e » ; sous chaque thème figure son sous-thème." /></th>
-                        <th>Sentiment<InfoTip text="Un sentiment est calculé par thème retenu : il peut être positif sur l'un et négatif sur l'autre." /></th>
-                        <th>Note client<InfoTip text="Note déposée par le client, ramenée sur une échelle commune 1-4. C'est une donnée d'entrée, pas une sortie du modèle — à ne pas confondre avec le signal « insatisf. »." /></th>
+                        <th>Retour client<InfoTip text="Source, verbatim anonymisé et note native du répondant lorsqu'elle est disponible." /></th>
+                        <th>Classification du verbatim<InfoTip text="Analyse automatique du texte libre uniquement. Chaque thème est présenté avec son sous-thème et son propre sentiment. Le second thème est marqué « 2e ». Les réponses aux questions fermées ne sont pas incluses." /></th>
                         <th>Signaux</th>
-                        <th>Confiance<InfoTip text="Certitude du modèle (0 à 1). Sous le seuil de revue, le verbatim part en relecture humaine." /></th>
-                        <th>Statut<InfoTip text="auto = classé sans relecture · en revue = à vérifier · corrigé = revu par un humain." /></th>
+                        <th>Fiabilité<InfoTip text="Confiance du modèle et statut : auto, en revue ou corrigé. Une prédiction automatique n'est jamais présentée comme une validation humaine." /></th>
                       </tr>
                     </thead>
                     <tbody>
                       {data.items.map((r) => (
                         <tr key={r.id} className="is-clickable" onClick={() => setSelected(r)}>
-                          <td style={{ maxWidth: 340 }}>{r.verbatim_analyse.slice(0, 120)}{r.verbatim_analyse.length > 120 ? "…" : ""}</td>
-                          <td><ThemeCell r={r} /></td>
-                          <td><SentimentCell r={r} /></td>
-                          <td><SatisfactionPill note={r.satisfaction} /></td>
+                          <td className="result-feedback">
+                            <div className="ui-row ui-row--wrap" style={{ gap: 6 }}>
+                              <Badge tone="neutral">{SOURCE_LABELS[r.source ?? ""] ?? r.source ?? "source inconnue"}</Badge>
+                              <SatisfactionPill note={r.satisfaction_native} scale={r.satisfaction_scale_max} compact />
+                            </div>
+                            <p>{r.verbatim_analyse.slice(0, 150)}{r.verbatim_analyse.length > 150 ? "…" : ""}</p>
+                          </td>
+                          <td><ClassificationCell r={r} /></td>
                           <td><SignalBadges r={r} nonMesures={nonMesures} /></td>
-                          <td className="ui-table__num">{r.confidence_globale != null ? r.confidence_globale.toFixed(2) : "—"}</td>
-                          <td>{r.corrected ? <Badge tone="primary">corrigé</Badge> : r.revue_requise ? <Badge tone="warning" dot>en revue</Badge> : <Badge tone="success" dot>auto</Badge>}</td>
+                          <td>
+                            <div className="result-reliability">
+                              <strong>{r.confidence_globale != null ? r.confidence_globale.toFixed(2) : "—"}</strong>
+                              {r.corrected ? <Badge tone="primary">corrigé</Badge> : r.revue_requise ? <Badge tone="warning" dot>en revue</Badge> : <Badge tone="success" dot>auto</Badge>}
+                            </div>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -221,8 +215,12 @@ export default function ResultsPage() {
           <div className="ui-stack">
             <div className="ui-verbatim">{selected.verbatim_analyse}</div>
             <dl className="ui-dl">
-              <dt>Source</dt><dd>{selected.source ?? "—"}</dd>
-              <dt>Note client</dt><dd><SatisfactionPill note={selected.satisfaction} /></dd>
+              <dt>Source</dt><dd>{SOURCE_LABELS[selected.source ?? ""] ?? selected.source ?? "—"}</dd>
+              <dt>Fichier source</dt><dd>{selected.source_file ?? "—"}</dd>
+              <dt>Statut client</dt><dd>{selected.client_status
+                ? CLIENT_STATUS_LABELS[selected.client_status]
+                : "Statut client non disponible"}</dd>
+              <dt>Note client</dt><dd><SatisfactionPill note={selected.satisfaction_native} scale={selected.satisfaction_scale_max} /></dd>
               <dt>Nombre de thèmes</dt><dd>{selected.nb_themes || "—"}</dd>
               <dt>Thème 1</dt>
               <dd>

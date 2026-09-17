@@ -348,12 +348,26 @@ def test_second_theme_et_satisfaction(admin, SessionLocal) -> None:
     moyenne.
     """
     section("Second thème & satisfaction déclarée (restitution)")
-    from common.models import Batch, Result
+    from common.models import Batch, Result, SurveyResponse
 
     with SessionLocal() as db:
         b = Batch(label="recette-2e-theme", status="done", seuil_revue=0.70,
                   n_total=4, n_processed=4, n_review=0)
         db.add(b)
+        db.flush()
+        responses = [
+            SurveyResponse(batch_id=b.id, source_type=source, source_file=f"{source}.csv",
+                           respondent_key=f"r{i}", satisfaction_native=native,
+                           satisfaction_scale_max=scale, satisfaction_normalized=normalisee,
+                           client_status=status, rating_invalid=False)
+            for i, (source, native, scale, normalisee, status) in enumerate([
+                ("MDTC-postrecep", 4, 4, 4, "ancien"),
+                ("MDTC-postrecep", 1, 4, 1, "nouveau"),
+                ("Mopinion-desktop", 3, 5, 2, "non_renseigne"),
+                ("Mopinion-desktop", None, 5, None, "non_renseigne"),
+            ])
+        ]
+        db.add_all(responses)
         db.flush()
         commun = dict(batch_id=b.id, signal_rupture=False, signal_churn=False,
                       signal_insatisfaction=False, confidence_globale=0.90,
@@ -361,6 +375,7 @@ def test_second_theme_et_satisfaction(admin, SessionLocal) -> None:
         db.add_all([
             # Bi-thème, sentiments DIVERGENTS entre les deux thèmes.
             Result(row_index=0, source="MDTC-postrecep", nb_themes=2, satisfaction=4,
+                   survey_response_id=responses[0].id,
                    verbatim_analyse="Livraison rapide mais article décevant",
                    theme1_niv1="Livraison", theme1_niv2="Délai",
                    theme1_sentiment="Positif", theme1_score=0.91,
@@ -368,15 +383,18 @@ def test_second_theme_et_satisfaction(admin, SessionLocal) -> None:
                    theme2_sentiment="Négatif", theme2_score=0.72, **commun),
             # Mono-thème sur le thème qui n'apparaît qu'en second ailleurs.
             Result(row_index=1, source="MDTC-postrecep", nb_themes=1, satisfaction=1,
+                   survey_response_id=responses[1].id,
                    verbatim_analyse="Article cassé",
                    theme1_niv1="Produit", theme1_niv2="Qualité",
                    theme1_sentiment="Négatif", theme1_score=0.88, **commun),
-            Result(row_index=2, source="Mopinion-desktop", nb_themes=1, satisfaction=3,
+            Result(row_index=2, source="Mopinion-desktop", nb_themes=1, satisfaction=2,
+                   survey_response_id=responses[2].id,
                    verbatim_analyse="Site agréable",
                    theme1_niv1="Site", theme1_niv2="Navigation",
                    theme1_sentiment="Positif", theme1_score=0.80, **commun),
             # Client qui n'a pas noté : ne doit peser sur AUCUNE moyenne.
             Result(row_index=3, source="Mopinion-desktop", nb_themes=1, satisfaction=None,
+                   survey_response_id=responses[3].id,
                    verbatim_analyse="Sans avis",
                    theme1_niv1="Site", theme1_niv2="Navigation",
                    theme1_sentiment="Neutre", theme1_score=0.61, **commun),
@@ -417,27 +435,34 @@ def test_second_theme_et_satisfaction(admin, SessionLocal) -> None:
     # ---- Satisfaction déclarée -------------------------------------------- #
     sat = kpi.get("satisfaction") or {}
     check("Bloc satisfaction présent", bool(sat), str(kpi.keys()))
-    check("Seules les lignes NOTÉES sont comptées", sat.get("n_notes") == 3,
-          str(sat.get("n_notes")))
-    check("Les verbatims sans note sont comptés à part", sat.get("n_sans_note") == 1,
-          str(sat.get("n_sans_note")))
-    # (4 + 1 + 3) / 3 = 2,67 — une note absente comptée 0 donnerait 2,00.
-    check("Une note absente ne tire PAS la moyenne vers zéro",
-          sat.get("moyenne") == 2.67, str(sat.get("moyenne")))
-    check("Répartition des notes sur l'échelle 1-4",
-          (sat.get("distribution") or {}) == {"1": 1, "3": 1, "4": 1},
-          str(sat.get("distribution")))
-    check("Satisfaits / insatisfaits séparés au seuil de l'échelle",
-          sat.get("n_satisfaits") == 2 and sat.get("n_insatisfaits") == 1,
-          f"{sat.get('n_satisfaits')} / {sat.get('n_insatisfaits')}")
-    check("Taux de satisfaction calculé sur les seules notes",
-          abs((sat.get("taux_satisfaction") or 0) - 2 / 3) < 1e-9,
-          str(sat.get("taux_satisfaction")))
-    check("Satisfaction ventilée par source",
-          (sat.get("par_source") or {}).get("MDTC-postrecep", {}).get("n_notes") == 2,
-          str(sat.get("par_source")))
-    check("Aucune note hors de l'échelle 1-4", sat.get("hors_echelle") == 0,
-          str(sat.get("hors_echelle")))
+    check("L'unité de satisfaction est le répondant", sat.get("unit") == "respondent",
+          str(sat.get("unit")))
+    par_source = {s["source_type"]: s for s in sat.get("by_source") or []}
+    check("Les quatre sources attendues restent visibles",
+          set(par_source) == {"MDTC-postachat", "MDTC-postrecep",
+                              "Mopinion-desktop", "Mopinion-mobile"},
+          str(par_source.keys()))
+    check("Une source non reçue n'est pas présentée comme une mesure à zéro",
+          par_source.get("Mopinion-mobile", {}).get("availability_status") == "source_not_provided"
+          and par_source.get("Mopinion-mobile", {}).get("mean_on_10") is None,
+          str(par_source.get("Mopinion-mobile")))
+    check("Mopinion 3/5 est affiché 6/10",
+          par_source.get("Mopinion-desktop", {}).get("mean_on_10") == 6.0,
+          str(par_source.get("Mopinion-desktop")))
+    check("MDTC conserve son échelle native 1-4",
+          par_source.get("MDTC-postrecep", {}).get("native_scale_max") == 4,
+          str(par_source.get("MDTC-postrecep")))
+    check("Une note absente est exclue sans devenir zéro",
+          par_source.get("Mopinion-desktop", {}).get("unrated_respondent_count") == 1,
+          str(par_source.get("Mopinion-desktop")))
+    check("Les trois statuts reconstituent le total",
+          all(sum(x["respondent_count"] for x in s["by_client_status"]) == s["respondent_count"]
+              for s in par_source.values()), str(par_source))
+    check("Les trois statuts MDTC restent visibles même à zéro",
+          {x["client_status"]
+           for x in par_source.get("MDTC-postrecep", {}).get("by_client_status", [])}
+          == {"ancien", "nouveau", "non_renseigne"},
+          str(par_source.get("MDTC-postrecep")))
 
     # ---- Filtres : le second thème doit être atteignable ------------------ #
     f = admin.get(f"/api/batches/{bid}/results?niv1=Produit")
@@ -453,15 +478,17 @@ def test_second_theme_et_satisfaction(admin, SessionLocal) -> None:
 
     r = admin.get(f"/api/batches/{bid}/results?limit=10")
     item = (r.json().get("items") or [{}])[0]
-    check("La note du client est exposée sur la ligne de résultat",
-          item.get("satisfaction") == 4, str(item.get("satisfaction")))
+    check("La note native du client est exposée avec son échelle",
+          item.get("satisfaction_native") == 4 and item.get("satisfaction_scale_max") == 4,
+          str((item.get("satisfaction_native"), item.get("satisfaction_scale_max"))))
     check("Le score du second thème est exposé",
           item.get("theme2_score") is not None, str(item.get("theme2_score")))
 
     # ---- Export : la note survit, le contrat modèle ne bouge pas ---------- #
     ex = admin.get(f"/api/batches/{bid}/export?format=csv")
     entete = ex.content.decode("utf-8-sig").splitlines()[0].split(",")
-    check("La note du client figure à l'export", "satisfaction" in entete, str(entete))
+    check("La note native et son échelle figurent à l'export",
+          "satisfaction_native" in entete and "satisfaction_scale_max" in entete, str(entete))
     check("Les colonnes modèle du contrat POC sont inchangées et dans l'ordre",
           [c for c in entete if c.startswith(("theme", "signal", "nb_themes",
                                               "verbatim_analysé", "confidence", "revue"))]
@@ -527,7 +554,7 @@ def test_pipeline_e2e(SessionLocal) -> None:
              f"dépendances worker indisponibles ici ({type(exc).__name__}) — validé en image worker")
         return
 
-    from common.models import Batch, Result
+    from common.models import Batch, Result, SurveyResponse
     from src.utils import Taxonomy
 
     # Fixture MDTC minimal avec PII
@@ -579,6 +606,16 @@ def test_pipeline_e2e(SessionLocal) -> None:
         notes = sorted(r.satisfaction for r in rows if r.satisfaction is not None)
         check("La note de satisfaction est persistée par le worker",
               2 in notes, str([r.satisfaction for r in rows]))
+        responses = db.query(SurveyResponse).filter(SurveyResponse.batch_id == bid).all()
+        check("Une réponse est persistée par répondant source", len(responses) == 2,
+              str(len(responses)))
+        check("La note native valide est conservée",
+              any(r.satisfaction_native == 2 and r.satisfaction_scale_max == 4
+                  for r in responses), str([(r.satisfaction_native, r.satisfaction_scale_max)
+                                             for r in responses]))
+        check("La note hors plage est exclue et signalée invalide",
+              sum(r.rating_invalid for r in responses) == 1,
+              str([(r.satisfaction_native, r.rating_invalid) for r in responses]))
         # Les colonnes de contexte non textuelles restent, elles, disponibles.
         check("Les colonnes de contexte d'origine sont conservées",
               any("Niveau de satisfaction général" in (r.original_columns or {}) for r in rows),

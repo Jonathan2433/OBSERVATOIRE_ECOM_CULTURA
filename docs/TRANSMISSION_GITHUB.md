@@ -82,6 +82,10 @@ docker compose up --build        # 1re fois : build (quelques minutes)
 ```
 Puis ouvrir **http://localhost:8080**.
 
+L'API applique automatiquement les migrations Alembic, notamment `0011` et
+`0012` pour la satisfaction à la maille répondant. Sur une base existante,
+effectuer une sauvegarde avant ce premier démarrage mis à jour.
+
 ### B.4 Se connecter
 - Identifiant / mot de passe = `ADMIN_USERNAME` / `ADMIN_PASSWORD` du `.env`.
 - Le **compte admin est créé automatiquement au 1er démarrage** (si la base est vide).
@@ -89,9 +93,11 @@ Puis ouvrir **http://localhost:8080**.
   passe dans **Mon compte**.
 
 ### B.5 Tester
-1. **Lots → Nouveau lot** : déposer les fichiers Excel de démo fournis dans le dépôt
-   (`data/raw/mdtc_poc.xlsx` et/ou `data/raw/mopinion_poc.xlsx`) → **Lancer**.
-2. Consulter **Résultats**, **Tableaux de bord**, **Revue**.
+1. **Lots → Nouveau lot** : déposer les fichiers CSV/XLSX de test autorisés → **Lancer**.
+2. Consulter **Résultats**, **Tableau de bord**, **Revue**.
+3. Dans le tableau de bord, vérifier qu'une source absente est indiquée comme
+   « source non reçue », que MDTC affiche `Ancien` et `Nouveau`, et que l'analyse
+   des classifications est explicitement limitée aux textes libres.
 
 > **Quel moteur ?** Par défaut, le dépôt ne contient **aucun modèle entraîné** → l'app
 > tourne en **mode démonstration** (classifieur heuristique *stub* : thèmes approximatifs,

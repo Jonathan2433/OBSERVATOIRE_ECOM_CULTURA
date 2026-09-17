@@ -17,6 +17,7 @@ livraison Cultura indolore : un simple diff dira si un nouveau défaut est appar
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
@@ -49,7 +50,11 @@ COL_RESPONDENT = "__respondent_id__"
 COL_FIELD = "__field__"
 COL_TEXT = "__text_raw__"
 COL_SATISFACTION = "__satisfaction__"
+COL_SATISFACTION_NATIVE = "__satisfaction_native__"
+COL_SATISFACTION_SCALE_MAX = "__satisfaction_scale_max__"
+COL_SATISFACTION_INVALID = "__satisfaction_invalid__"
 COL_SATISFACTION_RAW = "__satisfaction_raw__"
+COL_CLIENT_STATUS = "__client_status__"
 COL_DATE = "__date__"
 COL_PAGE_TYPE = "__page_type__"
 COL_URL = "__url__"
@@ -65,7 +70,8 @@ ANNOTATION_OUT = [
 
 OUTPUT_ORDER = [
     COL_SOURCE, COL_FICHIER, COL_RESPONDENT, COL_FIELD, COL_TEXT,
-    COL_SATISFACTION, COL_SATISFACTION_RAW, COL_DATE,
+    COL_SATISFACTION, COL_SATISFACTION_NATIVE, COL_SATISFACTION_SCALE_MAX,
+    COL_SATISFACTION_INVALID, COL_SATISFACTION_RAW, COL_CLIENT_STATUS, COL_DATE,
     COL_PAGE_TYPE, COL_URL, COL_DEVICE,
     *ANNOTATION_OUT, COL_ANOMALIES,
 ]
@@ -115,6 +121,7 @@ class RapportFichier:
     lignes_sans_texte: int = 0
     verbatims_non_classables: int = 0
     lignes_annotees: int = 0
+    satisfaction_invalides: int = 0
     anomalies_annotation: Counter = field(default_factory=Counter)
     anomalies_verbatim: Counter = field(default_factory=Counter)
     #: Détail par emplacement de thème (``theme1`` / ``theme2``). L'audit du 09/09
@@ -138,6 +145,7 @@ class RapportFichier:
             "lignes_sans_texte": self.lignes_sans_texte,
             "verbatims_non_classables_ecartes": self.verbatims_non_classables,
             "lignes_annotees": self.lignes_annotees,
+            "satisfaction_invalides": self.satisfaction_invalides,
             "anomalies_annotation": dict(sorted(self.anomalies_annotation.items())),
             "anomalies_verbatim": dict(sorted(self.anomalies_verbatim.items())),
             "couples_invalides": dict(sorted(self.couples_invalides.items())),
@@ -239,6 +247,38 @@ def _colonnes_attendues(spec: Dict[str, Any], annotation: Dict[str, str]) -> Lis
 # --------------------------------------------------------------------------- #
 #  Satisfaction (§7)
 # --------------------------------------------------------------------------- #
+def lire_satisfaction(
+    brut: object, echelle: Dict[str, Any]
+) -> Tuple[Optional[int], Optional[int], str, bool]:
+    """Retourne ``(native, normalisée_ml, brut, invalide)``.
+
+    La note native est conservée avant l'éventuel rabattement Mopinion 1..5 vers
+    1..4. Une valeur absente n'est pas invalide ; une valeur présente mais non
+    reconnue ou hors plage l'est et ne devient jamais zéro.
+    """
+    brut_txt = "" if brut is None else str(brut).strip()
+    if is_blank(brut):
+        return None, None, brut_txt, False
+    native: Optional[int] = None
+    try:
+        nombre = float(brut_txt.replace(",", "."))
+        if nombre.is_integer():
+            native = int(nombre)
+    except (TypeError, ValueError):
+        libelles = echelle.get("libelles") or {}
+        cible = fold(brut_txt)
+        for libelle, note in libelles.items():
+            if fold(libelle) == cible:
+                native = int(note)
+                break
+    attendues = [int(v) for v in (echelle.get("valeurs_attendues") or [])]
+    if native is None or (attendues and native not in attendues):
+        return None, None, brut_txt, True
+    conversion = echelle.get("conversion") or {}
+    normalisee = int(conversion.get(native, conversion.get(str(native), native)))
+    return native, normalisee, brut_txt, False
+
+
 def normaliser_satisfaction(brut: object, echelle: Dict[str, Any]) -> Tuple[Optional[int], str]:
     """Convertit une note vers l'échelle 1–4 commune. Retourne ``(note, brut)``.
 
@@ -249,27 +289,25 @@ def normaliser_satisfaction(brut: object, echelle: Dict[str, Any]) -> Tuple[Opti
     elle le préfixe de satisfaction du modèle de sentiment et la règle
     déterministe d'insatisfaction.
     """
-    brut_txt = "" if brut is None else str(brut).strip()
+    _, normalisee, brut_txt, _ = lire_satisfaction(brut, echelle)
+    return normalisee, brut_txt
+
+
+def normaliser_statut_client(brut: object, mappings: Dict[str, Any]) -> str:
+    """Normalise uniquement les libellés explicitement configurés."""
     if is_blank(brut):
-        return None, brut_txt
-    try:
-        valeur = int(round(float(brut_txt.replace(",", "."))))
-    except (TypeError, ValueError):
-        # Pas un nombre : tenter la table de libellés, en comparaison tolérante.
-        libelles = echelle.get("libelles") or {}
-        if libelles:
-            cible = fold(brut_txt)
-            for libelle, note in libelles.items():
-                if fold(libelle) == cible:
-                    return int(note), brut_txt
-        return None, brut_txt
-    attendues = echelle.get("valeurs_attendues") or []
-    if attendues and valeur not in attendues:
-        return None, brut_txt
-    conversion = echelle.get("conversion")
-    if conversion:
-        valeur = int(conversion.get(valeur, conversion.get(str(valeur), valeur)))
-    return valeur, brut_txt
+        return "non_renseigne"
+    valeur = fold(str(brut))
+    for statut in ("ancien", "nouveau"):
+        if valeur in {fold(v) for v in (mappings.get(statut) or [])}:
+            return statut
+    return "non_renseigne"
+
+
+def opaque_respondent_key(source: str, fichier: str, identifiant: object) -> str:
+    """Empreinte stable dans un fichier, sans exposer l'identifiant source."""
+    payload = f"{source}\x1f{fichier}\x1f{identifiant}".encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 # --------------------------------------------------------------------------- #
@@ -445,20 +483,31 @@ def charger_fichier(path: Path,
             t1, s1, t2, s2, signal, sentiment, est_annote = _resoudre_annotation(
                 row, annotation, normalizer, anomalies_annotation, rapport)
 
-        satisfaction, satisfaction_raw = normaliser_satisfaction(
+        satisfaction_native, satisfaction, satisfaction_raw, satisfaction_invalid = lire_satisfaction(
             row.get(spec["satisfaction_col"]) if spec.get("satisfaction_col") else None,
             echelle,
         )
 
-        respondent = (str(row.get(id_col)).strip() if id_col
-                      else f"{nom_schema}-{path.stem}-{idx}")
+        respondent_source = str(row.get(id_col, "")).strip() if id_col else ""
+        if is_blank(respondent_source):
+            respondent_source = f"row:{idx}"
+        respondent = opaque_respondent_key(nom_schema, path.name, respondent_source)
+        client_col = spec.get("client_status_col")
+        client_status = normaliser_statut_client(
+            row.get(client_col) if client_col else None,
+            cfg_sources.get("statuts_client") or {},
+        )
 
         base: Dict[str, Any] = {
             COL_SOURCE: nom_schema,
             COL_FICHIER: path.name,
             COL_RESPONDENT: respondent,
             COL_SATISFACTION: satisfaction,
+            COL_SATISFACTION_NATIVE: satisfaction_native,
+            COL_SATISFACTION_SCALE_MAX: int(echelle["maximum_natif"]),
+            COL_SATISFACTION_INVALID: satisfaction_invalid,
             COL_SATISFACTION_RAW: satisfaction_raw,
+            COL_CLIENT_STATUS: client_status,
             "theme1_niv1": t1, "theme1_niv2": s1,
             "theme2_niv1": t2, "theme2_niv2": s2,
             "sentiment": sentiment, "signal": signal,
@@ -503,6 +552,9 @@ def charger_fichier(path: Path,
         if not textes:
             rapport.lignes_sans_texte += 1
             continue
+
+        if satisfaction_invalid:
+            rapport.satisfaction_invalides += 1
 
         for interne in contexte:
             if not is_blank(base.get(interne)):
