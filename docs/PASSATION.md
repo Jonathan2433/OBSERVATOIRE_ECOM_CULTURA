@@ -72,6 +72,11 @@ porte son **profil** (`config.yaml → moteurs_camembert`) : son référentiel, 
 seuil d'activation, son seuil de revue, sa couche de décision. Activer un moteur
 n'en supprime aucun ; **le retour arrière est une resélection**.
 
+LM Studio est aligné sur Cultura 2026 par le prompt `v2-cultura-2026` et charge le
+référentiel 11/59 embarqué. Son contrat impose un sentiment unique par verbatim,
+un second thème seulement pour deux sujets distincts et la priorité au négatif
+dans les verbatims mixtes. Le prompt Claude reste en V1 pour isoler la comparaison.
+
 ## 5. Opérations courantes
 
 - **Run mensuel** : déposer en une fois les exports CSV/XLSX disponibles (jusqu'à
@@ -101,8 +106,8 @@ n'en supprime aucun ; **le retour arrière est une resélection**.
 (`fastapi httpx sqlalchemy pydantic pydantic-settings argon2-cffi PyJWT python-multipart pandas numpy openpyxl pyyaml redis rq`) :
 
 ```bash
-python app/tests/recette_v1.py   # -> 115 OK   python app/tests/recette_v4.py  # -> 50 OK
-python app/tests/recette_v3.py   # -> 13 OK    python app/tests/recette_v5.py  # -> 112 OK
+python app/tests/recette_v1.py   # -> 115 OK   python app/tests/recette_v4.py  # -> 67 OK
+python app/tests/recette_v3.py   # -> 13 OK    python app/tests/recette_v5.py  # -> 115 OK
 python app/tests/recette_v6.py   # -> 42 OK
 python app/tests/test_satisfaction_respondents.py  # -> 10 OK
 ```

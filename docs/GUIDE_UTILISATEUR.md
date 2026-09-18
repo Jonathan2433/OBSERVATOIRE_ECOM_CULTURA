@@ -331,6 +331,9 @@ sur un échantillon du lot, pour décider lequel garder.
   l'**activer en un clic** (voir le guide d'exploitation). Un **second moteur optionnel**
   (*LM Studio (LLM)*) peut y être activé s'il est configuré : **rien ne change côté analyste**,
   seules les prédictions des **nouveaux** lots sont produites par le moteur choisi.
+  LM Studio applique alors le même référentiel Cultura 2026 (11 thèmes / 59 sous-thèmes)
+  que le nouveau CamemBERT. Il ne propose un second thème que pour deux sujets distincts
+  et conserve un sentiment unique par verbatim, avec priorité au négatif dans un avis mixte.
   **Plusieurs modèles CamemBERT peuvent coexister** — activer l'un n'efface pas
   l'autre, et revenir en arrière est une simple resélection. Les lots déjà traités
   ne sont **jamais** reclassés : ils gardent la classification du moteur qui les a

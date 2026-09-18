@@ -198,7 +198,8 @@ class ClaudePredictor:
                     self.base_url, self.api_key, self.model, prompt["system"], prompt["user"],
                     self.max_tokens, self.timeout_s)
                 return map_llm_response(
-                    raw, cleaned_text, satisfaction, self.taxonomy, self.cfg, self.sentiment_labels)
+                    raw, cleaned_text, satisfaction, self.taxonomy, self.cfg,
+                    self.sentiment_labels, engine_name="claude")
             except ClaudeError as exc:
                 last_exc = exc
                 if attempt < self.retries:

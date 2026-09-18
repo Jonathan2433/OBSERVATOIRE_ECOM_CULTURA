@@ -15,9 +15,11 @@ Principes (cf. docs/SPEC_V4_LMSTUDIO.md, docs/SPEC_V5_MULTI_MOTEUR.md) :
   - Le texte transmis est **déjà anonymisé + nettoyé** (étapes amont inchangées).
   - Sortie **JSON contrainte par schéma** (``response_format``) puis **revalidée
     contre la taxonomie** : jamais de couple niv1/niv2 hors référentiel.
-  - Repli : couple invalide → sentinelle ``fallback_theme`` (« Autre / Non classé »,
-    label propre au moteur, **non ajouté** à la taxonomie partagée pour ne pas
-    casser CamemBERT) + **revue humaine forcée**.
+  - Contrat Cultura 2026 : taxonomie 11/59 dédiée, un thème par défaut, bi-thème
+    seulement pour deux sujets explicites, sentiment unique et priorité au négatif.
+  - Repli V2 : couple invalide → couple canonique ``Général / Autre`` du nouveau
+    référentiel + **revue humaine forcée**. La sentinelle historique reste utilisée
+    uniquement par le contrat V1.
 
 NOTE testabilité : la logique de décision est isolée en fonctions PURES dans
 ``llm_common`` (``build_llm_prompt``, ``build_refiner_prompt``, ``map_llm_response``),
@@ -43,6 +45,7 @@ from .llm_common import (  # noqa: F401  (ré-exports volontaires)
     LLM_OUTPUT_SCHEMA,
     OUTPUT_COLUMNS,
     PROMPT_VERSION_DEFAULT,
+    PROMPT_VERSION_CULTURA_2026,
     build_llm_prompt,
     build_refiner_prompt,
     empty_output,
@@ -138,7 +141,9 @@ class LMStudioPredictor:
 
     def __init__(self, cfg: Dict[str, Any]):
         self.cfg = cfg
-        self.taxonomy = Taxonomy.from_json(resolve_path(cfg, cfg["paths"]["taxonomy"]))
+        engine = cfg.get("lmstudio", {}) or {}
+        taxonomy_path = engine.get("taxonomy") or cfg["paths"]["taxonomy"]
+        self.taxonomy = Taxonomy.from_json(resolve_path(cfg, taxonomy_path))
         self.anonymizer = Anonymizer(cfg)
         self.cleaner = TextCleaner(cfg)
         self.batch_size = cfg["model"]["batch_size_inference"]
@@ -148,17 +153,23 @@ class LMStudioPredictor:
             "churn": cfg["thresholds"]["signal_churn"],
             "insatisfaction": cfg["thresholds"]["signal_insatisfaction"],
         }
-        engine = cfg.get("lmstudio", {}) or {}
         self.base_url = engine.get("base_url", "http://host.docker.internal:1234/v1")
         self.model = engine.get("model", "local-model")
         self.temperature = float(engine.get("temperature", 0.1))
         self.timeout_s = float(engine.get("timeout_s", 120))
         self.fallback_theme = engine.get("fallback_theme", FALLBACK_THEME_DEFAULT)
+        self.fallback_niv2 = engine.get("fallback_niv2", "")
         self.prompt_version = str(engine.get("prompt_version", PROMPT_VERSION_DEFAULT))
+        if self.fallback_niv2 and not self.taxonomy.is_valid_pair(
+                self.fallback_theme, self.fallback_niv2):
+            raise ValueError(
+                "Repli LM Studio invalide pour le référentiel chargé : "
+                f"{self.fallback_theme!r} / {self.fallback_niv2!r}")
         self.max_parallel = max(1, int(engine.get("max_parallel", 4)))
         self.retries = max(0, int(engine.get("retries", 2)))
-        logger.info("Moteur LM Studio : modèle=%s url=%s prompt=%s parallèle=%d",
-                    self.model, self.base_url, self.prompt_version, self.max_parallel)
+        logger.info(
+            "Moteur LM Studio : modèle=%s url=%s prompt=%s taxonomie=%s parallèle=%d",
+            self.model, self.base_url, self.prompt_version, taxonomy_path, self.max_parallel)
 
     def _call_with_retries(self, prompt: Dict[str, str], cleaned_text: str,
                            satisfaction: Optional[float]) -> Dict[str, Any]:
@@ -175,7 +186,8 @@ class LMStudioPredictor:
                     self.base_url, self.model, prompt["system"], prompt["user"],
                     self.temperature, self.timeout_s)
                 return map_llm_response(
-                    raw, cleaned_text, satisfaction, self.taxonomy, self.cfg, self.sentiment_labels)
+                    raw, cleaned_text, satisfaction, self.taxonomy, self.cfg,
+                    self.sentiment_labels, engine_name="lmstudio")
             except LMStudioError as exc:
                 last_exc = exc
                 if attempt < self.retries:
@@ -188,7 +200,8 @@ class LMStudioPredictor:
         if not cleaned_text or cleaned_text.strip() == "":
             return empty_output(cleaned_text)
         prompt = build_llm_prompt(
-            self.taxonomy, cleaned_text, satisfaction, self.fallback_theme, self.prompt_version)
+            self.taxonomy, cleaned_text, satisfaction, self.fallback_theme,
+            self.prompt_version, getattr(self, "fallback_niv2", ""))
         return self._call_with_retries(prompt, cleaned_text, satisfaction)
 
     def _refine_one(self, cleaned_text: str, satisfaction: Optional[float],
@@ -198,7 +211,8 @@ class LMStudioPredictor:
             return empty_output(cleaned_text)
         prompt = build_refiner_prompt(
             self.taxonomy, cleaned_text, proposal, satisfaction,
-            self.fallback_theme, self.prompt_version)
+            self.fallback_theme, self.prompt_version,
+            getattr(self, "fallback_niv2", ""))
         return self._call_with_retries(prompt, cleaned_text, satisfaction)
 
     def _run_pool(self, n: int, submit) -> List[Dict[str, Any]]:

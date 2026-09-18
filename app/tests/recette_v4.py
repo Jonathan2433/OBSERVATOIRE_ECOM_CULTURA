@@ -2,7 +2,7 @@
 """Recette V4 — moteur LM Studio (LLM local).
 
 Vérifie le moteur LM Studio de bout en bout SANS service réel (HTTP mocké) et SANS
-torch (fonctions pures de mapping/validation). Couvre les lots O1 à O4.
+torch (fonctions pures de mapping/validation). Couvre les lots O1 à O5.
 
 - O1 : gabarit de sortie (OUTPUT_COLUMNS), prompt (taxo injectée), mapping
   couple valide / repli, signaux, verbatim vide, client HTTP (parse/erreur).
@@ -10,6 +10,7 @@ torch (fonctions pures de mapping/validation). Couvre les lots O1 à O4.
   conflit de sentiment, prompt versionné.
 - O3 : détection LM Studio (`/v1/models`), `available` dynamique, synchro registre.
 - O4 : pool borné (ordre préservé), retries, fail-fast (échec propre si down).
+- O5 : taxonomie Cultura 2026, prompts proposeur/raffineur V2 et contrat D-26.
 
 Usage :  python app/tests/recette_v4.py   (code de sortie 0 si aucun ÉCHEC)
 """
@@ -42,6 +43,7 @@ def check(label: str, ok: bool, detail: str = "") -> None:
 
 
 TAXO = Taxonomy.from_json(ROOT / "data/raw/taxonomy_cultura_poc.json")
+TAXO_2026 = Taxonomy.from_json(ROOT / "data/models/cultura_2026/taxonomy.json")
 N1 = TAXO.niv1_labels[0]                       # "Suivi de commande et livraison"
 N2 = TAXO.children[N1][0]                       # premier sous-thème valide
 SENT_LABELS = ["Négatif", "Neutre", "Positif"]
@@ -54,6 +56,22 @@ CFG = {
         "invalid_json_confidence_max": 0.30,
         "review_on_sentiment_conflict": True,
     }},
+}
+
+CFG_2026 = {
+    "thresholds": {"revue_humaine": 0.70, "max_themes": 2},
+    "signals": {"insatisfaction_score_max": 3},
+    "lmstudio": {
+        "contract_version": "cultura_2026",
+        "prompt_version": "v2-cultura-2026",
+        "fallback_theme": "Général",
+        "fallback_niv2": "Autre",
+        "guardrails": {
+            "repli_confidence_max": 0.40,
+            "invalid_json_confidence_max": 0.30,
+            "review_on_sentiment_conflict": True,
+        },
+    },
 }
 
 
@@ -168,6 +186,64 @@ def run() -> None:
     pv = op.build_llm_prompt(TAXO, "x", None, "Autre / Non classé", version="v9")
     check("O2 : version de prompt tracée", "[prompt v9]" in pv["system"], pv["system"][:20])
 
+    # ================= O5 : contrat Cultura 2026 ============================
+    p26 = op.build_llm_prompt(
+        TAXO_2026, "paiement impossible mais recherche facile", 2,
+        "Général", "v2-cultura-2026", "Autre")
+    check("O5 : prompt V2 tracé", "[prompt v2-cultura-2026]" in p26["system"])
+    check("O5 : prompt V2 porte la règle bi-thème",
+          "deux sujets distincts" in p26["system"] and "hésitation" in p26["system"])
+    check("O5 : prompt V2 porte le sentiment unique et la priorité au négatif",
+          "sentiment est unique" in p26["system"] and "aspect négatif" in p26["system"])
+    check("O5 : note Cultura injectée sur l'échelle 1-4", "(1-4) : 2" in p26["user"])
+    check("O5 : nouveau référentiel 11/59 injecté",
+          "Réception commande" in p26["user"] and "Etat colis, produit" in p26["user"]
+          and "Tunnel de vente - Paiement" not in p26["user"])
+    check("O5 : repli canonique présent dans le prompt",
+          'niv1="Général", niv2="Autre"' in p26["user"])
+
+    r26_prompt = op.build_refiner_prompt(
+        TAXO_2026, "bug mais accueil magasin agréable", {}, 1,
+        "Général", "v2-cultura-2026", "Autre")
+    check("O5 : prompt raffineur V2 tracé",
+          "[prompt v2-cultura-2026 · raffineur]" in r26_prompt["system"])
+    check("O5 : raffineur applique D-26 et l'échelle 1-4",
+          "uniquement le ou les thèmes négatifs" in r26_prompt["system"]
+          and "(1-4) : 1" in r26_prompt["user"])
+
+    bug_n2 = TAXO_2026.children["Bug"][0]
+    espace_n2 = TAXO_2026.children["Espace client"][0]
+    raw_two = {"themes": [
+        {"niv1": "Bug", "niv2": bug_n2, "sentiment": "Négatif", "confidence": 0.91},
+        {"niv1": "Espace client", "niv2": espace_n2, "sentiment": "Négatif", "confidence": 0.82},
+    ], "signaux": {}}
+    r_two = op.map_llm_response(raw_two, "deux problèmes", 2, TAXO_2026, CFG_2026, SENT_LABELS)
+    check("O5 : deux sujets distincts de même sentiment sont conservés",
+          r_two["nb_themes"] == 2)
+    check("O5 : sentiment unique recopié sur les deux thèmes",
+          r_two["theme1_sentiment"] == r_two["theme2_sentiment"] == "Négatif")
+
+    raw_mixed = {"themes": [
+        {"niv1": "Bug", "niv2": bug_n2, "sentiment": "Négatif", "confidence": 0.91},
+        {"niv1": "Espace client", "niv2": espace_n2, "sentiment": "Positif", "confidence": 0.82},
+    ], "signaux": {}}
+    r_mixed = op.map_llm_response(
+        raw_mixed, "bug mais espace client pratique", 2, TAXO_2026, CFG_2026, SENT_LABELS)
+    check("O5 : cas mixte conserve uniquement le thème négatif (D-26)",
+          r_mixed["nb_themes"] == 1 and r_mixed["theme1_niv1"] == "Bug")
+    check("O5 : cas mixte force la revue", r_mixed["revue_humaine_requise"] is True)
+
+    raw_invalid_26 = {"themes": [{
+        "niv1": "Ancien thème", "niv2": "Ancien sous-thème",
+        "sentiment": "Neutre", "confidence": 0.95,
+    }], "signaux": {}}
+    r_invalid_26 = op.map_llm_response(
+        raw_invalid_26, "texte ambigu", None, TAXO_2026, CFG_2026, SENT_LABELS)
+    check("O5 : repli V2 reste dans le référentiel 11/59",
+          r_invalid_26["theme1_niv1"] == "Général"
+          and r_invalid_26["theme1_niv2"] == "Autre"
+          and TAXO_2026.is_valid_pair(r_invalid_26["theme1_niv1"], r_invalid_26["theme1_niv2"]))
+
     # --- 10. Client HTTP : parse OK (urlopen mocké) --------------------------
     import json as _json
 
@@ -220,6 +296,37 @@ def run() -> None:
         d = mr._detect_lmstudio(cfg_lms)
         check("O3 : modèle présent -> available", d and d["available"] is True, d)
         check("O3 : label = lmstudio:<model>", d["label"] == "lmstudio:mon-modele", d["label"])
+
+        cfg_lms_26 = {"lmstudio": {
+            "enabled": True, "model": "mon-modele", "base_url": "http://x:1234/v1",
+            "taxonomy": str(ROOT / "data/models/cultura_2026/taxonomy.json"),
+            "prompt_version": "v2-cultura-2026", "contract_version": "cultura_2026",
+        }}
+        d26 = mr._detect_lmstudio(cfg_lms_26)
+        check("O3/O5 : registre publie le référentiel LM Studio",
+              d26["metrics"]["taxonomy_present"] is True
+              and d26["metrics"]["taxonomy_path"].endswith("cultura_2026/taxonomy.json"))
+        check("O3/O5 : registre publie les versions de prompt et contrat",
+              d26["metrics"]["prompt_version"] == "v2-cultura-2026"
+              and d26["metrics"]["contract_version"] == "cultura_2026")
+
+        cfg_lms_missing_taxo = {"lmstudio": {
+            "enabled": True, "model": "mon-modele", "base_url": "http://x:1234/v1",
+            "taxonomy": str(ROOT / "data/models/introuvable/taxonomy.json"),
+        }}
+        d_missing_taxo = mr._detect_lmstudio(cfg_lms_missing_taxo)
+        check("O3/O5 : référentiel absent -> LM Studio indisponible",
+              d_missing_taxo["available"] is False
+              and d_missing_taxo["metrics"]["taxonomy_present"] is False)
+
+        from worker.config_worker import build_worker_cfg
+
+        container_cfg = build_worker_cfg()
+        check("O5 : chemin taxonomie LM réécrit vers le volume modèles",
+              str(container_cfg["lmstudio"]["taxonomy"]).endswith(
+                  "/cultura_2026/taxonomy.json")
+              and not str(container_cfg["lmstudio"]["taxonomy"]).startswith("data/models/"),
+              container_cfg["lmstudio"]["taxonomy"])
 
         # 3. Joignable mais modèle absent -> available False + motif.
         op.list_llm_models = lambda *a, **k: ["autre-modele"]
@@ -311,5 +418,5 @@ if __name__ == "__main__":
         if status == "ÉCHEC" and detail:
             line += f"  -> {detail}"
         print(line)
-    print(f"\nRecette V4 (O1→O4) : {len(_RESULTS) - len(fails)}/{len(_RESULTS)} OK")
+    print(f"\nRecette V4 (O1→O5) : {len(_RESULTS) - len(fails)}/{len(_RESULTS)} OK")
     sys.exit(1 if fails else 0)

@@ -260,7 +260,7 @@ Critères d'acceptation :
 
 ---
 
-## V4 — Second moteur « LM Studio » (LLM local) ✅ *(développé, recette 50/50)*
+## V4 — Second moteur « LM Studio » (LLM local) ✅ *(développé, recette 67/67)*
 
 **Objectif** : ajouter un moteur de classification alternatif (LLM local via LM Studio,
 API compatible OpenAI), sélectionnable côté admin, **sans rien changer** à l'app actuelle
@@ -269,17 +269,18 @@ API compatible OpenAI), sélectionnable côté admin, **sans rien changer** à l
 | Lot | Contenu | État |
 |---|---|---|
 | **O1** | Adaptateur `LMStudioPredictor` (interface commune, client `urllib`), dispatch `kind="lmstudio"`, `MODEL_KIND_LMSTUDIO`, bloc config `lmstudio:`, surcharge env, `extra_hosts` compose | ✅ |
-| **O2** | Prompt versionné + injection taxo + `response_format` JSON schema + **matching tolérant** (casse/accents) + repli sentinelle `Autre / Non classé` + garde-fous (2 plafonds, conflit de sentiment, dé-doublonnage) | ✅ |
-| **O3** | `_detect_lmstudio` (ping `/v1/models` + présence modèle), sync registre, `available` dynamique, onglet **Modèles** (badge, motif d'indisponibilité, Re-scanner = test de connexion) | ✅ |
+| **O2** | Prompts V1/V2 + injection taxo + `response_format` JSON schema + **matching tolérant** (casse/accents) + repli canonique V2 `Général / Autre` + garde-fous (2 plafonds, D-26, dé-doublonnage) | ✅ |
+| **O3** | `_detect_lmstudio` (ping `/v1/models` + présence modèle/référentiel), sync registre avec versions de prompt/contrat, `available` dynamique, onglet **Modèles** | ✅ |
 | **O4** | Concurrence bornée (`max_parallel`, pool de threads, ordre préservé), retries transitoires, **fail-fast / échec propre** si LM Studio down, annulation coopérative respectée | ✅ |
-| **O5** | Doc (EXPLOITATION §4 bis, TRANSMISSION, guide), recette V4, tag `v4.0` | ✅ |
+| **O5** | Alignement Cultura 2026 (11/59, bi-thème contrôlé, sentiment unique), référentiel API, doc et recette V4 | ✅ |
 
 **Garde-fous tenus** : `enabled: false` par défaut (app inchangée sans LM Studio) ; **0 migration
 DB, 0 nouvelle route API, 0 changement front analyste/CamemBERT/stub** ; anonymisation amont
 conservée ; jamais hors taxonomie (revalidation + repli) ; aucun flux hors machine.
 
-**Validation automatisée** : `app/tests/recette_v4.py` **50/50 OK** (LM Studio mocké, torch-free),
-non-régression **V1 48/48** + **V3 13/13**, `tsc`/build front OK, `docker compose config` OK.
+**Validation automatisée** : `app/tests/recette_v4.py` **67/67 OK** et
+`app/tests/recette_v5.py` **115/115 OK** (LLM mockés, torch-free). Couverture ajoutée :
+prompts proposeur/raffineur V2, taxonomie 11/59, D-26, repli canonique, registre et revue.
 **Reste (recette PO sur poste)** : installer LM Studio, charger un modèle + démarrer le serveur
 local, activer le moteur, traiter un lot et juger la qualité/latence vs CamemBERT (SLA détendue).
 
@@ -355,7 +356,8 @@ table `judge_verdicts`) ; non-régression **V1 48/48 · V3 13/13 · V4 50/50** ;
 - [x] Page Comparaison : accord inter-moteurs, win-rate (juge), confiance, latence, exemples commentés ; **mode dégradé** fonctionnel sans clé.
 - [x] Juge **aveuglé + permuté** ; appels limités aux divergences ; échantillon plafonné.
 - [x] Garde-fous : offline strict **en production** intact ; anonymisation amont ; jamais hors taxonomie ; clé hors base/dépôt ; égress documenté + tracé audit.
-- [x] **Aucune régression** : `recette_v1` 48/48, `recette_v3` 13/13, `recette_v4` 50/50, `recette_v5` 112/112 ; `tsc`/build front OK ; `docker compose config` OK.
+- [x] **Aucune régression** : état courant `recette_v1` 115/115, `recette_v3` 13/13,
+  `recette_v4` 67/67, `recette_v5` 115/115 et `recette_v6` 42/42.
 - [ ] **Tag `v5.0`** : à poser **après** validation PO + merges `--no-ff` des branches `v5/1`→`v5/6` sur `main`.
 
 > **Reste hors lots V5** : merges `--no-ff` (sur feu vert PO) puis tag `v5.0` ; recette PO sur poste
@@ -480,3 +482,4 @@ des thèmes. Leur éventuelle restitution exige un mapping validé séparément.
 | D47 | 2026-09-18 | **La répartition hiérarchique est un composant partagé entre la vue lot et la vue globale** ; l'API globale publie N1, N2 et leurs couples pour les trois angles | La duplication visuelle faisait diverger les deux tableaux de bord et la vue globale ne pouvait pas relier un sous-thème à son parent. Le contrat reste additif et les champs historiques sont conservés |
 | D48 | 2026-09-18 | **Le croisement thème × sentiment est dépliable jusqu'au sous-thème** sur les dashboards lot et global ; un seul parent est ouvert à la fois et les enfants partagent l'échelle du graphique | Le métier doit pouvoir localiser l'irritant précis sans perdre la comparaison des volumes. L'API publie une hiérarchie additive issue des couples persistés et conserve `theme_sentiment` pour compatibilité |
 | D49 | 2026-09-18 | **Les répartitions N1/N2 sont classables par volume total, négatif, neutre ou positif**, pour les angles principal, toutes mentions et secondaire ; les zéros restent visibles | Un tri construit depuis le seul agrégat toutes mentions fausserait les vues principal/secondaire. L'API publie donc un bloc additif par angle ; le composant partagé applique le même critère sur les dashboards lot et global sans nouvel appel réseau |
+| D50 | 2026-09-18 | **LM Studio adopte le contrat `v2-cultura-2026`** : référentiel 11/59 dédié, un thème par défaut, bi-thème limité à deux sujets explicites, sentiment unique et priorité au négatif ; repli canonique `Général / Autre` | Le moteur LLM reposait encore sur la classification POC. Le mapper réapplique D-26 de façon déterministe si le modèle désobéit au prompt ; le référentiel LM est publié dans le registre et servi à la revue, y compris en fin de cascade. Claude reste en V1 pour isoler le changement |

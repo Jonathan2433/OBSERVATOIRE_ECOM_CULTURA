@@ -106,7 +106,8 @@ effectuer une sauvegarde avant ce premier démarrage mis à jour.
 > - **LM Studio** : installer LM Studio, charger un modèle, démarrer le serveur local,
 >   passer `LMSTUDIO_ENABLED=true` + renseigner `LMSTUDIO_MODEL` dans `.env`, relancer
 >   `docker compose up -d`, puis **Administration → Modèles → Re-scanner → Activer**
->   (voir [EXPLOITATION.md](EXPLOITATION.md) §4 bis).
+>   (voir [EXPLOITATION.md](EXPLOITATION.md) §4 bis). Vérifier aussi la présence de
+>   `data/models/cultura_2026/taxonomy.json`, référentiel du prompt V2.
 
 ### B.6 Arrêter / relancer
 ```bash

@@ -24,9 +24,12 @@ const kindTone = (k: string) =>
 function unavailableReason(m: ModelVersion): string | null {
   if (m.available) return null;
   if (m.kind === "lmstudio") {
-    const r = (m.metrics ?? {}) as { reachable?: boolean; model_present?: boolean };
+    const r = (m.metrics ?? {}) as {
+      reachable?: boolean; model_present?: boolean; taxonomy_present?: boolean;
+    };
     if (!r.reachable) return "LM Studio injoignable";
     if (!r.model_present) return "modèle non chargé dans LM Studio";
+    if (r.taxonomy_present === false) return "référentiel Cultura 2026 introuvable";
   }
   if (m.kind === "claude") return "clé API absente";
   return "indisponible";

@@ -108,7 +108,8 @@ colonnes enrichies**, encodage UTF-8 avec BOM.
   `theme1_score_confiance` vaut `0.0` — **incohérence de typage** dans `_empty_result()`.
 - **Au moins un thème est toujours retourné**, même si toutes les probas sont sous le seuil
   (repli sur l'argmax). Il **n'existe pas** de sortie « hors sujet / non classable » côté
-  CamemBERT (les moteurs LLM ont, eux, une sentinelle `Autre / Non classé`).
+  CamemBERT. LM Studio V2 se replie sur le couple canonique `Général / Autre` ; les
+  moteurs LLM historiques en V1 gardent la sentinelle `Autre / Non classé`.
 
 ---
 
@@ -720,7 +721,8 @@ Dispatch dans `app/worker/classifiers.py → get_predictor(active_model, cfg)` s
 (`build_llm_prompt`) et raffineur (`build_refiner_prompt`), **taxonomie injectée dans le
 prompt** (donc **zéro réentraînement pour faire évoluer le référentiel** — argument clé des
 moteurs LLM), `map_llm_response()` (mapping + revalidation), garde-fous, normalisation. Seul le
-transport HTTP est spécifique à chaque moteur. Prompts **versionnés** (`prompt_version`).
+transport HTTP est spécifique à chaque moteur. Prompts **versionnés** (`prompt_version`) :
+LM Studio utilise `v2-cultura-2026`, Claude reste sur `v1`.
 
 ### 10.3 Garde-fous LLM
 
@@ -728,11 +730,14 @@ transport HTTP est spécifique à chaque moteur. Prompts **versionnés** (`promp
 - Sortie **contrainte par schéma JSON** (`response_format: json_schema`) ou **tool use**
   (Claude), **puis revalidée contre la taxonomie** : appariement tolérant (casse, accents,
   espaces → libellé canonique), **jamais de devinette**, dédoublonnage des couples.
-- Repli **`Autre / Non classé`** : sentinelle **propre au moteur**, **volontairement NON
-  ajoutée à la taxonomie partagée** (sinon l'espace de 20 labels de CamemBERT serait décalé).
+- LM Studio V2 charge explicitement le référentiel Cultura 2026 (11/59) et utilise le
+  repli canonique **`Général / Autre`**. Le repli V1 **`Autre / Non classé`** reste une
+  sentinelle hors taxonomie pour Claude et la reproductibilité historique.
 - **Plafonds de confiance déterministes** : couple hors taxonomie → repli + revue, confiance
   **≤ 0,40** ; JSON hors-forme → repli + revue, **≤ 0,30** ; sentiment invalide → Neutre +
-  revue ; deux thèmes au sentiment divergent (dont Négatif) → revue.
+  revue. Sous le contrat Cultura 2026, deux sentiments divergents sont normalisés :
+  les thèmes négatifs seuls sont conservés si présents, sinon le sentiment du premier
+  thème est appliqué aux deux ; dans les deux cas la revue est forcée.
 - **Échec propre** : LLM injoignable → le lot échoue, **aucun repli silencieux** vers CamemBERT.
 - `enabled: false` par défaut → un poste sans LLM se comporte exactement comme avant.
 - **Claude est exclu de la production côté serveur** (refus 400 à l'activation *et* à la
@@ -753,7 +758,8 @@ transport HTTP est spécifique à chaque moteur. Prompts **versionnés** (`promp
 
 > ⚠️ **Dette documentaire.** `PASSATION.md` décrit l'état du projet comme « V1 + V2 + V3 » et ne
 > mentionne ni V4 ni V5, alors que le code contient les cinq moteurs et que l'historique git
-> montre les lots **C1 à C6 de V5 tous mergés** (`recette_v5` → 112/112). `SPEC_V5` se présente
+> montre les lots **C1 à C6 de V5 tous mergés** (112/112 à la livraison, **115/115**
+> après ajout des contrôles de référentiel LM Studio). `SPEC_V5` se présente
 > encore comme « projet à valider PO » avec une DoD entièrement décochée. **La documentation de
 > passation est en retard d'environ deux versions sur le code.**
 
@@ -807,7 +813,7 @@ Autres tables : `users`, `batches`, `corrections`, `model_versions`, `audit_log`
 | Perf UI | écran/dashboard < 3 s, recherche/filtre < 2 s sur 11k, lancement de lot en ≤ 3 clics |
 | Perf lot | **11 000 verbatims < 1 h** (DoD, **jamais mesuré**) |
 | Transmission | `scripts/package_app.sh` / `restore_app.sh` (images + dump PG + volumes + manifeste) |
-| Recettes | `recette_v1` 48/48, `recette_v3` 13/13, `recette_v4` 50/50, `recette_v5` 112/112 — toutes **torch-free, SQLite, moteur stub** |
+| Recettes | `recette_v1` 115/115, `recette_v3` 13/13, `recette_v4` 67/67, `recette_v5` 115/115, `recette_v6` 42/42 — recettes applicatives **torch-free, SQLite, moteurs mockés/stub** |
 
 **12 garde-fous « jamais »** du cahier des charges, dont les plus contraignants pour le modèle :
 jamais de classe hors taxonomie ni de couple invalide ; jamais de réentraînement automatique en

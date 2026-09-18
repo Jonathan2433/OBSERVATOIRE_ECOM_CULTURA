@@ -76,6 +76,8 @@ Sortie attendue :
 - **Moteur LM Studio (V4)** : c'est une **dépendance hôte hors bundle Docker**. Si le poste
   cible doit l'utiliser, y installer LM Studio, **charger un modèle** et démarrer le serveur
   local (cf. [EXPLOITATION.md](EXPLOITATION.md) §4 bis), puis `LMSTUDIO_ENABLED=true` dans `.env`.
+  Le bundle doit conserver `data/models/cultura_2026/taxonomy.json` : le registre refuse
+  de déclarer le moteur disponible si ce référentiel du prompt V2 est absent.
   Le bundle transféré fonctionne **sans** LM Studio (moteur désactivé par défaut → CamemBERT/stub).
 - **Moteur Claude (V5)** : la clé **`ANTHROPIC_API_KEY` n'est JAMAIS dans le bundle** (comme tout
   secret, elle n'est ni en base, ni en image, ni commitée). Un poste cible **sans clé** fonctionne

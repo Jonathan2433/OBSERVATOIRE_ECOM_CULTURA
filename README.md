@@ -147,7 +147,7 @@ Le sélecteur (*Administration → Modèles*) liste tous les moteurs présents. 
 |---|---|---|
 | **stub** (heuristique) | aucun modèle requis — valide l'installation et l'interface | oui, mode démonstration |
 | **CamemBERT** *(un par modèle déposé)* | la qualité ; chaque modèle porte son référentiel et ses seuils | oui |
-| **LM Studio** (LLM local, V4) | second moteur, ou raffineur en cascade | oui, si `LMSTUDIO_ENABLED=true` |
+| **LM Studio** (LLM local, V4) | second moteur ou raffineur ; contrat Cultura 2026 (taxonomie 11/59, bi-thème contrôlé, sentiment unique) | oui, si `LMSTUDIO_ENABLED=true` |
 | **Claude** (API, V5) | référence de qualité et juge de comparaison | **non** — refus serveur (offline strict) |
 
 Aucun modèle entraîné n'est livré dans le dépôt : à l'installation l'app tourne en
@@ -245,8 +245,8 @@ Voir [`docs/TRANSMISSION.md`](docs/TRANSMISSION.md).
 ```bash
 python app/tests/recette_v1.py   # conformité applicative + KPI répondant      -> 115 OK
 python app/tests/recette_v3.py   # V3 : annulation, reprise, ops, mot de passe -> 13 OK
-python app/tests/recette_v4.py   # V4 : moteur LM Studio                       -> 50 OK
-python app/tests/recette_v5.py   # V5 : cascade, comparaison, juge Claude      -> 112 OK
+python app/tests/recette_v4.py   # V4 : moteur LM Studio + contrat Cultura     -> 67 OK
+python app/tests/recette_v5.py   # V5 : cascade, comparaison, juge Claude      -> 115 OK
 python app/tests/recette_v6.py   # V6 : revue, export, cohérence des totaux    -> 42 OK
 python app/tests/test_satisfaction_respondents.py  # KPI répondant ciblés       -> 10 OK
 ```
@@ -292,7 +292,7 @@ transmission), charte UI, recettes, suivi des lots.
 - **V1** — application fonctionnelle (auth, ingestion, traitement async, résultats/exports, revue, dashboards, admin/RGPD).
 - **V2** — couche design UI/UX (design system turquoise Cultura, navigation latérale, vue lot à onglets).
 - **V3** (`v3.0`) — « POC avancée » : moteur ML prouvé, transmission avec historique, robustesse (annulation/reprise), exploitation, passation.
-- **V4** (`v4.0`) — second moteur **LM Studio** (LLM local, API compatible OpenAI), sélectionnable côté admin, additif et désactivé par défaut. Voir [`docs/SPEC_V4_LMSTUDIO.md`](docs/SPEC_V4_LMSTUDIO.md).
+- **V4** (`v4.0`) — second moteur **LM Studio** (LLM local, API compatible OpenAI), sélectionnable côté admin, additif et désactivé par défaut. Le prompt `v2-cultura-2026` l'aligne sur le référentiel 11/59 et le contrat de sortie du moteur Cultura 2026, tout en conservant `v1` pour les lots historiques. Voir [`docs/SPEC_V4_LMSTUDIO.md`](docs/SPEC_V4_LMSTUDIO.md).
 - **V5** (`v5.0`) — **multi-moteur** : cascade proposeur/raffineur, page de comparaison de moteurs sur échantillon, moteur **Claude** en comparaison/test uniquement (jamais activable en production). Voir [`docs/SPEC_V5_MULTI_MOTEUR.md`](docs/SPEC_V5_MULTI_MOTEUR.md).
 - **V6** — revue humaine et exports consolidés (cohérence des totaux liste/export).
 - **Modèle Cultura 2026** (septembre 2026) — refonte complète du moteur sur le

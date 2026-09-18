@@ -9,8 +9,9 @@ mutualisées entre les backends LLM :
   - gabarit de sortie (``empty_output``, ``OUTPUT_COLUMNS``) et helpers de
     normalisation (casse/accents).
 
-Extrait de ``lmstudio_predictor`` (V4) **sans changement de comportement** : le
-moteur LM Studio ré-importe ces symboles et la recette V4 doit rester 50/50.
+Extrait de ``lmstudio_predictor`` (V4), puis étendu avec un contrat versionné
+``v2-cultura-2026`` propre à LM Studio. Le chemin historique ``v1`` reste
+disponible pour Claude et pour la reproductibilité des anciens lots.
 Le **transport HTTP reste propre à chaque moteur** (``call_llm_chat`` côté LM
 Studio en OpenAI-compatible, Messages API côté Claude) : seule la logique de
 décision est ici. cf. docs/SPEC_V5_MULTI_MOTEUR §4.2.
@@ -93,6 +94,7 @@ def empty_output(cleaned_text: str) -> Dict[str, Any]:
 #  PROMPT (pur) — versionné via cfg.<moteur>.prompt_version
 # --------------------------------------------------------------------------- #
 PROMPT_VERSION_DEFAULT = "v1"
+PROMPT_VERSION_CULTURA_2026 = "v2-cultura-2026"
 
 
 def _taxonomy_block(taxonomy: Taxonomy) -> str:
@@ -103,12 +105,24 @@ def _taxonomy_block(taxonomy: Taxonomy) -> str:
     return "\n".join(lines)
 
 
-def _satisfaction_line(satisfaction: Optional[float]) -> str:
+def _is_cultura_2026_prompt(version: str) -> bool:
+    """Vrai pour le contrat de prompt aligné sur le modèle Cultura 2026."""
+    return str(version).strip().casefold() == PROMPT_VERSION_CULTURA_2026
+
+
+def _satisfaction_line(satisfaction: Optional[float], scale_max: int = 10) -> str:
     """Ligne « Note de satisfaction » injectée dans le prompt (vide si absente/invalide)."""
     if satisfaction is None:
         return ""
     try:
-        return f"\nNote de satisfaction (1-10) : {int(round(float(satisfaction)))}"
+        if int(scale_max) == 10:
+            # Préserver mot pour mot le prompt V1 afin de pouvoir rejouer les lots
+            # historiques ; seule la V2 explicite la normalisation métier sur 1-4.
+            return f"\nNote de satisfaction (1-10) : {int(round(float(satisfaction)))}"
+        return (
+            f"\nNote de satisfaction normalisée (1-{int(scale_max)}) : "
+            f"{int(round(float(satisfaction)))}"
+        )
     except (ValueError, TypeError):
         return ""
 
@@ -116,12 +130,45 @@ def _satisfaction_line(satisfaction: Optional[float]) -> str:
 def build_llm_prompt(
     taxonomy: Taxonomy, cleaned_text: str, satisfaction: Optional[float],
     fallback_theme: str = FALLBACK_THEME_DEFAULT, version: str = PROMPT_VERSION_DEFAULT,
+    fallback_niv2: str = "",
 ) -> Dict[str, str]:
     """Construit (system, user) du mode PROPOSEUR. Fonction pure et versionnée.
 
     Le numéro de version est tracé dans le system prompt pour reproductibilité.
     Pour faire évoluer la formulation, ajouter une branche ``version`` ici.
     """
+    if _is_cultura_2026_prompt(version):
+        system = (
+            f"[prompt {version}] Tu es le moteur de classification des verbatims e-commerce "
+            "de Cultura. Tu appliques le contrat Cultura 2026. Classe exclusivement dans "
+            "les couples niveau 1 / niveau 2 de la taxonomie fournie et recopie leurs "
+            "libellés exactement. Retourne un thème par défaut et un second thème "
+            "uniquement si le texte traite explicitement de deux sujets distincts ; une "
+            "hésitation entre deux catégories proches n'est jamais un bi-thème. Le "
+            "sentiment est unique pour le verbatim et doit être identique sur tous les "
+            "thèmes retournés. Si des aspects positifs et négatifs coexistent, conserve "
+            "uniquement le ou les thèmes portant l'aspect négatif et utilise le sentiment "
+            "Négatif. La note de satisfaction est un contexte auxiliaire : le texte reste "
+            "la source principale. Utilise une confiance basse pour un texte court, ambigu "
+            "ou insuffisamment contextualisé. N'invente jamais de libellé. Réponds "
+            "uniquement en JSON conforme au schéma demandé, sans texte autour."
+        )
+        sat_line = _satisfaction_line(satisfaction, scale_max=4)
+        fallback_rule = (
+            f'Utilise le couple de repli exact niv1="{fallback_theme}", '
+            f'niv2="{fallback_niv2}" si aucun sujet plus précis ne correspond.'
+        )
+        user = (
+            "Taxonomie Cultura 2026 autorisée (niv1 : sous-thèmes niv2 valides) :\n"
+            f"{_taxonomy_block(taxonomy)}\n\n"
+            f"{fallback_rule}\n"
+            "Signaux à renseigner : rupture (le client annonce explicitement rompre la "
+            "relation ou partir à la concurrence), churn (risque explicite de départ), "
+            "insatisfaction_forte. confidence doit rester dans [0,1].\n\n"
+            f"Verbatim à classer :{sat_line}\n\"\"\"\n{cleaned_text}\n\"\"\""
+        )
+        return {"system": system, "user": user}
+
     system = (
         f"[prompt {version}] Tu es un classifieur de verbatims clients e-commerce pour "
         "Cultura. Tu classes chaque verbatim STRICTEMENT dans la taxonomie fournie, sans "
@@ -183,6 +230,7 @@ def build_refiner_prompt(
     taxonomy: Taxonomy, cleaned_text: str, proposal: Optional[Dict[str, Any]],
     satisfaction: Optional[float] = None,
     fallback_theme: str = FALLBACK_THEME_DEFAULT, version: str = PROMPT_VERSION_DEFAULT,
+    fallback_niv2: str = "",
 ) -> Dict[str, str]:
     """Construit (system, user) du mode RAFFINEUR. Fonction pure et versionnée.
 
@@ -192,6 +240,31 @@ def build_refiner_prompt(
     proposeur (``LLM_OUTPUT_SCHEMA``) → revalidé par ``map_llm_response``, donc
     les garde-fous V4 (taxo + repli + plafonds) sont conservés tels quels.
     """
+    if _is_cultura_2026_prompt(version):
+        system = (
+            f"[prompt {version} · raffineur] Tu es le relecteur du moteur de "
+            "classification Cultura 2026. Valide ou corrige la proposition en appliquant "
+            "strictement la taxonomie fournie. Retourne un thème par défaut et un second "
+            "uniquement pour deux sujets explicitement distincts, jamais pour une "
+            "hésitation entre libellés voisins. Le sentiment est unique pour le verbatim "
+            "et identique sur tous les thèmes. Si le texte mêle un aspect positif et un "
+            "aspect négatif, conserve uniquement le ou les thèmes négatifs. Le texte "
+            "prime sur la note et sur la proposition du premier moteur. N'invente aucun "
+            "libellé et réponds uniquement en JSON conforme au schéma, sans texte autour."
+        )
+        sat_line = _satisfaction_line(satisfaction, scale_max=4)
+        user = (
+            "Taxonomie Cultura 2026 autorisée (niv1 : sous-thèmes niv2 valides) :\n"
+            f"{_taxonomy_block(taxonomy)}\n\n"
+            "Proposition du premier moteur (à valider ou corriger) :\n"
+            f"{_proposal_block(proposal)}\n\n"
+            f'Couple de repli : niv1="{fallback_theme}", niv2="{fallback_niv2}".\n'
+            "Signaux à renseigner : rupture, churn, insatisfaction_forte. confidence doit "
+            "rester dans [0,1] et refléter honnêtement l'ambiguïté.\n\n"
+            f"Verbatim à reclasser :{sat_line}\n\"\"\"\n{cleaned_text}\n\"\"\""
+        )
+        return {"system": system, "user": user}
+
     system = (
         f"[prompt {version} · raffineur] Tu es un classifieur de verbatims clients "
         "e-commerce pour Cultura, en mode RELECTURE. On te fournit un verbatim et une "
@@ -265,6 +338,7 @@ def map_llm_response(
     taxonomy: Taxonomy,
     cfg: Dict[str, Any],
     sentiment_labels: List[str],
+    engine_name: str = "lmstudio",
 ) -> Dict[str, Any]:
     """Transforme la réponse JSON du LLM en dict de sortie validé. Fonction pure.
 
@@ -272,15 +346,18 @@ def map_llm_response(
     repli + revue forcée si hors référentiel -> dé-doublonnage -> garde-fous de
     confiance (deux plafonds) -> désaccord de sentiment -> assemblage.
 
-    Les garde-fous sont lus sous ``cfg["lmstudio"]`` (clé historique partagée par
-    les moteurs LLM ; un moteur peut surcharger en fournissant son propre bloc).
+    Les garde-fous et le contrat sont lus sous le bloc du moteur appelant. Le
+    paramètre par défaut conserve la compatibilité des appelants V4 historiques.
     """
     if not cleaned_text or str(cleaned_text).strip() == "":
         return empty_output(cleaned_text)
 
-    engine = cfg.get("lmstudio", {}) or {}
+    engine = cfg.get(engine_name, {}) or {}
     guards = engine.get("guardrails", {}) or {}
     fallback_theme = engine.get("fallback_theme", FALLBACK_THEME_DEFAULT)
+    fallback_niv2 = engine.get("fallback_niv2", "")
+    contract_version = str(engine.get("contract_version", "legacy"))
+    cultura_2026 = contract_version == "cultura_2026"
     repli_cap = float(guards.get("repli_confidence_max", 0.40))
     bad_json_cap = float(guards.get("invalid_json_confidence_max", 0.30))
     review_on_conflict = bool(guards.get("review_on_sentiment_conflict", True))
@@ -294,7 +371,9 @@ def map_llm_response(
     themes_in = raw.get("themes") if isinstance(raw, dict) else None
     if not isinstance(themes_in, list) or not themes_in:
         # Réponse hors-forme (JSON cassé / vide) -> repli au plafond le plus bas + revue.
-        return _assemble(cleaned_text, [_fallback_theme(fallback_theme, bad_json_cap)],
+        return _assemble(cleaned_text, [
+            _fallback_theme(fallback_theme, fallback_niv2, bad_json_cap)
+        ],
                          raw.get("signaux", {}) if isinstance(raw, dict) else {},
                          satisfaction, score_max, seuil, forced_review=True)
 
@@ -320,8 +399,8 @@ def map_llm_response(
         if canon_niv1 is not None and canon_niv2 is not None:
             mapped.append({"niv1": canon_niv1, "niv2": canon_niv2, "sentiment": cs, "conf": conf})
         else:
-            # Hors référentiel -> sentinelle de repli (décision a+c) + revue forcée.
-            fb = _fallback_theme(fallback_theme, min(conf, repli_cap))
+            # Hors référentiel -> repli configuré + revue forcée.
+            fb = _fallback_theme(fallback_theme, fallback_niv2, min(conf, repli_cap))
             fb["sentiment"] = cs
             mapped.append(fb)
             forced_review = True
@@ -336,11 +415,25 @@ def map_llm_response(
         seen.add(key)
         deduped.append(m)
     if not deduped:
-        deduped = [_fallback_theme(fallback_theme, repli_cap)]
+        deduped = [_fallback_theme(fallback_theme, fallback_niv2, repli_cap)]
         forced_review = True
 
-    # Garde-fou : 2 thèmes au sentiment divergent (dont un Négatif) -> revue.
-    if review_on_conflict and len(deduped) == 2:
+    # D-26, contrat Cultura 2026 : sentiment unique par verbatim. Sur un cas
+    # mixte positif/négatif, seuls les thèmes négatifs sont conservés. Cette
+    # normalisation déterministe protège le contrat même si le LLM désobéit au prompt.
+    if cultura_2026 and len(deduped) == 2:
+        sents = {deduped[0]["sentiment"], deduped[1]["sentiment"]}
+        if len(sents) > 1 and "Négatif" in sents:
+            deduped = [theme for theme in deduped if theme["sentiment"] == "Négatif"]
+            forced_review = True
+        elif len(sents) > 1:
+            # Divergence sans négatif : le premier thème porte le sentiment global,
+            # mais l'ambiguïté impose une revue humaine.
+            global_sentiment = deduped[0]["sentiment"]
+            for theme in deduped:
+                theme["sentiment"] = global_sentiment
+            forced_review = True
+    elif review_on_conflict and len(deduped) == 2:
         sents = {deduped[0]["sentiment"], deduped[1]["sentiment"]}
         if len(sents) > 1 and "Négatif" in sents:
             forced_review = True
@@ -350,8 +443,8 @@ def map_llm_response(
                      satisfaction, score_max, seuil, forced_review)
 
 
-def _fallback_theme(label: str, conf: float) -> Dict[str, Any]:
-    return {"niv1": label, "niv2": "", "sentiment": "Neutre", "conf": float(conf)}
+def _fallback_theme(label: str, niv2: str, conf: float) -> Dict[str, Any]:
+    return {"niv1": label, "niv2": niv2, "sentiment": "Neutre", "conf": float(conf)}
 
 
 def _assemble(

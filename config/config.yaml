@@ -471,7 +471,7 @@ moteurs_camembert:
     seuil_revue: 0.70
 
 # -----------------------------------------------------------------------------
-#  Moteur LM Studio (V4) — second moteur LLM local, optionnel.
+#  Moteur LM Studio (V4 + contrat Cultura 2026) — moteur LLM local optionnel.
 #  Désactivé par défaut : si enabled=false, l'app se comporte exactement comme
 #  avant (moteurs CamemBERT/stub uniquement). LM Studio tourne en NATIF sur l'hôte
 #  (GPU Metal) et expose une API compatible OpenAI ; le worker l'appelle via
@@ -482,16 +482,27 @@ lmstudio:
   enabled: false
   base_url: "http://host.docker.internal:1234/v1"   # API compatible OpenAI de LM Studio
   model: "local-model"           # id du modèle chargé dans LM Studio (cf. /v1/models)
+  # Le référentiel est explicite : `paths.taxonomy` reste celui du POC pour la
+  # rétrocompatibilité. Le fichier embarqué voyage avec le modèle Cultura 2026
+  # et est monté au même chemin dans les conteneurs worker et API.
+  taxonomy: "data/models/cultura_2026/taxonomy.json"
   temperature: 0.1
   timeout_s: 120
   max_parallel: 4               # concurrence des appels (utilisée en O4)
   retries: 2
-  prompt_version: "v1"
-  fallback_theme: "Autre / Non classé"   # sentinelle moteur (NON ajoutée à la taxo CamemBERT)
+  # L'ancien prompt `v1` reste implémenté pour rejouer les lots historiques.
+  prompt_version: "v2-cultura-2026"
+  contract_version: "cultura_2026"
+  # Repli canonique du nouveau référentiel : contrairement à l'ancienne
+  # sentinelle `Autre / Non classé`, ce couple reste dans la taxonomie 11/59.
+  fallback_theme: "Général"
+  fallback_niv2: "Autre"
   guardrails:
     repli_confidence_max: 0.40           # plafond confiance si couple/sentiment hors taxo
     invalid_json_confidence_max: 0.30    # plafond confiance si réponse JSON hors-forme
-    review_on_sentiment_conflict: true   # 2 thèmes au sentiment divergent (dont Négatif) -> revue
+    # Contrat Cultura 2026 (D-26) : le mapper résout d'abord les divergences en
+    # sentiment unique et priorité au négatif. Ce drapeau ne concerne que V1.
+    review_on_sentiment_conflict: true
 
 # -----------------------------------------------------------------------------
 #  Moteur Claude (V5) — API Anthropic, COMPARAISON / TEST UNIQUEMENT.
@@ -508,7 +519,7 @@ claude:
   max_tokens: 1024                         # sortie structurée (tool use) : réponse JSON courte
   max_parallel: 4                          # concurrence des appels
   retries: 2
-  prompt_version: "v1"                     # mêmes prompts proposeur/raffineur que LM Studio
+  prompt_version: "v1"                     # contrat historique, distinct de LM Studio V2
   fallback_theme: "Autre / Non classé"     # sentinelle moteur (NON ajoutée à la taxo CamemBERT)
   # NB : temperature non envoyée (rejetée par Opus 4.7+/Fable) ; clé via ANTHROPIC_API_KEY (.env)
 

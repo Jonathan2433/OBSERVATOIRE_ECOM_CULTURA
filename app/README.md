@@ -47,6 +47,12 @@ sa couche de décision. Un modèle doit **embarquer son référentiel** à sa ra
 (`<racine>/taxonomy.json`) : c'est lui que l'API sert aux listes de la revue
 humaine, et la seule forme qui suive le modèle dans les conteneurs.
 
+LM Studio utilise explicitement `data/models/cultura_2026/taxonomy.json`. Son
+prompt `v2-cultura-2026` reprend le contrat du moteur Cultura : un thème par
+défaut, un second uniquement pour deux sujets distincts, sentiment unique et
+priorité à l'aspect négatif. La revue sert le même référentiel, y compris lorsque
+LM Studio est le raffineur final d'une cascade.
+
 Activer un moteur n'en supprime aucun ; le retour arrière est une resélection.
 
 ## Restitution métier
@@ -91,7 +97,7 @@ Recettes automatisées :
 | Applicatives (torch-free) | Modèle (environnement ML) |
 |---|---|
 | `recette_v1.py` → 115 OK · `recette_v3.py` → 13 OK | `recette_l1a_chargeur.py` → dépend de spaCy et des fichiers réels |
-| `recette_v4.py` → 50 OK · `recette_v5.py` → 112 OK | `recette_l2_protocole.py` → 15 OK |
+| `recette_v4.py` → 67 OK · `recette_v5.py` → 115 OK | `recette_l2_protocole.py` → 15 OK |
 | `recette_v6.py` → 42 OK · `test_satisfaction_respondents.py` → 10 OK | `recette_couche_decision.py` → 46 OK |
 
 ## Dépannage

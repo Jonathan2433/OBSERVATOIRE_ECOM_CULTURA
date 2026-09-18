@@ -98,7 +98,7 @@ def make_predictor(max_parallel=4, retries=0):
     p.cfg, p.taxonomy, p.sentiment_labels = CFG, TAXO, SENT_LABELS
     p.base_url, p.model = "http://x:1234/v1", "m"
     p.temperature, p.timeout_s = 0.1, 5
-    p.fallback_theme, p.prompt_version = "Autre / Non classé", "v1"
+    p.fallback_theme, p.fallback_niv2, p.prompt_version = "Autre / Non classé", "", "v1"
     p.max_parallel, p.retries = max_parallel, retries
     return p
 
@@ -464,6 +464,28 @@ def run() -> None:
         check("C3 : raffineur CamemBERT refusé (pas de refine_cleaned_batch)", _refused("camembert-x"))
         check("C3 : raffineur indisponible refusé", _refused("lmstudio:down"))
         check("C3 : raffineur inconnu refusé", _refused("nope:404"))
+
+        # Le référentiel de revue suit aussi un moteur LM Studio, y compris
+        # lorsqu'il est le raffineur final d'une cascade.
+        from app.core import taxonomy as api_taxo
+
+        lmstudio = db.query(ModelVersion).filter_by(label="lmstudio:r1").one()
+        lmstudio.metrics = {
+            "taxonomy_path": str(ROOT / "data/models/cultura_2026/taxonomy.json"),
+            "taxonomy_present": True,
+            "prompt_version": "v2-cultura-2026",
+            "contract_version": "cultura_2026",
+        }
+        db.commit()
+        direct = api_taxo.chemin_referentiel(db, "lmstudio:r1")
+        cascade = api_taxo.chemin_referentiel(db, "camembert-x ▶ lmstudio:r1")
+        check("C3 : revue LM Studio -> référentiel Cultura 2026", direct.endswith(
+            "data/models/cultura_2026/taxonomy.json"), direct)
+        check("C3 : revue cascade -> référentiel du raffineur LM Studio",
+              cascade == direct, cascade)
+        check("C3 : taxonomie servie pour LM Studio = 11 thèmes / 59 sous-thèmes",
+              len(api_taxo.load_taxonomy(db, "lmstudio:r1")["niv1"]) == 11
+              and len(api_taxo.load_taxonomy(db, "lmstudio:r1")["parent"]) == 59)
 
     # --- C3.5 process_batch_job : cascade de bout en bout (moteurs mockés) ----
     COL_T, COL_SA, COL_SR = _loader.COL_TEXT, _loader.COL_SATISFACTION, _loader.COL_SOURCE

@@ -1,8 +1,10 @@
-"""Registre des modèles : découverte (stub + réel) et synchronisation en base.
+"""Registre des moteurs : découverte et synchronisation en base.
 
 - Le **stub** (heuristique mots-clés) est toujours disponible.
 - Le modèle **réel** est détecté si les artefacts CamemBERT sont présents dans
   le volume monté (/data/models). Ses métriques sont lues depuis eval_report.json.
+- LM Studio est disponible si son service, son modèle et son référentiel répondent.
+- Claude reste un moteur de comparaison conditionné à la présence de sa clé.
 
 La synchronisation est exécutée par le worker (qui a accès au volume + au moteur
 `src`). L'API ne fait que lire/activer les entrées en base.
@@ -95,8 +97,9 @@ def _detect_lmstudio(cfg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Sonde le moteur LM Studio (V4). None si le moteur est désactivé en config.
 
     Si activé, renvoie toujours une entrée (pour que l'admin la voie) avec un drapeau
-    ``available`` dynamique : vrai uniquement si LM Studio répond ET que le modèle est
-    chargé. Le « test de connexion » côté UI = relancer cette synchro (Re-scanner).
+    ``available`` dynamique : vrai uniquement si LM Studio répond, si le modèle est
+    chargé et si le référentiel configuré est lisible. Le « test de connexion » côté
+    UI = relancer cette synchro (Re-scanner).
     """
     lms = cfg.get("lmstudio", {}) or {}
     if not lms.get("enabled"):
@@ -105,6 +108,17 @@ def _detect_lmstudio(cfg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     model = lms.get("model", "local-model")
     base_url = lms.get("base_url", "http://host.docker.internal:1234/v1")
     label = f"lmstudio:{model}"
+    taxonomy_path = None
+    taxonomy_present = True
+    if lms.get("taxonomy"):
+        try:
+            from src.utils import resolve_path
+
+            taxonomy_path = str(resolve_path(cfg, lms["taxonomy"]))
+            taxonomy_present = Path(taxonomy_path).is_file()
+        except Exception as exc:
+            taxonomy_present = False
+            logger.warning("Référentiel LM Studio invalide (%s) : %s", lms.get("taxonomy"), exc)
     reachable, present = False, False
     try:
         from .lmstudio_predictor import list_llm_models, model_is_installed
@@ -117,9 +131,17 @@ def _detect_lmstudio(cfg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
     return {
         "label": label,
-        "available": bool(reachable and present),
+        "available": bool(reachable and present and taxonomy_present),
         "path": f"{model} @ {base_url}",
-        "metrics": {"reachable": reachable, "model_present": present, "model": model},
+        "metrics": {
+            "reachable": reachable,
+            "model_present": present,
+            "model": model,
+            "taxonomy_path": taxonomy_path,
+            "taxonomy_present": taxonomy_present,
+            "prompt_version": lms.get("prompt_version"),
+            "contract_version": lms.get("contract_version"),
+        },
     }
 
 

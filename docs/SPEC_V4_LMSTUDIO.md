@@ -1,6 +1,7 @@
 # Spec V4 — Second moteur de classification « LM Studio » (LLM local)
 
-> **Statut** : **implémentée** (lots O1→O5, recette V4 50/50, tag `v4.0`).
+> **Statut** : **implémentée et alignée Cultura 2026** (lots O1→O5, recette V4
+> 67/67 ; contrat V2 livré le 18/09/2026, après le tag historique `v4.0`).
 > **Principe directeur** : **strictement additive**, aucun impact sur l'app existante
 > (analyste, contrats API, schéma DB, moteur CamemBERT) — gardée derrière `lmstudio.enabled`.
 
@@ -51,8 +52,8 @@ le champ **`model_label`** du lot (ex. `lmstudio:mon-modele` au lieu de
 ### 3.2 Côté admin — **Administration → Modèles**
 - Le moteur LM Studio apparaît comme une **ligne de modèle** :
   - `Version` = `lmstudio:<modèle>` ; `Type` = `LM Studio (LLM)`.
-  - `Disponible` = **oui** si LM Studio répond *et* le modèle est chargé ; **non**
-    (grisé) sinon, avec le motif (*LM Studio injoignable* / *modèle non chargé*).
+  - `Disponible` = **oui** si LM Studio répond, le modèle est chargé et le référentiel
+    configuré est lisible ; **non** (grisé) sinon.
   - Bouton **Activer** (endpoint existant `POST /api/models/{id}/activate`).
 - Bouton **Re-scanner** = **test de connexion** (relance la détection : ping `/v1/models`).
 - Le changement de moteur n'affecte que les **nouveaux** lots.
@@ -75,7 +76,8 @@ le champ **`model_label`** du lot (ex. `lmstudio:mon-modele` au lieu de
 1. **`LMStudioPredictor`** (`app/worker/lmstudio_predictor.py`) — torch-free, client
    **`urllib`** (stdlib). Même interface que les deux autres prédicteurs.
 2. **Dispatch** : `if kind == "lmstudio": return LMStudioPredictor(cfg)`.
-3. **Détection** : `_detect_lmstudio(cfg)` (ping `/v1/models` + présence du modèle).
+3. **Détection** : `_detect_lmstudio(cfg)` (ping `/v1/models` + présence du modèle et
+   du référentiel déclaré ; versions de prompt/contrat publiées dans le registre).
 4. **Config** : bloc `lmstudio:` dans `config.yaml` (+ surcharge env `config_worker.py`).
 5. **Compose** : `extra_hosts: ["host.docker.internal:host-gateway"]` sur `worker`.
 
@@ -110,10 +112,19 @@ moteurs CamemBERT/stub.
 6. Renvoie le dict au **format identique** à `build_output()` (mêmes colonnes).
 
 ### 5.2 Prompt (versionné `lmstudio.prompt_version`)
-Rôle « classifieur de verbatims e-commerce Cultura » ; consignes dures : 1–2 thèmes
-**uniquement** des couples niv1/niv2 valides (liste injectée) ; recopie exacte des
-libellés ; sentiment ∈ {Négatif, Neutre, Positif} ; confiance honnête ; 3 signaux ;
-repli `Autre / Non classé` si rien ne correspond ; **réponse JSON uniquement**.
+
+Le prompt courant est **`v2-cultura-2026`**. Il injecte le référentiel embarqué
+11 thèmes / 59 sous-thèmes et impose le contrat métier du moteur CamemBERT Cultura :
+
+- un thème par défaut ; un second uniquement si le texte porte explicitement deux
+  sujets distincts — une hésitation entre catégories proches n'est pas un bi-thème ;
+- un sentiment unique par verbatim, recopié sur les deux thèmes ;
+- si un avis mêle positif et négatif, conservation du ou des thèmes négatifs ;
+- note de satisfaction normalisée sur 1–4 utilisée comme contexte auxiliaire ;
+- confiance basse pour un texte court ou ambigu, trois signaux et JSON seul.
+
+La branche `v1` reste implémentée pour la reproductibilité des lots historiques et
+pour Claude, dont le contrat n'est pas modifié par cette évolution LM Studio.
 
 ### 5.3 Sortie structurée (`response_format` JSON schema)
 ```json
@@ -126,14 +137,13 @@ repli `Autre / Non classé` si rien ne correspond ; **réponse JSON uniquement**
 - **Appariement tolérant** : libellés LLM normalisés (casse + accents + espaces) et
   appariés aux libellés **canoniques** de la taxonomie — un thème correct mais mal
   capitalisé/accentué est **récupéré** (réécrit au canonique), sans jamais « deviner ».
-- `niv1` introuvable **ou** `niv2` non-enfant de `niv1` → **sentinelle de repli**
-  `Autre / Non classé` (décision a) + **revue forcée** (décision c). *Pas de remap deviné.*
+- `niv1` introuvable **ou** `niv2` non-enfant de `niv1` → couple canonique de repli
+  **`Général / Autre`** + **revue forcée**. *Pas de remap deviné.*
 - JSON hors-forme → repli + revue, au plafond de confiance le plus bas (§6).
 - **Dé-doublonnage** : couples identiques fusionnés.
 
-> La sentinelle `Autre / Non classé` est un **label propre au moteur LM Studio**, **non
-> ajouté** à la taxonomie partagée (sinon l'espace de labels de CamemBERT — 20 niv.1 —
-> serait décalé et le modèle réel cassé).
+> Le repli V2 appartient au référentiel Cultura 2026. La sentinelle historique
+> `Autre / Non classé` n'est conservée que pour le contrat V1.
 
 ---
 
@@ -150,7 +160,8 @@ revue = confidence_globale < seuil_revue(batch)
 - couple niv1/niv2 hors taxo (après normalisation) → repli, revue, conf ≤ 0.40
 - réponse JSON hors-forme                          → repli, revue, conf ≤ 0.30
 - sentiment hors {Négatif,Neutre,Positif}          → Neutre + revue
-- 2 thèmes au sentiment divergent (dont Négatif)   → revue
+- contrat V2, sentiments divergents avec Négatif   → thèmes négatifs seuls + revue
+- contrat V2, divergence sans Négatif              → sentiment du thème 1 + revue
 ```
 Tout est paramétré dans `config.yaml → lmstudio.guardrails`.
 
@@ -181,12 +192,15 @@ lmstudio:
   enabled: false                 # V4 désactivée par défaut → app inchangée
   base_url: "http://host.docker.internal:1234/v1"
   model: "local-model"           # id du modèle chargé (cf. GET /v1/models)
+  taxonomy: "data/models/cultura_2026/taxonomy.json"
   temperature: 0.1
   timeout_s: 120
   max_parallel: 4
   retries: 2
-  prompt_version: "v1"
-  fallback_theme: "Autre / Non classé"
+  prompt_version: "v2-cultura-2026"
+  contract_version: "cultura_2026"
+  fallback_theme: "Général"
+  fallback_niv2: "Autre"
   guardrails:
     repli_confidence_max: 0.40
     invalid_json_confidence_max: 0.30
@@ -208,13 +222,14 @@ Surcharge env (`config_worker.py`) : `LMSTUDIO_ENABLED`, `LMSTUDIO_BASE_URL`, `L
 | Lot | Contenu | État |
 |---|---|---|
 | **O1** | Adaptateur `LMStudioPredictor` + dispatch + config + compose | ✅ |
-| **O2** | Prompt versionné + schéma + matching tolérant + repli + garde-fous | ✅ |
+| **O2** | Prompts V1/V2 versionnés + schéma + matching tolérant + repli + garde-fous | ✅ |
 | **O3** | `_detect_lmstudio` (`/v1/models`) + sync + onglet Modèles | ✅ |
 | **O4** | Concurrence bornée + retries + fail-fast | ✅ |
-| **O5** | Doc + recette V4 + tag `v4.0` | ✅ |
+| **O5** | Alignement Cultura 2026, registre/référentiel API, doc et recette V4 | ✅ |
 
-**Validation** : `app/tests/recette_v4.py` **50/50** (LM Studio mocké, torch-free),
-non-régression V1 48/48 + V3 13/13, `tsc`/build front OK.
+**Validation** : `app/tests/recette_v4.py` **67/67** et `recette_v5.py` **115/115**
+(LM Studio mocké, torch-free). La recette couvre prompts proposeur/raffineur, taxonomie
+11/59, repli canonique, D-26 et référentiel servi à la revue.
 
 ---
 
