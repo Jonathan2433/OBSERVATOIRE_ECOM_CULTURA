@@ -1,4 +1,6 @@
 /** Graphe thème × sentiment × volumétrie (barres empilées par sentiment), tokens. */
+import { sortThemeSentimentRows, totalSentimentCount } from "../themeSentimentSort";
+
 const COLORS: Record<string, string> = {
   "Négatif": "var(--cu-sentiment-negatif)",
   "Neutre": "var(--cu-sentiment-neutre)",
@@ -7,10 +9,9 @@ const COLORS: Record<string, string> = {
 const ORDER = ["Négatif", "Neutre", "Positif"];
 
 export default function StackedSentimentBar({ data }: { data: Record<string, Record<string, number>> }) {
-  const totalOf = (segs: Record<string, number>) => Object.values(segs).reduce((a, b) => a + b, 0);
-  const rows = Object.entries(data).sort((a, b) => totalOf(b[1]) - totalOf(a[1]));
+  const rows = sortThemeSentimentRows(data);
   if (rows.length === 0) return <p className="ui-muted">Aucune donnée.</p>;
-  const maxTotal = Math.max(...rows.map(([, s]) => totalOf(s)), 1);
+  const maxTotal = Math.max(...rows.map(([, s]) => totalSentimentCount(s)), 1);
 
   return (
     <div>
@@ -21,9 +22,12 @@ export default function StackedSentimentBar({ data }: { data: Record<string, Rec
           </span>
         ))}
       </div>
+      <p className="ui-muted" style={{ margin: "0 0 var(--sp-3)", fontSize: "var(--fs-xs)" }}>
+        Thèmes classés par nombre de verbatims négatifs décroissant.
+      </p>
       <div style={{ display: "grid", gap: "var(--sp-2)" }}>
         {rows.map(([theme, segs]) => {
-          const total = totalOf(segs);
+          const total = totalSentimentCount(segs);
           return (
             <div key={theme} style={{ display: "grid", gridTemplateColumns: "minmax(140px, 240px) 1fr 48px", gap: "var(--sp-3)", alignItems: "center" }}>
               <span style={{ fontSize: "var(--fs-sm)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={theme}>{theme}</span>

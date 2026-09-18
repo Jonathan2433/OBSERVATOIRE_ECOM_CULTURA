@@ -58,6 +58,11 @@ affiche les quatre sources attendues, y compris une source non reçue, et distin
 sous-thèmes porte uniquement sur les champs textuels ouverts ; les questions
 fermées n'y sont pas intégrées implicitement.
 
+Dans les graphiques **thème × sentiment**, l'ordre d'affichage sert directement
+la priorisation métier : volume négatif décroissant, puis volume total
+décroissant et libellé alphabétique en cas d'égalité. Le tri s'applique au jeu de
+données affiché et compte le thème principal comme le second thème.
+
 ## État d'avancement
 Voir [../docs/SUIVI_LOTS.md](../docs/SUIVI_LOTS.md). **V1→V5 livrées**, V6 (revue et
 exports consolidés) incluse. Modèle **Cultura 2026** recetté et mis à disposition dans

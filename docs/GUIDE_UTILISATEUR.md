@@ -156,6 +156,10 @@ Menu **Tableaux de bord** (global) et **Lots → (un lot) → Tableau de bord**.
 - **Thèmes × sentiment (volumétrie)** : barres empilées croisant le **volume** de
   chaque thème et la **répartition de sentiment** (Négatif / Neutre / Positif),
   **toutes mentions confondues** — chaque thème y apparaît avec *son* sentiment.
+  Les thèmes sont classés par **nombre de verbatims négatifs décroissant** afin de
+  faire remonter les irritants à traiter en priorité. À nombre négatif égal, le
+  volume total puis le libellé déterminent l'ordre. Il s'agit d'un volume absolu,
+  et non d'un taux de négativité.
 
 ### « Thème principal » ou « toutes mentions » : deux questions différentes
 

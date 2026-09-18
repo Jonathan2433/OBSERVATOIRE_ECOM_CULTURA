@@ -56,7 +56,7 @@ Sortie attendue : **`Bilan : 89 OK · 0 ÉCHEC · 0 SKIP`** (code de sortie 0).
 | 5 | Résultats consultables/filtrables ; détail conforme | Recette auto + UI | ✅ auto + UI |
 | 6 | Export CSV/XLSX **conforme POC** | Recette auto (colonnes + BOM) | ✅ auto |
 | 7 | File de revue + correction (hiérarchie) + export corrections | UI *Revue* (+ E2E lots précédents) | ✅ (run live) |
-| 8 | Dashboards KPI modèle / résultats / volumétrie ; satisfaction répondant et sources absentes explicites | Recette auto + UI *Tableaux de bord* | ✅ auto + run live |
+| 8 | Dashboards KPI modèle / résultats / volumétrie ; satisfaction répondant et sources absentes explicites ; thème×sentiment trié par volume négatif décroissant | Recette auto + UI *Tableaux de bord* | ✅ auto + run live |
 | 9 | Historique des lots + journal d'audit | UI *Lots* + *Administration* ; recette auto (audit) | ✅ auto + UI |
 | 10 | Activation d'une version de modèle déposée, sans rebuild | Déposer dans `data/models` + activer (UI) | ✅ (procédure §4 EXPLOITATION) |
 | 11 | Rétention configurable + purge auto et manuelle | Recette auto (purge) + purge au démarrage worker | ✅ auto |
@@ -65,6 +65,11 @@ Sortie attendue : **`Bilan : 89 OK · 0 ÉCHEC · 0 SKIP`** (code de sortie 0).
 > **#4** : seul critère dépendant du **modèle réel** (non déposé à ce stade). Le chemin
 > performance est en place (PyTorch qualifié, worker chaud, `batch_size` réglable,
 > un seul job lourd) ; la mesure des 11k < 1 h se fait au dépôt du modèle entraîné.
+
+Contrôle UI du critère #8 : préparer un thème A plus volumineux au total mais
+moins négatif qu'un thème B. B doit apparaître avant A dans le graphique du lot
+et dans le graphique global. En cas d'égalité sur le négatif, vérifier le volume
+total décroissant puis le libellé alphabétique.
 
 ---
 

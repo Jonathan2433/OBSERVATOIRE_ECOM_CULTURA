@@ -79,7 +79,9 @@ n'en supprime aucun ; **le retour arrière est une resélection**.
   consulter/exporter → revue.
 - **Lire la synthèse métier** : les notes déclarées sont comptées une fois par
   répondant ; les thèmes proviennent uniquement des textes libres. Une source non
-  reçue reste visible et ne vaut pas zéro.
+  reçue reste visible et ne vaut pas zéro. Les graphiques thème × sentiment
+  classent les thèmes par volume négatif décroissant afin de faire remonter les
+  irritants prioritaires.
 - **Annuler un lot** en cours : bouton *Annuler* (détail du lot). Au redémarrage du
   worker, les lots interrompus repassent en « échec » (pas de lot fantôme).
 - **Nouveau modèle** : entraîner (CLI) → déposer sous `data/models/<nom>/` **avec son

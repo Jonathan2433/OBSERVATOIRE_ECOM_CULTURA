@@ -297,6 +297,10 @@ transmission), charte UI, recettes, suivi des lots.
 - **Restitution métier — septembre 2026** — satisfaction calculée à la maille
   répondant, quatre sources attendues toujours visibles, statuts MDTC explicites,
   comparaison sur période métier et classement limité aux questions ouvertes.
+- **Priorisation des irritants — septembre 2026** — les graphiques thème × sentiment
+  du lot et du tableau de bord global classent les thèmes par **nombre absolu de
+  verbatims négatifs décroissant**, puis par volume total et par libellé en cas
+  d'égalité. Les volumes et les segments affichés ne sont pas modifiés.
 
 **Reste à faire.** Bascule du modèle par défaut (décision humaine, tracée à l'audit) ·
 mesure d'un lot ~11k **< 1 h** en conditions réelles (DoD §11) · atelier de

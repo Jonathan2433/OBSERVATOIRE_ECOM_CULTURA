@@ -128,6 +128,10 @@ Transformer le POC en **application conteneurisée, utilisable par le métier**,
 ### F6 — Tableaux de bord & KPI (cf. §6 pour le détail)
 - Trois familles : **KPI modèle**, **KPI résultats du lot**, **volumétrie & tendances**.
 - RG : les KPI modèle proviennent du rapport d'évaluation de la **version active** (`eval_report.json`) ; les KPI résultats/volumétrie sont calculés sur les lots traités.
+- RG : les graphiques **thème × sentiment** du lot et de la vue globale classent
+  les thèmes par **nombre absolu de verbatims négatifs décroissant**. Les égalités
+  sont départagées par le volume total décroissant, puis par le libellé. Ce tri
+  porte sur toutes les mentions (thème principal et second thème).
 - CA : chaque dashboard se charge en < 3 s et indique la version de modèle et la période concernées.
 
 ### F7 — Exports

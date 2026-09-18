@@ -183,6 +183,15 @@ Critères d'acceptation :
 
 **Validation automatisée** : test E2E FastAPI/SQLite **14/14 OK** (crosstab lot+global, config get/patch/validation, purge, audit des actions clés, RBAC analyste→403).
 **Validation PO le 2026-06-18** : stack reconstruite (`down -v` + `up --build`, migration 0005 appliquée), traitement de lot, page Administration et graphe thème×sentiment validés sur le poste.
+
+### Amélioration dataviz — priorisation des irritants *(18 septembre 2026)*
+
+Les deux graphiques **thème × sentiment** — lot et volumétrie globale — utilisent
+le même ordre métier : nombre absolu de mentions négatives décroissant, puis
+volume total décroissant et libellé alphabétique. Le composant partagé rend la
+règle visible sous la légende. Les valeurs, la longueur totale des barres, les
+segments et l'agrégation thème principal + second thème restent inchangés. Le tri
+est recalculé sur le périmètre de données reçu par le graphique.
 ## L8 — Durcissement, RGPD, perf, recette V1 ✅ (validé PO le 2026-06-18 — V1 complète)
 
 **Objectif** : clore la V1 — sécurité, conformité RGPD/offline, performance, recette §11, documentation.
