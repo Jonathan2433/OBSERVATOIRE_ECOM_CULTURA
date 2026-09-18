@@ -3,8 +3,10 @@
 La révision Alembic `0011_survey_responses` crée `survey_responses` et ajoute la
 clé nullable `results.survey_response_id`. La révision
 `0012_survey_response_date` ajoute la date métier nullable `response_date` et
-l'index `(batch_id, source_type, response_date)`. Aucune des deux migrations ne
-rétro-remplit de donnée impossible à reconstruire.
+l'index `(batch_id, source_type, response_date)`. La révision
+`0013_analysis_source_date_index` ajoute l'index complémentaire
+`(response_date, source_type, batch_id)` utilisé par les analyses transversales.
+Ces migrations ne rétro-remplissent aucune donnée impossible à reconstruire.
 
 ## Contrat fonctionnel livré
 
@@ -19,6 +21,14 @@ rétro-remplit de donnée impossible à reconstruire.
 - les quatre sources attendues restent dans le contrat KPI. Une source non reçue
   porte `availability_status=source_not_provided`, sans moyenne fabriquée ;
 - les comparaisons utilisent `response_date`, jamais la date d'upload du lot.
+- les filtres source/date des résultats, de la revue, des exports et des KPI
+  utilisent ce même périmètre ; les bornes de date sont inclusives ;
+- pour les nouveaux imports, `source_file` reçoit le nom original du fichier et
+  non son nom technique dans le volume. La fin de traitement vient de
+  `batches.finished_at`, déjà existant ;
+- `response_reference` est calculée à la restitution sous la forme `REP-…` par
+  un second hachage de `respondent_key`. Elle ne nécessite ni colonne ni migration
+  supplémentaire et n'expose jamais l'identifiant source ou le numéro de commande.
 
 ## Déploiement
 
@@ -41,6 +51,15 @@ peuvent toutes deux avoir produit `2/4`. La migration ne fabrique donc ni note
 native, ni répondant, ni statut client, ni date métier. Ces lots restent visibles
 avec l'état « détail natif indisponible » ou « non comparable ».
 
+Un résultat historique sans `survey_response_id` ne reçoit pas non plus de
+référence pseudonymisée : l'interface et les exports indiquent une valeur absente
+plutôt que d'en fabriquer une.
+
+De même, les lots créés avant la conservation du nom original peuvent ne porter
+que le nom technique (`source_00.xlsx`). Il n'est pas possible de retrouver le
+nom envoyé par l'utilisateur à partir de ce seul identifiant. Aucun nom n'est
+donc fabriqué ; retraiter explicitement les fichiers est la seule restauration fiable.
+
 Pour récupérer le détail, recréer volontairement un **nouveau lot** depuis ses
 fichiers source conservés, vérifier son résultat, puis archiver l'ancien lot selon
 la procédure métier. Aucun retraitement automatique, écrasement ou suppression
@@ -51,7 +70,7 @@ Inclure les répondants sans verbatim serait une extension de produit distincte.
 
 ## Retour arrière
 
-Les deux migrations possèdent un `downgrade`, mais son exécution supprime la
+Les migrations possèdent un `downgrade`, mais son exécution peut supprimer la
 maille répondant et la date métier acquises après déploiement. En exploitation,
 le retour arrière recommandé est donc applicatif : restaurer ensemble le dump et
 la version précédents. Ne pas rétrograder le schéma seul sur une base alimentée.

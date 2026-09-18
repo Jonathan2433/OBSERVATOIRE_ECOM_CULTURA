@@ -210,9 +210,15 @@ python scripts/validate_pipeline.py --mdtc data/demo/mdtc_demo.xlsx --mopinion d
 - **Liste blanche à l'ingestion** (D-18) : sur un export au format Cultura 2026, seules les colonnes **déclarées** sont lues. Les colonnes `Commande`, `Client`, `User Agent` et les captures d'écran des exports réels n'entrent donc ni en base ni dans l'export enrichi — elles ne sont pas anonymisées, elles ne sont pas lues.
 - La base ne stocke **que le texte anonymisé** (`verbatim_analyse`) ; jamais le brut.
 - La table `survey_responses` conserve une ligne par réponse source ayant produit
-  au moins un verbatim : clé répondant opaque, source, date métier, note native et
-  statut client normalisé. Elle évite de surpondérer les réponses Mopinion
-  multi-champs. Voir la [note de migration](docs/MIGRATION_SATISFACTION_REPONDANT.md).
+  au moins un verbatim : clé répondant opaque, type de source, **nom original du
+  fichier**, date métier, note native et statut client normalisé. Elle évite de
+  surpondérer les réponses Mopinion multi-champs. La date de fin de traitement
+  reste portée par le lot (`batches.finished_at`). Une référence de réponse
+  publique (`REP-…`) est dérivée par un second hachage de la clé opaque : elle
+  permet de rapprocher les verbatims d'une même réponse sans exposer l'identifiant
+  source ni un numéro de commande. Ces éléments de traçabilité sont restitués par
+  verbatim dans l'API, la revue et les exports. Voir la
+  [note de migration](docs/MIGRATION_SATISFACTION_REPONDANT.md).
 - **Rétention** configurable (défaut 13 mois) + **purge** auto (démarrage worker) et manuelle (admin).
 - **Classes contraintes** : toute prédiction respecte la hiérarchie du référentiel **du modèle qui l'a produite** (un niv.2 appartient à un seul niv.1). Chaque modèle embarque le sien (`<racine>/taxonomy.json`) ; la revue humaine sert **celui du lot relu**, pas celui du moteur actif du moment.
 
@@ -237,11 +243,11 @@ Voir [`docs/TRANSMISSION.md`](docs/TRANSMISSION.md).
 **Recettes applicatives** — torch-free (SQLite, classifieur stub), hors ligne :
 
 ```bash
-python app/tests/recette_v1.py   # conformité applicative + KPI répondant      -> 92 OK
+python app/tests/recette_v1.py   # conformité applicative + KPI répondant      -> 115 OK
 python app/tests/recette_v3.py   # V3 : annulation, reprise, ops, mot de passe -> 13 OK
 python app/tests/recette_v4.py   # V4 : moteur LM Studio                       -> 50 OK
 python app/tests/recette_v5.py   # V5 : cascade, comparaison, juge Claude      -> 112 OK
-python app/tests/recette_v6.py   # V6 : revue, export, cohérence des totaux    -> 26 OK
+python app/tests/recette_v6.py   # V6 : revue, export, cohérence des totaux    -> 42 OK
 python app/tests/test_satisfaction_respondents.py  # KPI répondant ciblés       -> 10 OK
 ```
 
@@ -279,7 +285,7 @@ transmission), charte UI, recettes, suivi des lots.
 | **[`COUCHE_DECISION.md`](docs/COUCHE_DECISION.md)** | **les trois leviers de décision : ce qu'ils font, ce qu'ils rapportent** |
 | [`OPTIMISATION_SANS_CULTURA.md`](docs/OPTIMISATION_SANS_CULTURA.md) | campagne d'optimisation, pistes écartées *(chiffres du §1 corrigés par le précédent)* |
 | [`RECETTE_NOUVEAU_MODELE.md`](docs/RECETTE_NOUVEAU_MODELE.md) | recette L9, critères d'acceptation, activation |
-| [`MIGRATION_SATISFACTION_REPONDANT.md`](docs/MIGRATION_SATISFACTION_REPONDANT.md) | migrations 0011/0012, déploiement et traitement des lots historiques |
+| [`MIGRATION_SATISFACTION_REPONDANT.md`](docs/MIGRATION_SATISFACTION_REPONDANT.md) | migrations 0011/0012/0013, déploiement et traitement des lots historiques |
 
 ## 12. Versions
 
@@ -297,14 +303,27 @@ transmission), charte UI, recettes, suivi des lots.
 - **Restitution métier — septembre 2026** — satisfaction calculée à la maille
   répondant, quatre sources attendues toujours visibles, statuts MDTC explicites,
   comparaison sur période métier et classement limité aux questions ouvertes.
+- **Traçabilité et filtres d'analyse — septembre 2026** — nom original du fichier,
+  date de publication et date de traitement disponibles par verbatim et dans les
+  exports ; filtres multi-sources et plage de publication partagés par Résultats,
+  Revue et tous les tableaux de bord, avec KPI recalculés sur le périmètre filtré.
 - **Priorisation des irritants — septembre 2026** — les graphiques thème × sentiment
   du lot et du tableau de bord global classent les thèmes par **nombre absolu de
   verbatims négatifs décroissant**, puis par volume total et par libellé en cas
   d'égalité. Les volumes et les segments affichés ne sont pas modifiés.
-- **Navigation hiérarchique des thèmes — septembre 2026** — dans la répartition
-  d'un lot, sélectionner un thème de niveau 1 limite instantanément le tableau de
-  niveau 2 à ses sous-thèmes, selon l'angle actif (« thème principal » ou
-  « toutes mentions »).
+- **Navigation hiérarchique des thèmes — septembre 2026** — dans les répartitions
+  d'un lot comme du tableau de bord global, sélectionner un thème de niveau 1
+  limite instantanément le tableau de niveau 2 à ses sous-thèmes. Les couples
+  sont agrégés côté API sur le même périmètre source/date et selon l'angle actif
+  (« thème principal », « toutes mentions » ou « second thème seul »).
+- **Classement métier des répartitions — septembre 2026** — sur ces deux écrans,
+  un contrôle commun classe les niveaux 1 et 2 par volume total ou par nombre
+  absolu de mentions négatives, neutres ou positives. Les barres et valeurs
+  suivent le critère choisi ; les thèmes à zéro restent visibles en bas de liste.
+- **Exploration hiérarchique des sentiments — septembre 2026** — les graphiques
+  thème × sentiment du lot et de la vue globale déplient les sous-thèmes sous le
+  thème sélectionné, avec leurs volumes négatifs, neutres et positifs. Le contrat
+  API reste additif et conserve l'agrégat historique de niveau 1.
 
 **Reste à faire.** Bascule du modèle par défaut (décision humaine, tracée à l'audit) ·
 mesure d'un lot ~11k **< 1 h** en conditions réelles (DoD §11) · atelier de

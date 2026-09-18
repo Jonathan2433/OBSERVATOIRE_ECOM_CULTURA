@@ -35,6 +35,7 @@ class SurveyResponse(Base):
         # exports. Cet index évite de parcourir tout l'historique pour calculer
         # les bornes d'une source dans un lot.
         Index("ix_survey_responses_batch_source_date", "batch_id", "source_type", "response_date"),
+        Index("ix_survey_responses_date_source_batch", "response_date", "source_type", "batch_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

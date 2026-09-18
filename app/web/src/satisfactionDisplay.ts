@@ -14,6 +14,8 @@ export const SOURCE_LABELS: Record<string, string> = {
   "MDTC-postrecep": "MDTC — Post-réception web",
   "Mopinion-desktop": "Mopinion — Ordinateur",
   "Mopinion-mobile": "Mopinion — Mobile",
+  MDTC: "MDTC — historique / non précisé",
+  Mopinion: "Mopinion — historique / non précisé",
 };
 
 export const SOURCE_SHORT_LABELS: Record<string, string> = {

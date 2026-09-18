@@ -81,7 +81,9 @@ n'en supprime aucun ; **le retour arrière est une resélection**.
   répondant ; les thèmes proviennent uniquement des textes libres. Une source non
   reçue reste visible et ne vaut pas zéro. Les graphiques thème × sentiment
   classent les thèmes par volume négatif décroissant afin de faire remonter les
-  irritants prioritaires.
+  irritants prioritaires. Dans *Répartition des thèmes*, le métier peut classer
+  les niveaux 1 et 2 par volume total, négatif, neutre ou positif ; ce choix suit
+  l'angle actif et les filtres source/date.
 - **Annuler un lot** en cours : bouton *Annuler* (détail du lot). Au redémarrage du
   worker, les lots interrompus repassent en « échec » (pas de lot fantôme).
 - **Nouveau modèle** : entraîner (CLI) → déposer sous `data/models/<nom>/` **avec son
@@ -99,9 +101,9 @@ n'en supprime aucun ; **le retour arrière est une resélection**.
 (`fastapi httpx sqlalchemy pydantic pydantic-settings argon2-cffi PyJWT python-multipart pandas numpy openpyxl pyyaml redis rq`) :
 
 ```bash
-python app/tests/recette_v1.py   # -> 92 OK    python app/tests/recette_v4.py  # -> 50 OK
+python app/tests/recette_v1.py   # -> 115 OK   python app/tests/recette_v4.py  # -> 50 OK
 python app/tests/recette_v3.py   # -> 13 OK    python app/tests/recette_v5.py  # -> 112 OK
-python app/tests/recette_v6.py   # -> 26 OK
+python app/tests/recette_v6.py   # -> 42 OK
 python app/tests/test_satisfaction_respondents.py  # -> 10 OK
 ```
 

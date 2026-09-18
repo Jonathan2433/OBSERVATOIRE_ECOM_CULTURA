@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 import pandas as pd
 
@@ -43,6 +43,21 @@ logger = logging.getLogger(__name__)
 
 SOURCE_MDTC = "MDTC"
 SOURCE_MOPINION = "Mopinion"
+
+
+def _source_file_descriptor(value: str | Path | Mapping[str, Any]) -> tuple[Path, str]:
+    """Sépare le chemin interne du nom de fichier présenté au métier."""
+    if isinstance(value, Mapping):
+        raw_path = str(value.get("path") or "").strip()
+        if not raw_path:
+            raise ValueError("Chemin de fichier source absent.")
+        path = Path(raw_path)
+        original = Path(str(value.get("original_name") or path.name)).name
+    else:
+        path = Path(value)
+        original = path.name
+    original = "".join(char for char in original if ord(char) >= 32).strip()
+    return path, (original or path.name)[:255]
 
 
 def affiner_source(df: pd.DataFrame, source_grossiere: str,
@@ -358,8 +373,8 @@ def load_cultura_2026(path: str | Path, cfg: Dict[str, Any]) -> pd.DataFrame:
 
 
 def load_for_batch(
-    mdtc_path: str | Path | None,
-    mopinion_path: str | Path | None,
+    mdtc_path: str | Path | Mapping[str, Any] | None,
+    mopinion_path: str | Path | Mapping[str, Any] | None,
     cfg: Dict[str, Any],
 ) -> pd.DataFrame:
     """Charge et concatène MDTC + Mopinion pour un traitement mensuel.
@@ -374,14 +389,17 @@ def load_for_batch(
                                     (mopinion_path, load_mopinion, "Mopinion")):
         if not chemin:
             continue
-        frames.append(_charger_une_source(chemin, charger_v1, nom, cfg))
+        path, original_name = _source_file_descriptor(chemin)
+        frame = _charger_une_source(path, charger_v1, nom, cfg)
+        frame[COL_FICHIER] = original_name
+        frames.append(frame)
     if not frames:
         raise ValueError("Aucun fichier source fourni (mdtc et mopinion absents).")
     combined = pd.concat(frames, ignore_index=True, sort=False)
     return combined
 
 
-def load_many(chemins: Sequence[str | Path], cfg: Dict[str, Any]) -> pd.DataFrame:
+def load_many(chemins: Sequence[str | Path | Mapping[str, Any]], cfg: Dict[str, Any]) -> pd.DataFrame:
     """Charge un nombre quelconque d'exports dans un seul lot.
 
     Chaque fichier est identifié **par son jeu de colonnes** : il n'y a plus à
@@ -400,12 +418,15 @@ def load_many(chemins: Sequence[str | Path], cfg: Dict[str, Any]) -> pd.DataFram
 
     frames, erreurs, resume = [], [], []
     for chemin in chemins:
-        nom = Path(chemin).name
+        path, nom = _source_file_descriptor(chemin)
         try:
-            df = _charger_un_fichier(chemin, cfg)
+            df = _charger_un_fichier(path, cfg)
         except Exception as exc:
             erreurs.append(f"{nom} : {exc}")
             continue
+        # Le hash répondant a déjà été construit avec le nom technique unique.
+        # La colonne persistée/exportée reçoit ensuite le nom métier d'origine.
+        df[COL_FICHIER] = nom
         frames.append(df)
         sources = sorted(set(df[COL_SOURCE].dropna().unique())) if COL_SOURCE in df.columns else []
         resume.append(f"{nom} -> {', '.join(sources) or 'source inconnue'} ({len(df)})")

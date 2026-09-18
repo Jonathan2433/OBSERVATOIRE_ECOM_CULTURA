@@ -73,12 +73,14 @@ Chemin critique : **D0 → D1**, puis D2…D6 (indépendants par écran, séquen
 - Grille de `StatCard` (volume, % revue, erreurs, durée, taux de correction).
 - **Charts** re-stylés sur tokens : distribution thèmes (`BarList`), sentiments,
   **thème × sentiment** (`StackedSentimentBar`) trié par volume négatif
-  décroissant, tendances (`Sparkline`/`Donut`).
+  décroissant, tendances (`Sparkline`/`Donut`). Les répartitions hiérarchiques
+  proposent un classement partagé par volume total ou sentiment absolu.
 - **KPI modèle** avec **alerte visuelle** sous seuils cibles.
 - Layout en grille responsive desktop.
 **Acceptation** : mêmes données qu'en V1 ; légendes lisibles ; alertes seuils
 visibles ; sur le croisement thème × sentiment, un thème ayant davantage de
-mentions négatives précède toujours un thème au volume total supérieur mais moins négatif.
+mentions négatives précède toujours un thème au volume total supérieur mais moins
+négatif ; les quatre classements de la répartition restent cohérents entre lot et global.
 
 ## D6 — Administration & comptes
 **Contenu**

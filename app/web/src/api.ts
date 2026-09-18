@@ -85,6 +85,7 @@ export interface Batch {
   n_errors: number;
   duration_s?: number | null;
   error_message?: string | null;
+  source_file_names: string[];
 }
 
 export interface BatchProgress {
@@ -214,6 +215,10 @@ export interface ResultRow {
   satisfaction_scale_max?: number | null;
   client_status?: "ancien" | "nouveau" | "non_renseigne" | null;
   source_file?: string | null;
+  /** Référence opaque : elle ne contient ni ID source ni numéro de commande. */
+  response_reference?: string | null;
+  response_date?: string | null;
+  batch_processed_at?: string | null;
   theme1_niv1?: string | null;
   theme1_niv2?: string | null;
   theme1_sentiment?: string | null;
@@ -235,7 +240,12 @@ export interface ResultsResponse {
   offset: number;
   items: ResultRow[];
 }
-export interface ResultFilters {
+export interface AnalysisFilters {
+  sources?: string[];
+  date_from?: string;
+  date_to?: string;
+}
+export interface ResultFilters extends AnalysisFilters {
   niv1?: string;
   sentiment?: string;
   revue?: boolean;
@@ -254,6 +264,9 @@ export interface ResultFilters {
 // pour que l'export honore exactement les filtres affichés à l'écran.
 function resultFilterParams(f: ResultFilters): URLSearchParams {
   const p = new URLSearchParams();
+  for (const source of f.sources ?? []) p.append("source", source);
+  if (f.date_from) p.set("date_from", f.date_from);
+  if (f.date_to) p.set("date_to", f.date_to);
   if (f.niv1) p.set("niv1", f.niv1);
   if (f.sentiment) p.set("sentiment", f.sentiment);
   if (f.revue !== undefined) p.set("revue", String(f.revue));
@@ -316,6 +329,15 @@ export const getTaxonomy = (batchId?: number) =>
     batchId != null ? `/api/taxonomy?batch_id=${batchId}` : "/api/taxonomy");
 export const getReviewQueue = (batchId: number, offset = 0, limit = 1) =>
   request<ResultsResponse>(`/api/batches/${batchId}/review?limit=${limit}&offset=${offset}`);
+
+export function getFilteredReviewQueue(
+  batchId: number, filters: AnalysisFilters = {}, offset = 0, limit = 1,
+): Promise<ResultsResponse> {
+  const p = analysisFilterParams(filters);
+  p.set("limit", String(limit));
+  p.set("offset", String(offset));
+  return request<ResultsResponse>(`/api/batches/${batchId}/review?${p.toString()}`);
+}
 
 export interface CorrectionPayload {
   action: "validate" | "correct";
@@ -463,6 +485,19 @@ export interface ClassificationEvolution {
     niv2: ClassificationSourceEvolution[];
   };
 }
+export type SentimentDistribution = Record<string, number>;
+export type ThemeSentimentDistribution = Record<string, SentimentDistribution>;
+export type ThemeSentimentHierarchy = Record<string, ThemeSentimentDistribution>;
+export interface ThemeSentimentView {
+  themes: ThemeSentimentDistribution;
+  subthemes: ThemeSentimentDistribution;
+  hierarchy: ThemeSentimentHierarchy;
+}
+export interface ThemeSentimentViews {
+  principal: ThemeSentimentView;
+  mentions: ThemeSentimentView;
+  secondaire: ThemeSentimentView;
+}
 export interface SatisfactionKpi {
   unit: "respondent";
   display_scale_max: 10;
@@ -506,13 +541,18 @@ export interface BatchKpi {
   sentiments_secondaires: Record<string, number>;
   sources: Record<string, number>;
   signals: { rupture: number; churn: number; insatisfaction: number };
-  theme_sentiment: Record<string, Record<string, number>>;
+  theme_sentiment: ThemeSentimentDistribution;
+  /** Sous-thèmes rattachés à leur N1, avec le sentiment propre à chaque mention. */
+  theme_sentiment_hierarchy: ThemeSentimentHierarchy;
+  /** Croisements sentiment séparés par angle pour classer les répartitions N1/N2. */
+  theme_sentiment_views: ThemeSentimentViews;
   satisfaction: SatisfactionKpi;
   classification_evolution: ClassificationEvolution;
   comparison: BatchComparison | null;
+  filters?: { sources: string[]; date_from: string | null; date_to: string | null };
 }
 export interface VolumetrySeriesItem {
-  id: number; label: string; created_at?: string | null;
+  id: number; label: string; created_at?: string | null; processed_at?: string | null;
   n_total: number; n_review: number; review_rate: number;
   signals: { rupture: number; churn: number; insatisfaction: number };
   n_bi_themes: number;
@@ -522,20 +562,46 @@ export interface Volumetry {
   total_verbatims: number;
   series: VolumetrySeriesItem[];
   global_themes: Record<string, number>;
+  global_subthemes: Record<string, number>;
   global_themes_mentions: Record<string, number>;
+  global_subthemes_mentions: Record<string, number>;
   global_themes_secondaires: Record<string, number>;
+  global_subthemes_secondaires: Record<string, number>;
+  global_theme_hierarchy: {
+    principal: Record<string, Record<string, number>>;
+    mentions: Record<string, Record<string, number>>;
+    secondaire: Record<string, Record<string, number>>;
+  };
+  global_sources: Record<string, number>;
   n_bi_themes: number;
-  theme_sentiment: Record<string, Record<string, number>>;
+  theme_sentiment: ThemeSentimentDistribution;
+  theme_sentiment_hierarchy: ThemeSentimentHierarchy;
+  theme_sentiment_views: ThemeSentimentViews;
   satisfaction: SatisfactionKpi;
+  filters?: { sources: string[]; date_from: string | null; date_to: string | null };
 }
 export interface ModelKpi {
   active: null | { label: string; kind: string; available: boolean; metrics?: Record<string, number> | null };
 }
-export const getBatchKpi = (id: number, referenceBatchId?: number) => {
-  const query = referenceBatchId == null ? "" : `?reference_batch_id=${referenceBatchId}`;
-  return request<BatchKpi>(`/api/batches/${id}/kpi${query}`);
+function analysisFilterParams(filters: AnalysisFilters = {}): URLSearchParams {
+  const p = new URLSearchParams();
+  for (const source of filters.sources ?? []) p.append("source", source);
+  if (filters.date_from) p.set("date_from", filters.date_from);
+  if (filters.date_to) p.set("date_to", filters.date_to);
+  return p;
+}
+export const getBatchKpi = (
+  id: number, referenceBatchId?: number, filters: AnalysisFilters = {},
+) => {
+  const p = analysisFilterParams(filters);
+  if (referenceBatchId != null) p.set("reference_batch_id", String(referenceBatchId));
+  const query = p.toString();
+  return request<BatchKpi>(`/api/batches/${id}/kpi${query ? `?${query}` : ""}`);
 };
-export const getVolumetry = () => request<Volumetry>("/api/kpi/volumetry");
+export const getVolumetry = (filters: AnalysisFilters = {}) => {
+  const query = analysisFilterParams(filters).toString();
+  return request<Volumetry>(`/api/kpi/volumetry${query ? `?${query}` : ""}`);
+};
 export const getModelKpi = () => request<ModelKpi>("/api/kpi/model");
 
 // --- Admin (audit, config, purge) ---

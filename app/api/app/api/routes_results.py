@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import io
+from datetime import date, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -14,6 +15,7 @@ from ..core.db import get_db
 from ..core.security import get_current_user
 from ..schemas.result import ResultOut, ResultsResponse
 from common.models import Batch, Result
+from .analysis_filters import AnalysisScope, apply_result_scope, build_analysis_scope
 
 router = APIRouter(prefix="/api/batches", tags=["results"], dependencies=[Depends(get_current_user)])
 
@@ -24,6 +26,9 @@ router = APIRouter(prefix="/api/batches", tags=["results"], dependencies=[Depend
 _CONTEXT_COLUMNS = [
     ("source", "source"),
     ("source_file", "source_file"),
+    ("reference_reponse", "response_reference"),
+    ("date_publication_verbatim", "response_date"),
+    ("date_traitement_lot", "batch_processed_at"),
     ("client_status", "client_status"),
     ("satisfaction_native", "satisfaction_native"),
     ("satisfaction_scale_max", "satisfaction_scale_max"),
@@ -64,7 +69,8 @@ def _like_escape(s: str) -> str:
 
 
 def _apply_filters(query, niv1, sentiment, revue, rupture, churn, insatisfaction, q,
-                   bi_theme=False, satisfaction=None):
+                   bi_theme=False, satisfaction=None, scope=AnalysisScope()):
+    query = apply_result_scope(query, scope)
     if niv1:
         # Recherche « contient » sur le thème (niv.1 OU niv.2), pas une égalité
         # exacte : taper « Programme » doit matcher « Programme de fidélité ».
@@ -111,13 +117,17 @@ def list_results(
     q: Optional[str] = None,
     bi_theme: bool = False,
     satisfaction: Optional[int] = None,
+    source: Optional[list[str]] = Query(None),
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
     limit: int = Query(50, le=500),
     offset: int = 0,
 ):
     _get_batch_or_404(db, batch_id)
     base = db.query(Result).filter(Result.batch_id == batch_id)
+    scope = build_analysis_scope(source, date_from, date_to)
     base = _apply_filters(base, niv1, sentiment, revue, rupture, churn, insatisfaction, q,
-                          bi_theme, satisfaction)
+                          bi_theme, satisfaction, scope)
     total = base.with_entities(func.count(Result.id)).scalar() or 0
     items = base.order_by(Result.row_index).offset(offset).limit(limit).all()
     return ResultsResponse(total=total, limit=limit, offset=offset,
@@ -139,8 +149,12 @@ def _enriched_rows(results: list[Result]):
     rows = []
     for r in results:
         oc = r.original_columns or {}
-        row = [("" if getattr(r, attr) is None else getattr(r, attr))
-               for _, attr in _CONTEXT_COLUMNS]
+        row = []
+        for _, attr in _CONTEXT_COLUMNS:
+            value = getattr(r, attr)
+            if isinstance(value, (date, datetime)):
+                value = value.isoformat()
+            row.append("" if value is None else value)
         row += [oc.get(k, "") for k in orig_keys]
         for _, attr in _MODEL_COLUMNS:
             val = getattr(r, attr)
@@ -163,13 +177,17 @@ def export_results(
     q: Optional[str] = None,
     bi_theme: bool = False,
     satisfaction: Optional[int] = None,
+    source: Optional[list[str]] = Query(None),
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
 ):
     """Export enrichi. Les mêmes filtres que la liste sont honorés : si des
     filtres sont passés, l'export ne contient QUE les lignes correspondantes."""
     batch = _get_batch_or_404(db, batch_id)
     query = db.query(Result).filter(Result.batch_id == batch_id)
+    scope = build_analysis_scope(source, date_from, date_to)
     query = _apply_filters(query, niv1, sentiment, revue, rupture, churn, insatisfaction, q,
-                           bi_theme, satisfaction)
+                           bi_theme, satisfaction, scope)
     results = query.order_by(Result.row_index).all()
     headers, rows = _enriched_rows(results)
     stem = f"classifications_{batch.label}".replace(" ", "_")

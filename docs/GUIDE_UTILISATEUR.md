@@ -63,12 +63,26 @@ Menu **Lots → (un lot) → Résultats**.
   sentiment de chaque thème, **note du client**, signaux, confiance, statut.
 - **Filtres** : thème (recherche « contient » sur les **quatre** champs de thème :
   niv.1 et niv.2, du thème principal comme du second), sentiment, note du client,
-  bi-thème, signaux, statut de revue, texte libre. *(< 2 s même sur 11k.)*
+  bi-thème, signaux, statut de revue, texte libre, **une ou plusieurs sources** et
+  **plage inclusive de date de publication client**. Les filtres source/date sont
+  conservés dans l'URL et partagés avec les analyses. *(< 2 s même sur 11k.)*
 - **Exports** :
   - **CSV** (UTF-8 BOM, ré-ouvrable dans Excel FR sans casser les accents) ;
   - **XLSX**.
-  Les exports contiennent **la source, la note du client, les colonnes d'origine
-  et les colonnes du modèle** (bloc modèle identique au POC, colonne pour colonne).
+  Les exports respectent les filtres actifs et contiennent **la source, le nom
+  original du fichier, la référence pseudonymisée de la réponse, la date de
+  publication du verbatim, la date de traitement du lot, la note du client, les
+  colonnes d'origine et celles du modèle** (bloc
+  modèle identique au POC, colonne pour colonne).
+
+Le panneau de détail d'une ligne affiche aussi ces éléments de traçabilité.
+Pour les lots historiques, une information non reconstructible reste vide : elle
+n'est jamais remplacée par une date ou un nom supposé.
+
+La référence prend la forme `REP-XXXXXXXXXXXXXXXX`. Elle permet de reconnaître
+plusieurs verbatims issus de la même réponse sans révéler l'identifiant du
+formulaire ni un numéro de commande. Ce n'est pas une donnée permettant de
+retrouver directement un client dans l'outil source.
 
 ### Deux thèmes par verbatim, et ils comptent tous les deux
 
@@ -117,6 +131,13 @@ la vérité — survolez l'info-bulle pour le détail.
 
 Menu **Lots → (un lot) → Revue**.
 
+Le bandeau source/date est identique à celui des Résultats. Il limite la file de
+revue sans changer les corrections déjà validées.
+
+Chaque carte de revue commence par le contexte du retour : source détaillée
+(Mopinion ordinateur/mobile ou MDTC post-achat/post-réception), fichier d'origine,
+référence pseudonymisée et date du retour lorsqu'elle est disponible.
+
 1. Les verbatims **sous le seuil** sont présentés, **du moins confiant au plus confiant**.
 2. Pour chacun : corriger le **thème principal niv.1/niv.2**, son **sentiment**,
    le **second thème** éventuel et les **signaux**.
@@ -143,6 +164,11 @@ Menu **Lots → (un lot) → Revue**.
 
 Menu **Tableaux de bord** (global) et **Lots → (un lot) → Tableau de bord**.
 
+Le bandeau **Sources et dates de publication** pilote toutes les cartes et tous
+les graphiques. Plusieurs sources peuvent être combinées. Une plage de dates
+exclut les anciens verbatims sans date métier ; l'application ne leur invente
+jamais la date de dépôt. Réinitialiser le bandeau rétablit le périmètre complet.
+
 - **KPI modèle** (version active) : F1 niv.1/niv.2, sentiment, signaux, avec
   **alerte visuelle** si un indicateur passe sous son seuil cible.
   > **Une case absente veut dire « non mesuré », jamais zéro.** Chaque moteur ne
@@ -159,7 +185,10 @@ Menu **Tableaux de bord** (global) et **Lots → (un lot) → Tableau de bord**.
   Les thèmes sont classés par **nombre de verbatims négatifs décroissant** afin de
   faire remonter les irritants à traiter en priorité. À nombre négatif égal, le
   volume total puis le libellé déterminent l'ordre. Il s'agit d'un volume absolu,
-  et non d'un taux de négativité.
+  et non d'un taux de négativité. Cliquez sur un thème pour faire apparaître
+  juste dessous ses sous-thèmes, chacun avec sa propre barre Négatif / Neutre /
+  Positif et son volume. Cliquez de nouveau pour les replier. Un seul thème est
+  développé à la fois pour conserver une lecture compacte.
 
 ### « Thème principal » ou « toutes mentions » : deux questions différentes
 
@@ -175,10 +204,20 @@ de septembre, le thème **Académie** n'apparaît **jamais** en thème principal
 quatre fois en second : la vue « thème principal » seule le rendait invisible.
 La carte *Second thème seul* isole exactement ces sujets-là.
 
-Dans cette carte, cliquez sur une ligne du tableau **Niveau 1** pour n'afficher à
-droite que les sous-thèmes **Niveau 2** qui lui appartiennent. Le thème choisi est
-mis en évidence. Cliquez de nouveau sur la même ligne, ou sur **Afficher tous**,
-pour revenir à la distribution complète. Le filtrage suit l'angle actif et ne
+Le contrôle **Classer par** permet de passer de la volumétrie totale au nombre
+absolu de mentions **négatives**, **neutres** ou **positives**. Le choix modifie
+à la fois l'ordre, la longueur des barres et la valeur affichée pour les niveaux
+1 et 2, y compris dans *Second thème seul*. Les thèmes sans mention du sentiment
+choisi restent visibles avec la valeur `0`, en bas de liste. À égalité, le volume
+total puis le libellé alphabétique stabilisent l'ordre. Il ne s'agit jamais d'un
+taux de négativité ou de positivité.
+
+Dans la vue d'un lot comme dans le tableau de bord global, cliquez sur une ligne
+du tableau **Niveau 1** pour n'afficher à droite que les sous-thèmes **Niveau 2**
+qui lui appartiennent. Le thème choisi est mis en évidence. Cliquez de nouveau
+sur la même ligne, ou sur **Afficher tous**, pour revenir à la distribution
+complète. La même navigation est disponible dans *Second thème seul*. Le
+filtrage suit l'angle actif et les filtres source/date déjà appliqués ; il ne
 modifie pas les autres graphiques.
 
 ### Analyse automatique des verbatims

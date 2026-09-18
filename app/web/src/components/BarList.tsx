@@ -12,7 +12,7 @@ import type { ReactNode } from "react";
  *  graphiques. */
 export default function BarList({
   data, color = "var(--cu-primary-500)", max, suffix = "", order,
-  selectedKey, onSelect, ariaLabel,
+  selectedKey, onSelect, ariaLabel, showZeroValues = false,
 }: {
   data: Record<string, number>;
   color?: string;
@@ -22,13 +22,17 @@ export default function BarList({
   selectedKey?: string | null;
   onSelect?: (key: string) => void;
   ariaLabel?: string;
+  /** Un zéro de sentiment est une mesure utile, pas une absence de données. */
+  showZeroValues?: boolean;
 }) {
   const entries = order
     ? order.map((k) => [k, data[k] ?? 0] as [string, number])
     : Object.entries(data).sort((a, b) => b[1] - a[1]);
   // Un axe ordinal entièrement à zéro n'est pas un graphe à afficher : c'est une
   // absence de mesure, et quatre barres vides se liraient comme quatre vrais zéros.
-  if (entries.length === 0 || entries.every(([, v]) => !v)) return <p className="ui-muted">Aucune donnée.</p>;
+  if (entries.length === 0 || (!showZeroValues && entries.every(([, v]) => !v))) {
+    return <p className="ui-muted">Aucune donnée.</p>;
+  }
   const top = max ?? Math.max(...entries.map(([, v]) => v), 1);
 
   const rowContent = (label: string, value: number): ReactNode => (

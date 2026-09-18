@@ -202,8 +202,47 @@ hiérarchie additive calculée depuis les couples persistés, corrections humain
 comprises, pour les angles thème principal, toutes mentions et second thème.
 Les distributions plates historiques restent inchangées pour compatibilité.
 
-**Validation du 18/09/2026** : recette V1 **92/92**, type-check TypeScript et
-build Vite au vert.
+**Validation du 18/09/2026** : recette V1 **104/104**, recette V6 **36/36**,
+tests KPI répondant **10/10**, type-check TypeScript et build Vite au vert.
+
+### Amélioration dataviz — parité entre lot et tableau de bord global *(18 septembre 2026)*
+
+La vue globale reprend désormais la même lecture hiérarchique que le tableau de
+bord d'un lot : bascule « thème principal / toutes mentions », panneaux Niveau 1
+et Niveau 2, sélection du parent et vue dédiée au second thème. Un composant React
+unique porte ces interactions sur les deux écrans. L'endpoint de volumétrie publie
+les sous-thèmes et les hiérarchies globales de façon additive, en respectant les
+filtres source/date et les couples réellement persistés.
+
+**Validation du 18/09/2026** : recette V1 **107/107**, recette V6 **36/36**,
+tests KPI répondant **10/10**, type-check TypeScript et build Vite au vert.
+
+### Amélioration dataviz — sentiments dépliables par sous-thème *(18 septembre 2026)*
+
+Les graphiques **thème × sentiment** du lot et du tableau de bord global sont
+désormais hiérarchiques : sélectionner une ligne de niveau 1 affiche juste
+dessous ses sous-thèmes, avec le volume et la répartition Négatif / Neutre /
+Positif propres à chacun. Un second clic replie la ligne et un seul parent reste
+ouvert à la fois. L'agrégation additionne les thèmes de rang 1 et 2 avec leur
+sentiment respectif, utilise les couples persistés et respecte le périmètre
+source/date actif. Le champ historique de niveau 1 reste inchangé.
+
+**Validation du 18/09/2026** : recette V1 **110/110**, recette V6 **36/36**,
+type-check TypeScript et build Vite au vert.
+
+### Amélioration dataviz — classement des répartitions par sentiment *(18 septembre 2026)*
+
+La carte partagée **Répartition des thèmes** des dashboards lot et global propose
+désormais quatre classements : volume total, nombre absolu de mentions négatives,
+neutres ou positives. Le choix pilote simultanément l'ordre, les barres et les
+valeurs des niveaux 1 et 2, y compris après sélection d'un parent et dans la vue
+du second thème. Les comptes sont isolés par angle côté API, respectent les
+filtres source/date et les corrections persistées. Les thèmes à zéro restent
+visibles ; les champs historiques de l'API sont conservés.
+
+**Validation du 18/09/2026** : recette V1 **115/115**, recette V6 **42/42**,
+tri front ciblé **4/4**, type-check TypeScript et build Vite au vert.
+
 ## L8 — Durcissement, RGPD, perf, recette V1 ✅ (validé PO le 2026-06-18 — V1 complète)
 
 **Objectif** : clore la V1 — sécurité, conformité RGPD/offline, performance, recette §11, documentation.
@@ -363,10 +402,25 @@ Détail : [COUCHE_DECISION.md](COUCHE_DECISION.md) · [RECETTE_NOUVEAU_MODELE.md
 | Classifications | Top 5 par source sur les réponses textuelles ouvertes uniquement ; questions fermées exclues |
 | Historique | Migrations additives `0011` et `0012`, sans rétro-remplissage impossible |
 
-**Validation du 17/09/2026** : `recette_v1` **89/89**, tests KPI répondant
+**Validation du 17/09/2026** : `recette_v1` **101/101**, tests KPI répondant
 **10/10**, build Vite et type-check TypeScript OK, build Docker API/Web OK,
 contrôle live du lot 20 effectué. Recette L1a locale : **3 OK · 0 ÉCHEC ·
 1 SKIP**, le parcours réel étant explicitement ignoré sans `fr_core_news_sm`.
+
+### Traçabilité source/date et filtres transversaux ✅ *(17 septembre 2026)*
+
+| Élément | État livré |
+|---|---|
+| Import | Chemin technique et nom original séparés ; compatibilité avec les anciens lots |
+| Verbatim | Type et fichier source, référence de réponse pseudonymisée, date de publication et date de traitement exposés dans l'API et la revue |
+| Confidentialité | Référence `REP-…` dérivée par second hachage ; aucun identifiant source ni numéro de commande brut exposé |
+| Exports | Résultats CSV/XLSX et corrections validées enrichis des quatre champs de traçabilité |
+| Filtres | Multi-sources + plage inclusive de publication sur Résultats, Revue, KPI lot et tableaux globaux |
+| Agrégats | Volumes, thèmes, sentiments, signaux et satisfaction recalculés sur le périmètre filtré |
+| Performance | Index Alembic `0013_analysis_source_date_index` |
+
+**Validation du 18/09/2026** : `recette_v1` **111/111**, `recette_v6`
+**42/42**, tests KPI répondant **10/10**, type-check TypeScript et build Vite OK.
 
 **Décision restant au métier** : les questions fermées ne sont pas assimilées à
 des thèmes. Leur éventuelle restitution exige un mapping validé séparément.
@@ -420,3 +474,9 @@ des thèmes. Leur éventuelle restitution exige un mapping validé séparément.
 | D41 | 2026-09-17 | **Delta de satisfaction en points sur 10**, séparé par source et accompagné des deux effectifs ; KPI modèle comparés uniquement à modèle compatible, taux de revue également à seuil identique | `+0,1` doit signifier `8,1 → 8,2`, pas `+10 %`. Les volumes et notes déclarées sont indépendants du modèle ; thèmes, signaux et revue ne le sont pas |
 | D42 | 2026-09-17 | **Synthèse métier simplifiée** : cartes de satisfaction par source puis top 5 des sous-thèmes, avec volume, part, rang et évolution ; détails techniques relégués au second niveau | Une évolution de volume seule est trompeuse si le lot change de taille. La part et les deux dénominateurs rendent la comparaison interprétable. Les classifications portent sur tous les verbatims ; elles ne sont jamais confondues avec le signal ML d'insatisfaction |
 | D43 | 2026-09-17 | **Couverture attendue rendue explicite** : les quatre sources et les trois statuts MDTC restent visibles ; une source non reçue est distinguée d'un zéro mesuré ; les classifications sont libellées comme une analyse des seules réponses ouvertes | Masquer les segments vides faisait croire que « Nouveau » ou Mopinion mobile n'étaient pas gérés. Le libellé technique `non_renseigne` était aussi confondu avec une note absente, tandis que les thèmes automatiques pouvaient être interprétés comme intégrant les questions fermées |
+| D44 | 2026-09-17 | **Un seul périmètre source/date pour toute l'analyse** : sélection multi-sources et plage inclusive sur la date de publication, partagées par Résultats, Revue, exports et KPI | Filtrer seulement le tableau laisserait les graphiques afficher un autre univers. Les agrégats sont donc recalculés côté base ; une date absente est exclue d'une plage explicite et n'est jamais remplacée par la date d'upload |
+| D45 | 2026-09-17 | **Traçabilité par verbatim** : nom original du fichier séparé du chemin technique, `response_date` pour la publication et `finished_at` pour le traitement | Le renommage interne sécurise les uploads mais détruisait la provenance métier visible. Les champs existants portent déjà les deux dates ; aucun duplicat de donnée n'est créé, et les lots historiques restent lisibles sans inventer l'information manquante |
+| D46 | 2026-09-18 | **Le drill-down N1 → N2 utilise les couples persistés**, dans l'angle et le périmètre source/date actifs ; les agrégats plats sont conservés | Reconstruire la parenté depuis la seule taxonomie active ignorerait les corrections humaines et pourrait servir un référentiel différent de celui du lot. Un contrat API additif évite aussi toute rupture des consommateurs existants |
+| D47 | 2026-09-18 | **La répartition hiérarchique est un composant partagé entre la vue lot et la vue globale** ; l'API globale publie N1, N2 et leurs couples pour les trois angles | La duplication visuelle faisait diverger les deux tableaux de bord et la vue globale ne pouvait pas relier un sous-thème à son parent. Le contrat reste additif et les champs historiques sont conservés |
+| D48 | 2026-09-18 | **Le croisement thème × sentiment est dépliable jusqu'au sous-thème** sur les dashboards lot et global ; un seul parent est ouvert à la fois et les enfants partagent l'échelle du graphique | Le métier doit pouvoir localiser l'irritant précis sans perdre la comparaison des volumes. L'API publie une hiérarchie additive issue des couples persistés et conserve `theme_sentiment` pour compatibilité |
+| D49 | 2026-09-18 | **Les répartitions N1/N2 sont classables par volume total, négatif, neutre ou positif**, pour les angles principal, toutes mentions et secondaire ; les zéros restent visibles | Un tri construit depuis le seul agrégat toutes mentions fausserait les vues principal/secondaire. L'API publie donc un bloc additif par angle ; le composant partagé applique le même critère sur les dashboards lot et global sans nouvel appel réseau |

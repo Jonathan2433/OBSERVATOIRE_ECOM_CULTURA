@@ -3,8 +3,20 @@ import { useParams } from "react-router-dom";
 import { exportUrl, getMeta, listResults, type ResultFilters, type ResultRow, type ResultsResponse } from "../api";
 import { Badge, type BadgeTone, Button, Card, Chip, Drawer, EmptyState, InfoTip, Input, Select, Spinner } from "../ui";
 import { CLIENT_STATUS_LABELS, satisfactionOnTen, SOURCE_LABELS } from "../satisfactionDisplay";
+import { useAnalysisFilters } from "../analysisFilters";
+import AnalysisFiltersBar from "../components/AnalysisFiltersBar";
 
 const PAGE = 50;
+
+function formatDate(value?: string | null, withTime = false): string {
+  if (!value) return "—";
+  const normalized = value.length === 10 ? `${value}T00:00:00Z` : value;
+  return new Intl.DateTimeFormat("fr-FR", {
+    day: "2-digit", month: "2-digit", year: "numeric",
+    ...(withTime ? { hour: "2-digit", minute: "2-digit" } : {}),
+    timeZone: withTime ? "Europe/Paris" : "UTC",
+  }).format(new Date(normalized));
+}
 
 function sentimentTone(s?: string | null): BadgeTone {
   return s === "Négatif" ? "danger" : s === "Positif" ? "success" : "neutral";
@@ -107,6 +119,7 @@ export default function ResultsPage() {
   const [offset, setOffset] = useState(0);
   const [filters, setFilters] = useState<ResultFilters>({});
   const [selected, setSelected] = useState<ResultRow | null>(null);
+  const { filters: analysisFilters, setFilters: setAnalysisFilters } = useAnalysisFilters();
   // Périmètre de mesure des signaux (D-41). Échec silencieux : sans cette
   // information l'affichage retombe sur son comportement d'origine.
   const [nonMesures, setNonMesures] = useState<string[]>([]);
@@ -116,10 +129,10 @@ export default function ResultsPage() {
   }, []);
 
   useEffect(() => {
-    listResults(batchId, { ...filters, limit: PAGE, offset })
+    listResults(batchId, { ...filters, ...analysisFilters, limit: PAGE, offset })
       .then(setData)
       .catch((e) => setError(String(e.message ?? e)));
-  }, [batchId, offset, filters]);
+  }, [batchId, offset, filters, analysisFilters]);
 
   const apply = (patch: ResultFilters) => { setOffset(0); setFilters((f) => ({ ...f, ...patch })); };
   const toggle = (key: keyof ResultFilters) => apply({ [key]: filters[key] ? undefined : true } as ResultFilters);
@@ -127,11 +140,15 @@ export default function ResultsPage() {
   return (
     <div>
       <div className="ui-stack">
+        <AnalysisFiltersBar filters={analysisFilters} onChange={(next) => {
+          setOffset(0);
+          setAnalysisFilters(next);
+        }} />
         <Card title="Filtres" actions={
           <span className="ui-row">
-            <a className="ui-btn ui-btn--secondary ui-btn--sm" href={exportUrl(batchId, "csv", filters)}
+            <a className="ui-btn ui-btn--secondary ui-btn--sm" href={exportUrl(batchId, "csv", { ...filters, ...analysisFilters })}
                title="Exporte uniquement les lignes correspondant aux filtres actifs">Export CSV</a>
-            <a className="ui-btn ui-btn--secondary ui-btn--sm" href={exportUrl(batchId, "xlsx", filters)}
+            <a className="ui-btn ui-btn--secondary ui-btn--sm" href={exportUrl(batchId, "xlsx", { ...filters, ...analysisFilters })}
                title="Exporte uniquement les lignes correspondant aux filtres actifs">Export Excel</a>
           </span>
         }>
@@ -217,6 +234,9 @@ export default function ResultsPage() {
             <dl className="ui-dl">
               <dt>Source</dt><dd>{SOURCE_LABELS[selected.source ?? ""] ?? selected.source ?? "—"}</dd>
               <dt>Fichier source</dt><dd>{selected.source_file ?? "—"}</dd>
+              <dt>Référence réponse</dt><dd><code>{selected.response_reference ?? "—"}</code></dd>
+              <dt>Date de publication</dt><dd>{formatDate(selected.response_date)}</dd>
+              <dt>Date de traitement du lot</dt><dd>{formatDate(selected.batch_processed_at, true)}</dd>
               <dt>Statut client</dt><dd>{selected.client_status
                 ? CLIENT_STATUS_LABELS[selected.client_status]
                 : "Statut client non disponible"}</dd>

@@ -4,6 +4,13 @@ import { cancelBatch, getBatch, type Batch } from "../api";
 import StatusBadge from "../components/StatusBadge";
 import { Badge, Button, Card, Dialog, EmptyState, ProgressBar, Spinner, StatCard } from "../ui";
 
+function formatTimestamp(value?: string | null): string {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("fr-FR", {
+    dateStyle: "short", timeStyle: "short", timeZone: "Europe/Paris",
+  }).format(new Date(value));
+}
+
 export default function BatchDetailPage() {
   const { id } = useParams();
   const batchId = Number(id);
@@ -60,6 +67,11 @@ export default function BatchDetailPage() {
           {batch.refiner_label && <Badge tone="info" dot>cascade</Badge>}
         </div>
         <p className="page-header__sub">{batch.model_label ? `Modèle : ${batch.model_label}` : "Modèle non renseigné"}</p>
+        <p className="page-header__sub">
+          Traitement terminé : {formatTimestamp(batch.finished_at)} · Fichiers : {batch.source_file_names.length
+            ? batch.source_file_names.join(", ")
+            : "noms historiques indisponibles"}
+        </p>
         {batch.refiner_label && batch.chain_disagreements != null && (
           <p className="page-header__sub">
             Cascade : <b>{batch.chain_disagreements}</b> désaccord(s) proposeur/raffineur sur <code>theme1_niv1</code> → revue forcée.

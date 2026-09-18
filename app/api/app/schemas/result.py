@@ -1,6 +1,7 @@
 """Schémas des résultats de classification et du test à la volée."""
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -20,6 +21,9 @@ class ResultOut(BaseModel):
     satisfaction_scale_max: Optional[int] = None
     client_status: Optional[str] = None
     source_file: Optional[str] = None
+    response_reference: Optional[str] = None
+    response_date: Optional[date] = None
+    batch_processed_at: Optional[datetime] = None
     theme1_niv1: Optional[str] = None
     theme1_niv2: Optional[str] = None
     theme1_sentiment: Optional[str] = None

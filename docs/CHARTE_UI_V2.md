@@ -172,6 +172,10 @@ Passage de la **barre de menu horizontale** à une **barre latérale gauche** (p
 - **Priorisation lisible** : le graphique thème×sentiment indique explicitement
   son tri par nombre de verbatims négatifs ; la longueur totale et les segments
   continuent de représenter les volumes, sans modifier les couleurs de sentiment.
+- **Classement explicite des répartitions** : quatre contrôles accessibles
+  « Volume total / Négatifs / Neutres / Positifs » pilotent simultanément les
+  barres et les valeurs. La couleur sémantique du sentiment sélectionné est
+  utilisée sans masquer les thèmes dont le compte vaut zéro.
 
 ---
 

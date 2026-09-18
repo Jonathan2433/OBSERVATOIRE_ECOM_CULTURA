@@ -4,7 +4,7 @@ from __future__ import annotations
 import csv
 import io
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -18,6 +18,7 @@ from ..core.security import get_current_user
 from ..models.user import User
 from ..schemas.result import CorrectionRequest, ResultOut, ResultsResponse
 from common.models import Batch, Correction, Result
+from .analysis_filters import apply_result_scope, build_analysis_scope
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["review"], dependencies=[Depends(get_current_user)])
@@ -127,13 +128,17 @@ def get_taxonomy(batch_id: Optional[int] = None, db: Session = Depends(get_db)):
 
 @router.get("/batches/{batch_id}/review", response_model=ResultsResponse)
 def review_queue(batch_id: int, db: Session = Depends(get_db),
-                 limit: int = Query(50, le=500), offset: int = 0):
+                 limit: int = Query(50, le=500), offset: int = 0,
+                 source: Optional[list[str]] = Query(None),
+                 date_from: Optional[date] = None,
+                 date_to: Optional[date] = None):
     """File de revue : verbatims à revoir, triés par confiance croissante."""
     if db.get(Batch, batch_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lot introuvable")
     base = db.query(Result).filter(
         Result.batch_id == batch_id, Result.revue_requise == True, Result.reviewed == False  # noqa: E712
     )
+    base = apply_result_scope(base, build_analysis_scope(source, date_from, date_to))
     total = base.count()
     items = base.order_by(Result.confidence_globale.asc()).offset(offset).limit(limit).all()
     return ResultsResponse(total=total, limit=limit, offset=offset,
@@ -196,14 +201,20 @@ def review_result(result_id: int, payload: CorrectionRequest,
 def export_corrections(db: Session = Depends(get_db)):
     """Exporte le jeu « corrections validées » (à fusionner à l'historique pour le ré-entraînement)."""
     rows = db.query(Result).filter(Result.corrected == True).order_by(Result.id).all()  # noqa: E712
-    headers = ["batch_id", "source", "verbatim_analyse", "theme1_niv1", "theme1_niv2", "theme1_sentiment",
+    headers = ["batch_id", "source", "fichier_source", "reference_reponse",
+               "date_publication_verbatim", "date_traitement_lot", "verbatim_analyse",
+               "theme1_niv1", "theme1_niv2", "theme1_sentiment",
                "theme2_niv1", "theme2_niv2", "theme2_sentiment",
                "signal_rupture_client", "signal_churn", "signal_insatisfaction_forte", "reviewed_at"]
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(headers)
     for r in rows:
-        w.writerow([r.batch_id, r.source or "", r.verbatim_analyse, r.theme1_niv1 or "", r.theme1_niv2 or "",
+        w.writerow([r.batch_id, r.source or "", r.source_file or "",
+                    r.response_reference or "",
+                    r.response_date.isoformat() if r.response_date else "",
+                    r.batch_processed_at.isoformat() if r.batch_processed_at else "",
+                    r.verbatim_analyse, r.theme1_niv1 or "", r.theme1_niv2 or "",
                     r.theme1_sentiment or "", r.theme2_niv1 or "", r.theme2_niv2 or "", r.theme2_sentiment or "",
                     r.signal_rupture, r.signal_churn, r.signal_insatisfaction,
                     r.reviewed_at.isoformat() if r.reviewed_at else ""])

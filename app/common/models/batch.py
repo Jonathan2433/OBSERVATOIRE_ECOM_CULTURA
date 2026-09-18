@@ -44,5 +44,25 @@ class Batch(Base):
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     @property
+    def source_file_names(self) -> list[str]:
+        """Noms métier des fichiers, sans exposer leurs chemins internes.
+
+        Les lots antérieurs stockent directement des chemins sous forme de
+        chaînes. Les lots récents stockent ``{path, original_name}``.
+        """
+        files = self.source_files or {}
+        values = list(files.get("fichiers") or [])
+        values += [files[key] for key in ("mdtc", "mopinion") if files.get(key)]
+        names = []
+        for value in values:
+            if isinstance(value, dict):
+                name = value.get("original_name") or value.get("path") or ""
+            else:
+                name = str(value or "")
+            if name:
+                names.append(name.rsplit("/", 1)[-1].rsplit("\\", 1)[-1])
+        return names
+
+    @property
     def progress(self) -> float:
         return (self.n_processed / self.n_total) if self.n_total else 0.0

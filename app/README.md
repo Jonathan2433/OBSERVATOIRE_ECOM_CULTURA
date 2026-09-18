@@ -58,15 +58,28 @@ affiche les quatre sources attendues, y compris une source non reçue, et distin
 sous-thèmes porte uniquement sur les champs textuels ouverts ; les questions
 fermées n'y sont pas intégrées implicitement.
 
+Chaque nouveau lot conserve le **nom original** de chacun de ses fichiers, tandis
+que sa fin de traitement est horodatée. Le détail et les exports de chaque
+verbatim réunissent fichier source, référence de réponse pseudonymisée, date de
+publication métier et date de traitement. La référence `REP-…` ne contient ni
+identifiant source ni numéro de commande. Un même filtre multi-sources / plage de publication pilote les
+Résultats, la Revue et les graphiques ; les agrégats sont recalculés après filtre.
+
 Dans les graphiques **thème × sentiment**, l'ordre d'affichage sert directement
 la priorisation métier : volume négatif décroissant, puis volume total
 décroissant et libellé alphabétique en cas d'égalité. Le tri s'applique au jeu de
-données affiché et compte le thème principal comme le second thème.
+données affiché et compte le thème principal comme le second thème. Chaque thème
+peut être déplié pour afficher dessous ses sous-thèmes avec leur propre répartition
+Négatif / Neutre / Positif, calculée sur le même périmètre source/date.
 
-Dans la carte **Répartition des thèmes** d'un lot, les lignes de niveau 1 sont
-sélectionnables. Le tableau de niveau 2 affiche alors uniquement les sous-thèmes
-du parent choisi, dans l'angle actif (« thème principal » ou « toutes mentions »).
-Un second clic ou l'action « Afficher tous » rétablit la distribution complète.
+Dans la carte **Répartition des thèmes** d'un lot comme du tableau de bord global,
+les lignes de niveau 1 sont sélectionnables. Le tableau de niveau 2 affiche alors
+uniquement les sous-thèmes du parent choisi, dans l'angle actif (« thème principal »,
+« toutes mentions » ou « second thème seul »). Un second clic ou l'action
+« Afficher tous » rétablit la distribution complète. Le contrôle **Classer par**
+propose le volume total ou le nombre absolu de mentions négatives, neutres ou
+positives. Il pilote les deux niveaux et la vue du second thème ; les thèmes à
+zéro restent visibles en bas de liste.
 
 ## État d'avancement
 Voir [../docs/SUIVI_LOTS.md](../docs/SUIVI_LOTS.md). **V1→V5 livrées**, V6 (revue et
@@ -77,9 +90,9 @@ Recettes automatisées :
 
 | Applicatives (torch-free) | Modèle (environnement ML) |
 |---|---|
-| `recette_v1.py` → 92 OK · `recette_v3.py` → 13 OK | `recette_l1a_chargeur.py` → dépend de spaCy et des fichiers réels |
+| `recette_v1.py` → 115 OK · `recette_v3.py` → 13 OK | `recette_l1a_chargeur.py` → dépend de spaCy et des fichiers réels |
 | `recette_v4.py` → 50 OK · `recette_v5.py` → 112 OK | `recette_l2_protocole.py` → 15 OK |
-| `recette_v6.py` → 26 OK · `test_satisfaction_respondents.py` → 10 OK | `recette_couche_decision.py` → 46 OK |
+| `recette_v6.py` → 42 OK · `test_satisfaction_respondents.py` → 10 OK | `recette_couche_decision.py` → 46 OK |
 
 ## Dépannage
 
@@ -103,6 +116,6 @@ find app -name '*.py' | xargs python3 -m py_compile   # syntaxe Python
 python3 -m venv .venv_validate && .venv_validate/bin/python -m pip install --upgrade pip
 .venv_validate/bin/python -m pip install --prefer-binary fastapi httpx sqlalchemy \
   "pydantic>=2" pydantic-settings argon2-cffi PyJWT python-multipart pandas numpy openpyxl pyyaml redis rq
-.venv_validate/bin/python app/tests/recette_v1.py     # -> 92 OK · 0 ÉCHEC
+.venv_validate/bin/python app/tests/recette_v1.py     # -> 115 OK · 0 ÉCHEC
 ```
 Détail de la couverture (garde-fous §10 + DoD §11) : [../docs/RECETTE_V1.md](../docs/RECETTE_V1.md).

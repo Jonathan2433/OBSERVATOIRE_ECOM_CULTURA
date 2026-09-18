@@ -1,15 +1,19 @@
 """Endpoints KPI : thèmes à la maille verbatim, satisfaction à la maille répondant."""
 from __future__ import annotations
 
-from typing import Optional
+from datetime import date
+from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..core.db import get_db
 from ..core.security import get_current_user
 from common.models import Batch, ModelVersion, Result, SurveyResponse
+from .analysis_filters import (
+    AnalysisScope, apply_response_scope, apply_result_scope, build_analysis_scope,
+)
 
 router = APIRouter(prefix="/api", tags=["kpi"], dependencies=[Depends(get_current_user)])
 
@@ -25,23 +29,27 @@ EXPECTED_SOURCE_SCALES = {
 EXPECTED_SOURCE_TYPES = tuple(EXPECTED_SOURCE_SCALES)
 
 
-def _completed_results(q, batch_id: Optional[int]):
+def _completed_results(q, batch_id: Optional[int], scope: AnalysisScope = AnalysisScope()):
     if batch_id is not None:
-        return q.filter(Result.batch_id == batch_id)
-    return q.join(Batch, Result.batch_id == Batch.id).filter(Batch.status == "done")
+        q = q.filter(Result.batch_id == batch_id)
+    else:
+        q = q.join(Batch, Result.batch_id == Batch.id).filter(Batch.status == "done")
+    return apply_result_scope(q, scope)
 
 
-def _distribution(db: Session, batch_id: Optional[int], column) -> dict:
+def _distribution(db: Session, batch_id: Optional[int], column,
+                  scope: AnalysisScope = AnalysisScope()) -> dict:
     q = db.query(column, func.count(Result.id)).filter(column.isnot(None), column != "")
-    q = _completed_results(q, batch_id)
+    q = _completed_results(q, batch_id, scope)
     rows = q.group_by(column).all()
     return {k: v for k, v in sorted(rows, key=lambda x: -x[1])}
 
 
-def _distribution_mentions(db: Session, batch_id: Optional[int], col1, col2) -> dict:
+def _distribution_mentions(db: Session, batch_id: Optional[int], col1, col2,
+                           scope: AnalysisScope = AnalysisScope()) -> dict:
     fusion: dict = {}
     for col in (col1, col2):
-        for libelle, n in _distribution(db, batch_id, col).items():
+        for libelle, n in _distribution(db, batch_id, col, scope).items():
             fusion[libelle] = fusion.get(libelle, 0) + n
     return dict(sorted(fusion.items(), key=lambda kv: -kv[1]))
 
@@ -50,6 +58,7 @@ def _distribution_hierarchy(
     db: Session,
     batch_id: Optional[int],
     pairs,
+    scope: AnalysisScope = AnalysisScope(),
 ) -> dict[str, dict[str, int]]:
     """Compte les sous-thèmes sans perdre leur parent de niveau 1.
 
@@ -69,7 +78,7 @@ def _distribution_hierarchy(
             niv1_column.isnot(None), niv1_column != "",
             niv2_column.isnot(None), niv2_column != "",
         )
-        query = _completed_results(query, batch_id)
+        query = _completed_results(query, batch_id, scope)
         for niv1, niv2, count in query.group_by(niv1_column, niv2_column).all():
             children = hierarchy.setdefault(niv1, {})
             children[niv2] = children.get(niv2, 0) + count
@@ -84,23 +93,139 @@ def _distribution_hierarchy(
     }
 
 
-def _theme_sentiment(db: Session, batch_id: Optional[int] = None) -> dict:
-    out: dict = {}
-    for col_theme, col_sent in (
-        (Result.theme1_niv1, Result.theme1_sentiment),
-        (Result.theme2_niv1, Result.theme2_sentiment),
+_SENTIMENT_ORDER = ("Négatif", "Neutre", "Positif")
+
+
+def _sorted_sentiments(sentiments: dict[str, int]) -> dict[str, int]:
+    """Stabilise l'ordre des segments sans publier de faux zéros."""
+    ordered = {
+        sentiment: sentiments[sentiment]
+        for sentiment in _SENTIMENT_ORDER
+        if sentiment in sentiments
+    }
+    ordered.update({
+        sentiment: count
+        for sentiment, count in sorted(sentiments.items())
+        if sentiment not in ordered
+    })
+    return ordered
+
+
+def _sorted_sentiment_distribution(
+    distribution: dict[str, dict[str, int]],
+) -> dict[str, dict[str, int]]:
+    return {
+        label: _sorted_sentiments(sentiments)
+        for label, sentiments in sorted(
+            distribution.items(),
+            key=lambda item: (
+                -item[1].get("Négatif", 0),
+                -sum(item[1].values()),
+                item[0].casefold(),
+            ),
+        )
+    }
+
+
+def _sorted_sentiment_hierarchy(
+    hierarchy: dict[str, dict[str, dict[str, int]]],
+) -> dict[str, dict[str, dict[str, int]]]:
+    def negative_count(sentiments: dict[str, int]) -> int:
+        return sentiments.get("Négatif", 0)
+
+    sorted_parents = sorted(
+        hierarchy.items(),
+        key=lambda item: (
+            -sum(negative_count(sentiments) for sentiments in item[1].values()),
+            -sum(sum(sentiments.values()) for sentiments in item[1].values()),
+            item[0].casefold(),
+        ),
+    )
+    return {
+        niv1: {
+            niv2: _sorted_sentiments(sentiments)
+            for niv2, sentiments in sorted(
+                children.items(),
+                key=lambda item: (
+                    -negative_count(item[1]),
+                    -sum(item[1].values()),
+                    item[0].casefold(),
+                ),
+            )
+        }
+        for niv1, children in sorted_parents
+    }
+
+
+def _theme_sentiment_views(
+    db: Session,
+    batch_id: Optional[int] = None,
+    scope: AnalysisScope = AnalysisScope(),
+) -> dict[str, dict]:
+    """Agrège N1, N2 et leur hiérarchie pour chacun des trois angles métier.
+
+    Une seule requête groupée est exécutée par rang. Les vues ``principal`` et
+    ``secondaire`` restent strictement isolées ; ``mentions`` additionne les deux.
+    Le front peut ainsi classer la répartition par sentiment sans réutiliser à
+    tort l'agrégat toutes mentions dans un autre angle.
+    """
+    views: dict[str, dict] = {
+        angle: {"themes": {}, "subthemes": {}, "hierarchy": {}}
+        for angle in ("principal", "mentions", "secondaire")
+    }
+
+    for rank_angle, niv1_column, niv2_column, sentiment_column in (
+        ("principal", Result.theme1_niv1, Result.theme1_niv2, Result.theme1_sentiment),
+        ("secondaire", Result.theme2_niv1, Result.theme2_niv2, Result.theme2_sentiment),
     ):
-        q = db.query(col_theme, col_sent, func.count(Result.id)).filter(
-            col_theme.isnot(None), col_theme != "", col_sent.isnot(None), col_sent != "")
-        q = _completed_results(q, batch_id)
-        for niv1, sent, n in q.group_by(col_theme, col_sent).all():
-            bucket = out.setdefault(niv1, {})
-            bucket[sent] = bucket.get(sent, 0) + n
-    return dict(sorted(out.items(), key=lambda kv: -sum(kv[1].values())))
+        query = db.query(
+            niv1_column,
+            niv2_column,
+            sentiment_column,
+            func.count(Result.id),
+        ).filter(sentiment_column.isnot(None), sentiment_column != "")
+        query = _completed_results(query, batch_id, scope)
+        for niv1, niv2, sentiment, count in query.group_by(
+            niv1_column, niv2_column, sentiment_column
+        ).all():
+            for angle in (rank_angle, "mentions"):
+                view = views[angle]
+                if niv1:
+                    sentiments = view["themes"].setdefault(niv1, {})
+                    sentiments[sentiment] = sentiments.get(sentiment, 0) + count
+                if niv2:
+                    sentiments = view["subthemes"].setdefault(niv2, {})
+                    sentiments[sentiment] = sentiments.get(sentiment, 0) + count
+                if niv1 and niv2:
+                    sentiments = view["hierarchy"].setdefault(niv1, {}).setdefault(niv2, {})
+                    sentiments[sentiment] = sentiments.get(sentiment, 0) + count
+
+    for view in views.values():
+        view["themes"] = _sorted_sentiment_distribution(view["themes"])
+        view["subthemes"] = _sorted_sentiment_distribution(view["subthemes"])
+        view["hierarchy"] = _sorted_sentiment_hierarchy(view["hierarchy"])
+    return views
 
 
-def _signal_counts(db: Session, batch_id: int) -> dict:
-    base = db.query(func.count(Result.id)).filter(Result.batch_id == batch_id)
+def _theme_sentiment(db: Session, batch_id: Optional[int] = None,
+                     scope: AnalysisScope = AnalysisScope()) -> dict:
+    """Contrat historique : niveau 1, toutes mentions."""
+    return _theme_sentiment_views(db, batch_id, scope)["mentions"]["themes"]
+
+
+def _theme_sentiment_hierarchy(
+    db: Session,
+    batch_id: Optional[int] = None,
+    scope: AnalysisScope = AnalysisScope(),
+) -> dict[str, dict[str, dict[str, int]]]:
+    """Contrat historique : hiérarchie N1 → N2, toutes mentions."""
+    return _theme_sentiment_views(db, batch_id, scope)["mentions"]["hierarchy"]
+
+
+def _signal_counts(db: Session, batch_id: int,
+                   scope: AnalysisScope = AnalysisScope()) -> dict:
+    base = apply_result_scope(
+        db.query(func.count(Result.id)).filter(Result.batch_id == batch_id), scope)
     return {
         "rupture": base.filter(Result.signal_rupture == True).scalar() or 0,  # noqa: E712
         "churn": base.filter(Result.signal_churn == True).scalar() or 0,  # noqa: E712
@@ -108,17 +233,30 @@ def _signal_counts(db: Session, batch_id: int) -> dict:
     }
 
 
-def _n_bi_themes(db: Session, batch_id: Optional[int] = None) -> int:
+def _result_counts(db: Session, batch_id: int,
+                   scope: AnalysisScope = AnalysisScope()) -> tuple[int, int]:
+    """Volume et file de revue dans le périmètre réellement affiché."""
+    base = apply_result_scope(
+        db.query(Result).filter(Result.batch_id == batch_id), scope)
+    total = base.with_entities(func.count(Result.id)).scalar() or 0
+    review = base.filter(Result.revue_requise == True).with_entities(  # noqa: E712
+        func.count(Result.id)).scalar() or 0
+    return int(total), int(review)
+
+
+def _n_bi_themes(db: Session, batch_id: Optional[int] = None,
+                 scope: AnalysisScope = AnalysisScope()) -> int:
     q = db.query(func.count(Result.id)).filter(
         Result.theme2_niv1.isnot(None), Result.theme2_niv1 != "")
-    return _completed_results(q, batch_id).scalar() or 0
+    return _completed_results(q, batch_id, scope).scalar() or 0
 
 
-def _n_classified(db: Session, batch_id: Optional[int] = None) -> int:
+def _n_classified(db: Session, batch_id: Optional[int] = None,
+                  scope: AnalysisScope = AnalysisScope()) -> int:
     """Compte le périmètre réellement classé, dénominateur du taux bi-thème."""
     q = db.query(func.count(Result.id)).filter(
         Result.theme1_niv1.isnot(None), Result.theme1_niv1 != "")
-    return _completed_results(q, batch_id).scalar() or 0
+    return _completed_results(q, batch_id, scope).scalar() or 0
 
 
 # --------------------------------------------------------------------------- #
@@ -128,16 +266,17 @@ def _n_classified(db: Session, batch_id: Optional[int] = None) -> int:
 # dénominateur ; leur somme peut dépasser 100 % avec les bi-thèmes, ce qui est
 # précisément la lecture « toutes mentions » documentée par D37.
 # --------------------------------------------------------------------------- #
-def _classification_snapshot(db: Session, batch_id: int) -> dict:
-    rows = (
+def _classification_snapshot(db: Session, batch_id: int,
+                             scope: AnalysisScope = AnalysisScope()) -> dict:
+    query = (
         db.query(
             Result.id, Result.source,
             Result.theme1_niv1, Result.theme1_niv2,
             Result.theme2_niv1, Result.theme2_niv2,
         )
         .filter(Result.batch_id == batch_id)
-        .all()
     )
+    rows = apply_result_scope(query, scope).all()
     totals: dict[str, int] = {}
     counts: dict[str, dict[str, dict[tuple[str, Optional[str]], int]]] = {
         "niv1": {}, "niv2": {},
@@ -178,11 +317,12 @@ def _classification_level_evolution(
     reference_exists: bool,
     comparable: bool,
     level: str,
+    allowed_sources: tuple[str, ...] = (),
 ) -> list[dict]:
     out = []
-    all_sources = list(EXPECTED_SOURCE_TYPES)
+    all_sources = list(allowed_sources or EXPECTED_SOURCE_TYPES)
     all_sources.extend(sorted(
-        set(current_data["totals"]) - set(EXPECTED_SOURCE_TYPES),
+        set(current_data["totals"]) - set(all_sources),
         key=lambda value: value.casefold(),
     ))
     for source in all_sources:
@@ -256,11 +396,16 @@ def _classification_level_evolution(
 
 
 def _classification_evolution(
-    db: Session, current: Batch, reference: Optional[Batch]
+    db: Session, current: Batch, reference: Optional[Batch],
+    scope: AnalysisScope = AnalysisScope(),
 ) -> dict:
-    current_data = _classification_snapshot(db, current.id)
+    current_data = _classification_snapshot(db, current.id, scope)
+    # Une plage absolue décrit le lot courant. La réappliquer à une période de
+    # référence antérieure la viderait artificiellement. La source, elle, reste
+    # comparable et est donc conservée des deux côtés.
+    reference_scope = scope.without_dates()
     reference_data = (
-        _classification_snapshot(db, reference.id)
+        _classification_snapshot(db, reference.id, reference_scope)
         if reference is not None
         else {"totals": {}, "counts": {"niv1": {}, "niv2": {}}}
     )
@@ -268,9 +413,12 @@ def _classification_evolution(
         reference is not None
         and current.model_label
         and current.model_label == reference.model_label
+        and not scope.has_dates
     )
     if reference is None:
         reason = "Aucun lot de référence sélectionné."
+    elif scope.has_dates:
+        reason = "Comparaison désactivée pour une plage de dates manuelle."
     elif not comparable:
         reason = "Le modèle ou le référentiel diffère entre les lots."
     else:
@@ -284,9 +432,11 @@ def _classification_evolution(
         "reason": reason,
         "levels": {
             "niv1": _classification_level_evolution(
-                current_data, reference_data, reference is not None, comparable, "niv1"),
+                current_data, reference_data, reference is not None, comparable, "niv1",
+                scope.sources),
             "niv2": _classification_level_evolution(
-                current_data, reference_data, reference is not None, comparable, "niv2"),
+                current_data, reference_data, reference is not None, comparable, "niv2",
+                scope.sources),
         },
     }
 
@@ -294,19 +444,25 @@ def _classification_evolution(
 # --------------------------------------------------------------------------- #
 # Satisfaction : une SurveyResponse = une voix
 # --------------------------------------------------------------------------- #
-def _response_rows(db: Session, batch_id: Optional[int]) -> list[SurveyResponse]:
+def _response_rows(db: Session, batch_id: Optional[int],
+                   scope: AnalysisScope = AnalysisScope()) -> list[SurveyResponse]:
     q = db.query(SurveyResponse)
     if batch_id is not None:
         q = q.filter(SurveyResponse.batch_id == batch_id)
     else:
         q = q.join(Batch, SurveyResponse.batch_id == Batch.id).filter(Batch.status == "done")
-    return q.all()
+    return apply_response_scope(q, scope).all()
 
 
-def _legacy_sources(db: Session, batch_id: Optional[int]) -> dict[str, int]:
+def _legacy_sources(db: Session, batch_id: Optional[int],
+                    scope: AnalysisScope = AnalysisScope()) -> dict[str, int]:
     """Compte les verbatims historiques sans réponse liée, sans inventer de répondant."""
+    if scope.has_dates:
+        # Une ligne historique sans réponse liée n'a par définition aucune date
+        # métier vérifiable et ne peut appartenir à une plage explicite.
+        return {}
     q = db.query(Result.source, func.count(Result.id)).filter(Result.survey_response_id.is_(None))
-    q = _completed_results(q, batch_id)
+    q = _completed_results(q, batch_id, scope)
     return {(source or "source-inconnue"): int(n) for source, n in q.group_by(Result.source).all()}
 
 
@@ -407,16 +563,20 @@ def _unavailable_source(source: str, legacy_count: int) -> dict:
     }
 
 
-def _satisfaction(db: Session, batch_id: Optional[int] = None) -> dict:
-    rows = _response_rows(db, batch_id)
-    legacy = _legacy_sources(db, batch_id)
+def _satisfaction(db: Session, batch_id: Optional[int] = None,
+                  scope: AnalysisScope = AnalysisScope()) -> dict:
+    rows = _response_rows(db, batch_id, scope)
+    legacy = _legacy_sources(db, batch_id, scope)
     grouped: dict[str, list[SurveyResponse]] = {}
     for row in rows:
         grouped.setdefault(row.source_type, []).append(row)
 
     source_order = {source: index for index, source in enumerate(EXPECTED_SOURCE_TYPES)}
     by_source = []
-    sources = set(EXPECTED_SOURCE_TYPES) | set(grouped) | set(legacy)
+    sources = (
+        set(scope.sources) if scope.sources
+        else set(EXPECTED_SOURCE_TYPES) | set(grouped) | set(legacy)
+    )
     for source in sorted(sources, key=lambda s: (source_order.get(s, 99), s)):
         source_rows = grouped.get(source, [])
         if not source_rows:
@@ -472,7 +632,7 @@ def _satisfaction(db: Session, batch_id: Optional[int] = None) -> dict:
     return {
         "unit": "respondent",
         "display_scale_max": 10,
-        "expected_source_types": list(EXPECTED_SOURCE_TYPES),
+        "expected_source_types": list(scope.sources or EXPECTED_SOURCE_TYPES),
         "by_source": by_source,
         "global": {
             "scope": (
@@ -595,25 +755,41 @@ def _source_comparison(current: dict, reference: Optional[dict]) -> dict:
     return base
 
 
-def _comparison(db: Session, current: Batch, reference: Batch) -> dict:
-    current_sat = _satisfaction(db, current.id)
-    reference_sat = _satisfaction(db, reference.id)
+def _comparison(db: Session, current: Batch, reference: Batch,
+                scope: AnalysisScope = AnalysisScope()) -> dict:
+    reference_scope = scope.without_dates()
+    current_sat = _satisfaction(db, current.id, scope)
+    reference_sat = _satisfaction(db, reference.id, reference_scope)
     references = {s["source_type"]: s for s in reference_sat["by_source"]}
 
-    current_bi = _n_bi_themes(db, current.id)
-    reference_bi = _n_bi_themes(db, reference.id)
-    current_classified = _n_classified(db, current.id)
-    reference_classified = _n_classified(db, reference.id)
-    current_signals = _signal_counts(db, current.id)
-    reference_signals = _signal_counts(db, reference.id)
-    model_compatible = bool(current.model_label and current.model_label == reference.model_label)
+    current_total, current_review = _result_counts(db, current.id, scope)
+    reference_total, reference_review = _result_counts(db, reference.id, reference_scope)
+    current_bi = _n_bi_themes(db, current.id, scope)
+    reference_bi = _n_bi_themes(db, reference.id, reference_scope)
+    current_classified = _n_classified(db, current.id, scope)
+    reference_classified = _n_classified(db, reference.id, reference_scope)
+    current_signals = _signal_counts(db, current.id, scope)
+    reference_signals = _signal_counts(db, reference.id, reference_scope)
+    model_compatible = bool(
+        current.model_label and current.model_label == reference.model_label
+        and not scope.has_dates)
     review_compatible = model_compatible and current.seuil_revue == reference.seuil_revue
 
     signal_metrics = {}
     for name in ("rupture", "churn", "insatisfaction"):
-        current_rate = current_signals[name] / current.n_total if current.n_total else 0.0
-        reference_rate = reference_signals[name] / reference.n_total if reference.n_total else 0.0
+        current_rate = current_signals[name] / current_total if current_total else 0.0
+        reference_rate = reference_signals[name] / reference_total if reference_total else 0.0
         signal_metrics[name] = _metric(current_rate, reference_rate, unit="ratio")
+
+    satisfaction_comparisons = [
+        _source_comparison(source, references.get(source["source_type"]))
+        for source in current_sat["by_source"]
+    ]
+    if scope.has_dates:
+        for comparison in satisfaction_comparisons:
+            comparison["comparable"] = False
+            comparison["delta_on_10"] = None
+            comparison["reason"] = "Comparaison désactivée pour une plage de dates manuelle."
 
     return {
         "reference_batch": {
@@ -622,22 +798,27 @@ def _comparison(db: Session, current: Batch, reference: Batch) -> dict:
             "model_label": reference.model_label,
         },
         "satisfaction": {
-            "by_source": [
-                _source_comparison(source, references.get(source["source_type"]))
-                for source in current_sat["by_source"]
-            ],
+            "by_source": satisfaction_comparisons,
         },
         "lot_metrics": {
-            "volume": _metric(current.n_total, reference.n_total, unit="count"),
+            "volume": {
+                **_metric(current_total, reference_total, unit="count"),
+                "comparable": not scope.has_dates,
+                "reason": (
+                    "Comparaison désactivée pour une plage de dates manuelle."
+                    if scope.has_dates else None),
+            },
             "review_rate": {
                 **_metric(
-                    current.n_review / current.n_total if current.n_total else 0.0,
-                    reference.n_review / reference.n_total if reference.n_total else 0.0,
+                    current_review / current_total if current_total else 0.0,
+                    reference_review / reference_total if reference_total else 0.0,
                     unit="ratio",
                 ),
                 "comparable": review_compatible,
                 "reason": None if review_compatible else
-                    "Le modèle ou le seuil de revue diffère entre les lots.",
+                    ("Comparaison désactivée pour une plage de dates manuelle."
+                     if scope.has_dates else
+                     "Le modèle ou le seuil de revue diffère entre les lots."),
             },
             "bi_theme_rate": {
                 **_metric(
@@ -647,14 +828,16 @@ def _comparison(db: Session, current: Batch, reference: Batch) -> dict:
                 ),
                 "comparable": model_compatible,
                 "reason": None if model_compatible else
-                    "Le modèle diffère entre les lots.",
+                    ("Comparaison désactivée pour une plage de dates manuelle."
+                     if scope.has_dates else "Le modèle diffère entre les lots."),
             },
             "signal_rates": {
                 name: {
                     **metric,
                     "comparable": model_compatible,
                     "reason": None if model_compatible else
-                        "Le modèle diffère entre les lots.",
+                        ("Comparaison désactivée pour une plage de dates manuelle."
+                         if scope.has_dates else "Le modèle diffère entre les lots."),
                 }
                 for name, metric in signal_metrics.items()
             },
@@ -664,12 +847,17 @@ def _comparison(db: Session, current: Batch, reference: Batch) -> dict:
 
 @router.get("/batches/{batch_id}/kpi")
 def batch_kpi(batch_id: int, reference_batch_id: Optional[int] = None,
-              db: Session = Depends(get_db)):
+              db: Session = Depends(get_db),
+              source: Annotated[Optional[list[str]], Query()] = None,
+              date_from: Optional[date] = None,
+              date_to: Optional[date] = None):
     batch = db.get(Batch, batch_id)
     if batch is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lot introuvable")
-    n_bi = _n_bi_themes(db, batch_id)
-    n_classes = _n_classified(db, batch_id)
+    scope = build_analysis_scope(source, date_from, date_to)
+    filtered_total, filtered_review = _result_counts(db, batch_id, scope)
+    n_bi = _n_bi_themes(db, batch_id, scope)
+    n_classes = _n_classified(db, batch_id, scope)
     reference = None
     reference_mode = "automatic"
     if reference_batch_id is not None:
@@ -687,69 +875,117 @@ def batch_kpi(batch_id: int, reference_batch_id: Optional[int] = None,
     elif batch.status == "done":
         reference = _default_reference_batch(db, batch)
 
+    theme_sentiment_views = _theme_sentiment_views(db, batch_id, scope)
     return {
         "batch_id": batch.id, "label": batch.label, "status": batch.status,
-        "model_label": batch.model_label, "n_total": batch.n_total,
-        "n_processed": batch.n_processed, "n_review": batch.n_review,
-        "review_rate": (batch.n_review / batch.n_total) if batch.n_total else 0.0,
+        "model_label": batch.model_label, "n_total": filtered_total,
+        "n_processed": filtered_total, "n_review": filtered_review,
+        "review_rate": (filtered_review / filtered_total) if filtered_total else 0.0,
         "n_errors": batch.n_errors, "duration_s": batch.duration_s,
-        "themes": _distribution(db, batch_id, Result.theme1_niv1),
-        "subthemes": _distribution(db, batch_id, Result.theme1_niv2),
-        "themes_secondaires": _distribution(db, batch_id, Result.theme2_niv1),
-        "subthemes_secondaires": _distribution(db, batch_id, Result.theme2_niv2),
-        "themes_mentions": _distribution_mentions(db, batch_id, Result.theme1_niv1, Result.theme2_niv1),
-        "subthemes_mentions": _distribution_mentions(db, batch_id, Result.theme1_niv2, Result.theme2_niv2),
+        "filters": {
+            "sources": list(scope.sources),
+            "date_from": scope.date_from.isoformat() if scope.date_from else None,
+            "date_to": scope.date_to.isoformat() if scope.date_to else None,
+        },
+        "themes": _distribution(db, batch_id, Result.theme1_niv1, scope),
+        "subthemes": _distribution(db, batch_id, Result.theme1_niv2, scope),
+        "themes_secondaires": _distribution(db, batch_id, Result.theme2_niv1, scope),
+        "subthemes_secondaires": _distribution(db, batch_id, Result.theme2_niv2, scope),
+        "themes_mentions": _distribution_mentions(
+            db, batch_id, Result.theme1_niv1, Result.theme2_niv1, scope),
+        "subthemes_mentions": _distribution_mentions(
+            db, batch_id, Result.theme1_niv2, Result.theme2_niv2, scope),
         "theme_hierarchy": {
             "principal": _distribution_hierarchy(
-                db, batch_id, ((Result.theme1_niv1, Result.theme1_niv2),)),
+                db, batch_id, ((Result.theme1_niv1, Result.theme1_niv2),), scope),
             "mentions": _distribution_hierarchy(
                 db, batch_id,
                 (
                     (Result.theme1_niv1, Result.theme1_niv2),
                     (Result.theme2_niv1, Result.theme2_niv2),
                 ),
+                scope,
             ),
             "secondaire": _distribution_hierarchy(
-                db, batch_id, ((Result.theme2_niv1, Result.theme2_niv2),)),
+                db, batch_id, ((Result.theme2_niv1, Result.theme2_niv2),), scope),
         },
         "n_bi_themes": n_bi,
         "taux_bi_themes": (n_bi / n_classes) if n_classes else 0.0,
-        "sentiments": _distribution(db, batch_id, Result.theme1_sentiment),
-        "sentiments_secondaires": _distribution(db, batch_id, Result.theme2_sentiment),
-        "sources": _distribution(db, batch_id, Result.source),
-        "signals": _signal_counts(db, batch_id),
-        "theme_sentiment": _theme_sentiment(db, batch_id),
-        "satisfaction": _satisfaction(db, batch_id),
-        "classification_evolution": _classification_evolution(db, batch, reference),
+        "sentiments": _distribution(db, batch_id, Result.theme1_sentiment, scope),
+        "sentiments_secondaires": _distribution(db, batch_id, Result.theme2_sentiment, scope),
+        "sources": _distribution(db, batch_id, Result.source, scope),
+        "signals": _signal_counts(db, batch_id, scope),
+        "theme_sentiment": theme_sentiment_views["mentions"]["themes"],
+        "theme_sentiment_hierarchy": theme_sentiment_views["mentions"]["hierarchy"],
+        "theme_sentiment_views": theme_sentiment_views,
+        "satisfaction": _satisfaction(db, batch_id, scope),
+        "classification_evolution": _classification_evolution(db, batch, reference, scope),
         "comparison": (
-            {**_comparison(db, batch, reference), "reference_mode": reference_mode}
+            {**_comparison(db, batch, reference, scope), "reference_mode": reference_mode}
             if reference is not None else None
         ),
     }
 
 
 @router.get("/kpi/volumetry")
-def volumetry(db: Session = Depends(get_db)):
+def volumetry(db: Session = Depends(get_db),
+              source: Annotated[Optional[list[str]], Query()] = None,
+              date_from: Optional[date] = None,
+              date_to: Optional[date] = None):
+    scope = build_analysis_scope(source, date_from, date_to)
     batches = db.query(Batch).filter(Batch.status == "done").order_by(Batch.created_at).all()
     series = []
     for batch in batches:
+        total, review = _result_counts(db, batch.id, scope)
+        if total == 0 and (scope.sources or scope.has_dates):
+            continue
         series.append({
             "id": batch.id, "label": batch.label,
             "created_at": batch.created_at.isoformat() if batch.created_at else None,
-            "n_total": batch.n_total, "n_review": batch.n_review,
-            "review_rate": (batch.n_review / batch.n_total) if batch.n_total else 0.0,
-            "signals": _signal_counts(db, batch.id),
-            "n_bi_themes": _n_bi_themes(db, batch.id),
+            "processed_at": batch.finished_at.isoformat() if batch.finished_at else None,
+            "n_total": total, "n_review": review,
+            "review_rate": (review / total) if total else 0.0,
+            "signals": _signal_counts(db, batch.id, scope),
+            "n_bi_themes": _n_bi_themes(db, batch.id, scope),
         })
+    theme_sentiment_views = _theme_sentiment_views(db, None, scope)
     return {
-        "n_batches": len(batches), "total_verbatims": sum(b.n_total for b in batches),
+        "n_batches": len(series), "total_verbatims": sum(row["n_total"] for row in series),
         "series": series,
-        "global_themes": _distribution(db, None, Result.theme1_niv1),
-        "global_themes_mentions": _distribution_mentions(db, None, Result.theme1_niv1, Result.theme2_niv1),
-        "global_themes_secondaires": _distribution(db, None, Result.theme2_niv1),
-        "n_bi_themes": _n_bi_themes(db, None),
-        "theme_sentiment": _theme_sentiment(db, None),
-        "satisfaction": _satisfaction(db, None),
+        "filters": {
+            "sources": list(scope.sources),
+            "date_from": scope.date_from.isoformat() if scope.date_from else None,
+            "date_to": scope.date_to.isoformat() if scope.date_to else None,
+        },
+        "global_themes": _distribution(db, None, Result.theme1_niv1, scope),
+        "global_subthemes": _distribution(db, None, Result.theme1_niv2, scope),
+        "global_themes_mentions": _distribution_mentions(
+            db, None, Result.theme1_niv1, Result.theme2_niv1, scope),
+        "global_subthemes_mentions": _distribution_mentions(
+            db, None, Result.theme1_niv2, Result.theme2_niv2, scope),
+        "global_themes_secondaires": _distribution(db, None, Result.theme2_niv1, scope),
+        "global_subthemes_secondaires": _distribution(
+            db, None, Result.theme2_niv2, scope),
+        "global_theme_hierarchy": {
+            "principal": _distribution_hierarchy(
+                db, None, ((Result.theme1_niv1, Result.theme1_niv2),), scope),
+            "mentions": _distribution_hierarchy(
+                db, None,
+                (
+                    (Result.theme1_niv1, Result.theme1_niv2),
+                    (Result.theme2_niv1, Result.theme2_niv2),
+                ),
+                scope,
+            ),
+            "secondaire": _distribution_hierarchy(
+                db, None, ((Result.theme2_niv1, Result.theme2_niv2),), scope),
+        },
+        "global_sources": _distribution(db, None, Result.source, scope),
+        "n_bi_themes": _n_bi_themes(db, None, scope),
+        "theme_sentiment": theme_sentiment_views["mentions"]["themes"],
+        "theme_sentiment_hierarchy": theme_sentiment_views["mentions"]["hierarchy"],
+        "theme_sentiment_views": theme_sentiment_views,
+        "satisfaction": _satisfaction(db, None, scope),
     }
 
 

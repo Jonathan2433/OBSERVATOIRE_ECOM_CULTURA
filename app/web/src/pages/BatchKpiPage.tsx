@@ -7,22 +7,10 @@ import BarList from "../components/BarList";
 import ClassificationEvolutionPanel from "../components/ClassificationEvolutionPanel";
 import SatisfactionPanel from "../components/SatisfactionPanel";
 import StackedSentimentBar from "../components/StackedSentimentBar";
-import { Card, Chip, EmptyState, InfoTip, Select, Spinner, StatCard } from "../ui";
-
-/**
- * Deux lectures d'une répartition de thèmes, jamais mélangées :
- *
- * * **principal** — un verbatim, une voix : son thème de tête. La somme fait le
- *   nombre de verbatims classés.
- * * **mentions** — thème principal ET second thème. La somme dépasse le nombre
- *   de verbatims, et c'est le seul angle qui rende visibles les sujets qui
- *   sortent presque toujours en second.
- *
- * Les afficher sous un seul chiffre ferait passer une somme supérieure au volume
- * du lot pour une erreur de comptage ; les garder séparés laisse la question
- * métier ouverte — « de quoi parle-t-on d'abord » n'est pas « de quoi parle-t-on ».
- */
-type Angle = "principal" | "mentions";
+import ThemeDistributionPanel from "../components/ThemeDistributionPanel";
+import { Card, EmptyState, InfoTip, Select, Spinner, StatCard } from "../ui";
+import { useAnalysisFilters } from "../analysisFilters";
+import AnalysisFiltersBar from "../components/AnalysisFiltersBar";
 
 export default function BatchKpiPage() {
   const { id } = useParams();
@@ -31,38 +19,24 @@ export default function BatchKpiPage() {
   const [batches, setBatches] = useState<Batch[]>([]);
   const [referenceId, setReferenceId] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [angle, setAngle] = useState<Angle>("mentions");
-  const [selectedNiv1, setSelectedNiv1] = useState<string | null>(null);
+  const { filters: analysisFilters, setFilters: setAnalysisFilters } = useAnalysisFilters();
 
   useEffect(() => {
     setKpi(null);
     setError(null);
     const explicitReference = referenceId ? Number(referenceId) : undefined;
-    getBatchKpi(batchId, explicitReference)
+    getBatchKpi(batchId, explicitReference, analysisFilters)
       .then(setKpi)
       .catch((e) => setError(String(e.message ?? e)));
-  }, [batchId, referenceId]);
+  }, [batchId, referenceId, analysisFilters]);
 
   useEffect(() => {
     listBatches().then(setBatches).catch(() => setBatches([]));
   }, []);
 
-  useEffect(() => {
-    if (!selectedNiv1 || !kpi) return;
-    const availableThemes = angle === "mentions" ? kpi.themes_mentions : kpi.themes;
-    if (!(selectedNiv1 in availableThemes)) setSelectedNiv1(null);
-  }, [angle, kpi, selectedNiv1]);
-
   if (error) return <EmptyState title="Tableau de bord indisponible" description={error} />;
   if (!kpi) return <Spinner label="Calcul des indicateurs…" />;
 
-  const themes = angle === "mentions" ? kpi.themes_mentions : kpi.themes;
-  const subthemes = angle === "mentions" ? kpi.subthemes_mentions : kpi.subthemes;
-  const hierarchy = angle === "mentions"
-    ? kpi.theme_hierarchy.mentions
-    : kpi.theme_hierarchy.principal;
-  const displayedSubthemes = selectedNiv1 ? hierarchy[selectedNiv1] ?? {} : subthemes;
-  const nMentions = Object.values(kpi.themes_mentions).reduce((a, b) => a + b, 0);
   const comparison = kpi.comparison;
   const referenceCandidates = batches.filter((batch) => batch.status === "done" && batch.id !== batchId);
 
@@ -77,6 +51,7 @@ export default function BatchKpiPage() {
 
   return (
     <div className="ui-stack">
+        <AnalysisFiltersBar filters={analysisFilters} onChange={setAnalysisFilters} />
         <section className="business-overview">
           <div className="business-overview__copy">
             <p className="business-section__eyebrow">Synthèse de la période</p>
@@ -140,59 +115,35 @@ export default function BatchKpiPage() {
         </Card>
 
         <Card title="Thèmes × sentiment (toutes mentions)"
-              actions={<InfoTip text="Thème principal et second thème empilés, chacun avec SON sentiment : la V4 en calcule un par thème retenu, un même verbatim peut donc être positif sur la livraison et négatif sur le produit." />}>
-          <StackedSentimentBar data={kpi.theme_sentiment} />
+              actions={<InfoTip text="Thème principal et second thème empilés, chacun avec SON sentiment. Sélectionnez un thème pour déplier ses sous-thèmes et leur propre répartition." />}>
+          <StackedSentimentBar
+            data={kpi.theme_sentiment}
+            hierarchy={kpi.theme_sentiment_hierarchy}
+          />
         </Card>
 
-        <Card title="Répartition des thèmes" actions={
-          <span className="ui-row" style={{ gap: 4 }}>
-            <Chip active={angle === "principal"} onClick={() => setAngle("principal")}>Thème principal</Chip>
-            <Chip active={angle === "mentions"} onClick={() => setAngle("mentions")}>Toutes mentions</Chip>
-            <InfoTip text="« Thème principal » compte une voix par verbatim. « Toutes mentions » ajoute le second thème : la somme dépasse alors le nombre de verbatims, ce qui est normal." />
-          </span>
-        }>
-          <div className="ui-stack">
-            <p className="ui-muted">
-              {angle === "mentions"
-                ? `${nMentions} mention(s) de thème pour ${kpi.n_total} verbatim(s), dont ${kpi.n_bi_themes} bi-thème(s).`
-                : `Thème de tête de chaque verbatim classé.`}
-            </p>
-            <div className="ui-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
-              <Card title="Niveau 1"
-                    actions={<InfoTip text="Sélectionnez un thème pour limiter le tableau Niveau 2 à ses sous-thèmes." />}>
-                <BarList
-                  data={themes}
-                  selectedKey={selectedNiv1}
-                  onSelect={(theme) => setSelectedNiv1((current) => current === theme ? null : theme)}
-                  ariaLabel="Filtrer les sous-thèmes par thème de niveau 1"
-                />
-              </Card>
-              <Card title="Niveau 2 (sous-thèmes)"
-                    actions={selectedNiv1
-                      ? <Chip onClick={() => setSelectedNiv1(null)}>Afficher tous</Chip>
-                      : undefined}>
-                {selectedNiv1 && (
-                  <p className="theme-drilldown__context">
-                    Sous-thèmes rattachés à <strong>{selectedNiv1}</strong>.
-                  </p>
-                )}
-                <BarList data={displayedSubthemes} color="var(--cu-primary-300)" />
-              </Card>
-            </div>
-          </div>
-        </Card>
-
-        <Card title="Second thème seul"
-              actions={<InfoTip text="Ce que la vue « thème principal » rend invisible : les sujets évoqués en appui, jamais en tête." />}>
-          {kpi.n_bi_themes === 0 ? (
-            <p className="ui-muted">Aucun verbatim de ce lot ne porte de second thème.</p>
-          ) : (
-            <div className="ui-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
-              <Card title="Niveau 1"><BarList data={kpi.themes_secondaires} color="var(--cu-primary-300)" /></Card>
-              <Card title="Niveau 2 (sous-thèmes)"><BarList data={kpi.subthemes_secondaires} color="var(--cu-primary-300)" /></Card>
-            </div>
-          )}
-        </Card>
+        <ThemeDistributionPanel
+          totalVerbatims={kpi.n_total}
+          nBiThemes={kpi.n_bi_themes}
+          principal={{
+            themes: kpi.themes,
+            subthemes: kpi.subthemes,
+            hierarchy: kpi.theme_hierarchy.principal,
+            sentiment: kpi.theme_sentiment_views.principal,
+          }}
+          mentions={{
+            themes: kpi.themes_mentions,
+            subthemes: kpi.subthemes_mentions,
+            hierarchy: kpi.theme_hierarchy.mentions,
+            sentiment: kpi.theme_sentiment_views.mentions,
+          }}
+          secondary={{
+            themes: kpi.themes_secondaires,
+            subthemes: kpi.subthemes_secondaires,
+            hierarchy: kpi.theme_hierarchy.secondaire,
+            sentiment: kpi.theme_sentiment_views.secondaire,
+          }}
+        />
 
         <div className="ui-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
           <Card title="Sentiments (thème principal)"><BarList data={kpi.sentiments} /></Card>

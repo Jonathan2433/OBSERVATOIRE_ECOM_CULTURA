@@ -6,7 +6,10 @@ import BarList from "../components/BarList";
 import ClassificationEvolutionPanel from "../components/ClassificationEvolutionPanel";
 import SatisfactionPanel from "../components/SatisfactionPanel";
 import StackedSentimentBar from "../components/StackedSentimentBar";
+import ThemeDistributionPanel from "../components/ThemeDistributionPanel";
 import { Badge, Card, EmptyState, InfoTip, Spinner, StatCard } from "../ui";
+import { useAnalysisFilters } from "../analysisFilters";
+import AnalysisFiltersBar from "../components/AnalysisFiltersBar";
 
 const METRIC_LABELS: Record<string, string> = {
   f1_macro_niv1: "F1-macro niv.1",
@@ -31,18 +34,22 @@ export default function DashboardsPage() {
   const [vol, setVol] = useState<Volumetry | null>(null);
   const [latest, setLatest] = useState<BatchKpi | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { filters: analysisFilters, setFilters: setAnalysisFilters } = useAnalysisFilters();
 
   useEffect(() => {
     getModelKpi().then(setModel).catch((e) => setError(String(e.message ?? e)));
-    getVolumetry().then((data) => {
+    setError(null);
+    setVol(null);
+    setLatest(null);
+    getVolumetry(analysisFilters).then((data) => {
       setVol(data);
       const latestBatch = data.series[data.series.length - 1];
       if (latestBatch) {
-        getBatchKpi(latestBatch.id).then(setLatest)
+        getBatchKpi(latestBatch.id, undefined, analysisFilters).then(setLatest)
           .catch((e) => setError(String(e.message ?? e)));
       }
     }).catch((e) => setError(String(e.message ?? e)));
-  }, []);
+  }, [analysisFilters]);
 
   return (
     <div>
@@ -54,6 +61,7 @@ export default function DashboardsPage() {
       {error && <p className="ui-field__error">{error}</p>}
 
       <div className="ui-stack">
+        <AnalysisFiltersBar filters={analysisFilters} onChange={setAnalysisFilters} />
         <Card title="Modèle actif">
           {!model && <Spinner label="Chargement…" />}
           {model && model.active === null && <p className="ui-muted">Aucun modèle actif.</p>}
@@ -114,20 +122,40 @@ export default function DashboardsPage() {
             )}
 
             <Card title="Thèmes × sentiment (volumétrie globale)"
-                  actions={<InfoTip text="Thème principal et second thème empilés, chacun avec son propre sentiment." />}>
-              <StackedSentimentBar data={vol.theme_sentiment} />
+                  actions={<InfoTip text="Thème principal et second thème empilés, chacun avec son propre sentiment. Sélectionnez un thème pour déplier ses sous-thèmes." />}>
+              <StackedSentimentBar
+                data={vol.theme_sentiment}
+                hierarchy={vol.theme_sentiment_hierarchy}
+              />
             </Card>
 
-            <div className="ui-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
-              <Card title="Thèmes — toutes mentions"
-                    actions={<InfoTip text="Thème principal + second thème. La somme dépasse le nombre de verbatims : un verbatim bi-thème compte pour ses deux thèmes." />}>
-                <BarList data={vol.global_themes_mentions} />
-              </Card>
-              <Card title="Thèmes — second thème seul"
-                    actions={<InfoTip text="Les sujets que la seule vue « thème principal » rend invisibles." />}>
-                <BarList data={vol.global_themes_secondaires} color="var(--cu-primary-300)" />
-              </Card>
-            </div>
+            <ThemeDistributionPanel
+              totalVerbatims={vol.total_verbatims}
+              nBiThemes={vol.n_bi_themes}
+              principal={{
+                themes: vol.global_themes,
+                subthemes: vol.global_subthemes,
+                hierarchy: vol.global_theme_hierarchy.principal,
+                sentiment: vol.theme_sentiment_views.principal,
+              }}
+              mentions={{
+                themes: vol.global_themes_mentions,
+                subthemes: vol.global_subthemes_mentions,
+                hierarchy: vol.global_theme_hierarchy.mentions,
+                sentiment: vol.theme_sentiment_views.mentions,
+              }}
+              secondary={{
+                themes: vol.global_themes_secondaires,
+                subthemes: vol.global_subthemes_secondaires,
+                hierarchy: vol.global_theme_hierarchy.secondaire,
+                sentiment: vol.theme_sentiment_views.secondaire,
+              }}
+            />
+
+            <Card title="Sources des verbatims"
+                  actions={<InfoTip text="Répartition recalculée selon les sources et dates sélectionnées." />}>
+              <BarList data={vol.global_sources} color="var(--cu-neutral-300)" />
+            </Card>
 
             <Card title="Évolution par lot">
               {vol.series.length === 0 ? (

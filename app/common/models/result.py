@@ -5,7 +5,8 @@ n'est jamais stocké en base.
 """
 from __future__ import annotations
 
-from datetime import datetime
+import hashlib
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
@@ -14,6 +15,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from ..db import Base
 
 if TYPE_CHECKING:
+    from .batch import Batch
     from .survey_response import SurveyResponse
 
 
@@ -66,6 +68,7 @@ class Result(Base):
     original_columns: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     survey_response: Mapped[Optional["SurveyResponse"]] = relationship(lazy="joined")
+    batch: Mapped["Batch"] = relationship(lazy="joined")
 
     @property
     def satisfaction_native(self) -> Optional[int]:
@@ -82,3 +85,27 @@ class Result(Base):
     @property
     def source_file(self) -> Optional[str]:
         return self.survey_response.source_file if self.survey_response else None
+
+    @property
+    def response_reference(self) -> Optional[str]:
+        """Référence publique stable, sans exposer l'identifiant source.
+
+        ``respondent_key`` est déjà une empreinte pour les imports récents. On
+        la rehache néanmoins avant exposition afin que les lots historiques ou
+        les jeux de recette portant une clé technique non hachée ne puissent
+        jamais la divulguer par l'API ou un export.
+        """
+        if not self.survey_response or not self.survey_response.respondent_key:
+            return None
+        digest = hashlib.sha256(
+            self.survey_response.respondent_key.encode("utf-8")
+        ).hexdigest()[:16].upper()
+        return f"REP-{digest}"
+
+    @property
+    def response_date(self) -> Optional[date]:
+        return self.survey_response.response_date if self.survey_response else None
+
+    @property
+    def batch_processed_at(self) -> Optional[datetime]:
+        return self.batch.finished_at if self.batch else None
