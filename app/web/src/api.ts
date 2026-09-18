@@ -494,6 +494,12 @@ export interface BatchKpi {
   /** Toutes MENTIONS : thème 1 + thème 2. La somme dépasse le nombre de verbatims. */
   themes_mentions: Record<string, number>;
   subthemes_mentions: Record<string, number>;
+  /** Relations N1 → N2 calculées depuis les couples réellement persistés. */
+  theme_hierarchy: {
+    principal: Record<string, Record<string, number>>;
+    mentions: Record<string, Record<string, number>>;
+    secondaire: Record<string, Record<string, number>>;
+  };
   n_bi_themes: number;
   taux_bi_themes: number;
   sentiments: Record<string, number>;

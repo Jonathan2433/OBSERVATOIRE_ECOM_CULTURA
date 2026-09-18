@@ -32,6 +32,7 @@ export default function BatchKpiPage() {
   const [referenceId, setReferenceId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [angle, setAngle] = useState<Angle>("mentions");
+  const [selectedNiv1, setSelectedNiv1] = useState<string | null>(null);
 
   useEffect(() => {
     setKpi(null);
@@ -46,11 +47,21 @@ export default function BatchKpiPage() {
     listBatches().then(setBatches).catch(() => setBatches([]));
   }, []);
 
+  useEffect(() => {
+    if (!selectedNiv1 || !kpi) return;
+    const availableThemes = angle === "mentions" ? kpi.themes_mentions : kpi.themes;
+    if (!(selectedNiv1 in availableThemes)) setSelectedNiv1(null);
+  }, [angle, kpi, selectedNiv1]);
+
   if (error) return <EmptyState title="Tableau de bord indisponible" description={error} />;
   if (!kpi) return <Spinner label="Calcul des indicateurs…" />;
 
   const themes = angle === "mentions" ? kpi.themes_mentions : kpi.themes;
   const subthemes = angle === "mentions" ? kpi.subthemes_mentions : kpi.subthemes;
+  const hierarchy = angle === "mentions"
+    ? kpi.theme_hierarchy.mentions
+    : kpi.theme_hierarchy.principal;
+  const displayedSubthemes = selectedNiv1 ? hierarchy[selectedNiv1] ?? {} : subthemes;
   const nMentions = Object.values(kpi.themes_mentions).reduce((a, b) => a + b, 0);
   const comparison = kpi.comparison;
   const referenceCandidates = batches.filter((batch) => batch.status === "done" && batch.id !== batchId);
@@ -147,8 +158,26 @@ export default function BatchKpiPage() {
                 : `Thème de tête de chaque verbatim classé.`}
             </p>
             <div className="ui-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
-              <Card title="Niveau 1"><BarList data={themes} /></Card>
-              <Card title="Niveau 2 (sous-thèmes)"><BarList data={subthemes} color="var(--cu-primary-300)" /></Card>
+              <Card title="Niveau 1"
+                    actions={<InfoTip text="Sélectionnez un thème pour limiter le tableau Niveau 2 à ses sous-thèmes." />}>
+                <BarList
+                  data={themes}
+                  selectedKey={selectedNiv1}
+                  onSelect={(theme) => setSelectedNiv1((current) => current === theme ? null : theme)}
+                  ariaLabel="Filtrer les sous-thèmes par thème de niveau 1"
+                />
+              </Card>
+              <Card title="Niveau 2 (sous-thèmes)"
+                    actions={selectedNiv1
+                      ? <Chip onClick={() => setSelectedNiv1(null)}>Afficher tous</Chip>
+                      : undefined}>
+                {selectedNiv1 && (
+                  <p className="theme-drilldown__context">
+                    Sous-thèmes rattachés à <strong>{selectedNiv1}</strong>.
+                  </p>
+                )}
+                <BarList data={displayedSubthemes} color="var(--cu-primary-300)" />
+              </Card>
             </div>
           </div>
         </Card>

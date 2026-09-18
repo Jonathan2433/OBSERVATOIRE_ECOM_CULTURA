@@ -237,7 +237,7 @@ Voir [`docs/TRANSMISSION.md`](docs/TRANSMISSION.md).
 **Recettes applicatives** — torch-free (SQLite, classifieur stub), hors ligne :
 
 ```bash
-python app/tests/recette_v1.py   # conformité applicative + KPI répondant      -> 89 OK
+python app/tests/recette_v1.py   # conformité applicative + KPI répondant      -> 92 OK
 python app/tests/recette_v3.py   # V3 : annulation, reprise, ops, mot de passe -> 13 OK
 python app/tests/recette_v4.py   # V4 : moteur LM Studio                       -> 50 OK
 python app/tests/recette_v5.py   # V5 : cascade, comparaison, juge Claude      -> 112 OK
@@ -301,6 +301,10 @@ transmission), charte UI, recettes, suivi des lots.
   du lot et du tableau de bord global classent les thèmes par **nombre absolu de
   verbatims négatifs décroissant**, puis par volume total et par libellé en cas
   d'égalité. Les volumes et les segments affichés ne sont pas modifiés.
+- **Navigation hiérarchique des thèmes — septembre 2026** — dans la répartition
+  d'un lot, sélectionner un thème de niveau 1 limite instantanément le tableau de
+  niveau 2 à ses sous-thèmes, selon l'angle actif (« thème principal » ou
+  « toutes mentions »).
 
 **Reste à faire.** Bascule du modèle par défaut (décision humaine, tracée à l'audit) ·
 mesure d'un lot ~11k **< 1 h** en conditions réelles (DoD §11) · atelier de

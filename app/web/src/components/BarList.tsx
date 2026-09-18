@@ -1,16 +1,27 @@
+import type { ReactNode } from "react";
+
 /** Petit graphe en barres horizontales (sans dépendance, piloté par les tokens).
  *  `max` : échelle fixe (ex. 100 pour des pourcentages) ; par défaut, normalisé sur
  *  la plus grande valeur. `suffix` : unité affichée après la valeur (ex. " %").
  *  `order` : force l'ordre des libellés au lieu du tri par volume, et affiche à
  *  zéro ceux qui manquent. Indispensable pour une échelle ORDINALE — une note de
  *  satisfaction se lit 1, 2, 3, 4, jamais du plus fréquent au moins fréquent, et
- *  une note que personne n'a donnée doit rester visible. */
-export default function BarList({ data, color = "var(--cu-primary-500)", max, suffix = "", order }: {
+ *  une note que personne n'a donnée doit rester visible.
+ *  `onSelect` transforme chaque ligne en contrôle accessible ; ce mode est utilisé
+ *  par la répartition hiérarchique N1 → N2 et reste optionnel pour les autres
+ *  graphiques. */
+export default function BarList({
+  data, color = "var(--cu-primary-500)", max, suffix = "", order,
+  selectedKey, onSelect, ariaLabel,
+}: {
   data: Record<string, number>;
   color?: string;
   max?: number;
   suffix?: string;
   order?: string[];
+  selectedKey?: string | null;
+  onSelect?: (key: string) => void;
+  ariaLabel?: string;
 }) {
   const entries = order
     ? order.map((k) => [k, data[k] ?? 0] as [string, number])
@@ -19,15 +30,30 @@ export default function BarList({ data, color = "var(--cu-primary-500)", max, su
   // absence de mesure, et quatre barres vides se liraient comme quatre vrais zéros.
   if (entries.length === 0 || entries.every(([, v]) => !v)) return <p className="ui-muted">Aucune donnée.</p>;
   const top = max ?? Math.max(...entries.map(([, v]) => v), 1);
+
+  const rowContent = (label: string, value: number): ReactNode => (
+    <>
+      <span className="bar-list__label" title={label}>{label}</span>
+      <span className="bar-list__track" aria-hidden="true">
+        <span className="bar-list__fill" style={{ width: `${Math.min(100, (value / top) * 100)}%`, background: color }} />
+      </span>
+      <span className="bar-list__value">{value}{suffix}</span>
+    </>
+  );
+
   return (
-    <div style={{ display: "grid", gap: "var(--sp-2)" }}>
-      {entries.map(([label, value]) => (
-        <div key={label} style={{ display: "grid", gridTemplateColumns: "minmax(120px, 240px) 1fr 64px", gap: "var(--sp-3)", alignItems: "center" }}>
-          <span style={{ fontSize: "var(--fs-sm)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={label}>{label}</span>
-          <div style={{ background: "var(--cu-neutral-200)", borderRadius: "var(--r-pill)", height: 12 }}>
-            <div style={{ width: `${Math.min(100, (value / top) * 100)}%`, background: color, height: "100%", borderRadius: "var(--r-pill)", transition: "width var(--t-base)" }} />
-          </div>
-          <span className="ui-table__num" style={{ fontSize: "var(--fs-sm)", textAlign: "right" }}>{value}{suffix}</span>
+    <div className="bar-list" role={onSelect ? "group" : undefined}
+         aria-label={onSelect ? ariaLabel : undefined}>
+      {entries.map(([label, value]) => onSelect ? (
+        <button key={label} type="button"
+                className={`bar-list__row bar-list__row--selectable${selectedKey === label ? " is-selected" : ""}`}
+                aria-pressed={selectedKey === label}
+                onClick={() => onSelect(label)}>
+          {rowContent(label, value)}
+        </button>
+      ) : (
+        <div key={label} className="bar-list__row">
+          {rowContent(label, value)}
         </div>
       ))}
     </div>

@@ -175,6 +175,12 @@ de septembre, le thème **Académie** n'apparaît **jamais** en thème principal
 quatre fois en second : la vue « thème principal » seule le rendait invisible.
 La carte *Second thème seul* isole exactement ces sujets-là.
 
+Dans cette carte, cliquez sur une ligne du tableau **Niveau 1** pour n'afficher à
+droite que les sous-thèmes **Niveau 2** qui lui appartiennent. Le thème choisi est
+mis en évidence. Cliquez de nouveau sur la même ligne, ou sur **Afficher tous**,
+pour revenir à la distribution complète. Le filtrage suit l'angle actif et ne
+modifie pas les autres graphiques.
+
 ### Analyse automatique des verbatims
 
 La synthèse affiche ensuite les cinq sous-thèmes les plus présents dans les

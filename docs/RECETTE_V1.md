@@ -24,7 +24,7 @@ python3 -m venv .venv_validate
 .venv_validate/bin/python app/tests/recette_v1.py
 ```
 
-Sortie attendue : **`Bilan : 89 OK · 0 ÉCHEC · 0 SKIP`** (code de sortie 0).
+Sortie attendue : **`Bilan : 92 OK · 0 ÉCHEC · 0 SKIP`** (code de sortie 0).
 
 > Les sections skippent proprement si une couche est absente de l'environnement
 > (ex. `fastapi` hors image API, `src/` hors image worker). Dans le venv de recette
@@ -39,7 +39,7 @@ Sortie attendue : **`Bilan : 89 OK · 0 ÉCHEC · 0 SKIP`** (code de sortie 0).
 | Taxonomie | tous les couples (niv.1, niv.2) émis sont valides ; couple invalide rejeté | §10 #3 |
 | Auth / RBAC | non-authentifié → 401 ; analyste → 403 sur audit/config/users ; verrouillage 429 | §10 #11, §7.9 |
 | Résultats / export | confiance + statut exposés ; filtre Thème « contient » ; CSV colonnes POC + BOM ; pas de PII | §11, §10 #6 |
-| Second thème / satisfaction | deux thèmes comptés sans doublon ; unité répondant ; quatre sources visibles ; absence distincte de zéro ; notes natives et statuts MDTC | §6.2, §11 |
+| Second thème / satisfaction | deux thèmes comptés sans doublon ; hiérarchies N1 → N2 publiées pour le thème principal, toutes les mentions et le second thème ; unité répondant ; quatre sources visibles ; absence distincte de zéro ; notes natives et statuts MDTC | §6.2, §11 |
 | Config / purge / audit | validation config ; purge supprime hors-rétention, conserve récent ; actions tracées | §11, §10 #7 |
 | E2E pipeline (stub) | lot traité `done` ; **aucune PII en base** ; réponse source persistée une fois ; note invalide exclue ; couples prédits valides | §11, §10 #2/#3 |
 
@@ -96,4 +96,4 @@ total décroissant puis le libellé alphabétique.
 
 La V1 satisfait l'intégralité du DoD §11 et des garde-fous §10, **à l'exception de la
 mesure de performance #4** qui requiert le dépôt du modèle CamemBERT réel (le chemin
-technique est en place et vérifiable au dépôt). Recette automatisée : **89/89**.
+technique est en place et vérifiable au dépôt). Recette automatisée : **92/92**.

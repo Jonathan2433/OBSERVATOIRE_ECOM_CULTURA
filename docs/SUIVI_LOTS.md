@@ -192,6 +192,18 @@ volume total décroissant et libellé alphabétique. Le composant partagé rend 
 règle visible sous la légende. Les valeurs, la longueur totale des barres, les
 segments et l'agrégation thème principal + second thème restent inchangés. Le tri
 est recalculé sur le périmètre de données reçu par le graphique.
+
+### Amélioration dataviz — navigation Niveau 1 vers Niveau 2 *(18 septembre 2026)*
+
+Dans la répartition des thèmes d'un lot, chaque barre de niveau 1 est un contrôle
+accessible à la souris et au clavier. Sa sélection limite le tableau de niveau 2
+aux sous-thèmes réellement classés sous ce parent. L'API publie pour cela une
+hiérarchie additive calculée depuis les couples persistés, corrections humaines
+comprises, pour les angles thème principal, toutes mentions et second thème.
+Les distributions plates historiques restent inchangées pour compatibilité.
+
+**Validation du 18/09/2026** : recette V1 **92/92**, type-check TypeScript et
+build Vite au vert.
 ## L8 — Durcissement, RGPD, perf, recette V1 ✅ (validé PO le 2026-06-18 — V1 complète)
 
 **Objectif** : clore la V1 — sécurité, conformité RGPD/offline, performance, recette §11, documentation.

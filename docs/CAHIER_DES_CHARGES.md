@@ -128,6 +128,10 @@ Transformer le POC en **application conteneurisée, utilisable par le métier**,
 ### F6 — Tableaux de bord & KPI (cf. §6 pour le détail)
 - Trois familles : **KPI modèle**, **KPI résultats du lot**, **volumétrie & tendances**.
 - RG : les KPI modèle proviennent du rapport d'évaluation de la **version active** (`eval_report.json`) ; les KPI résultats/volumétrie sont calculés sur les lots traités.
+- RG : dans la répartition hiérarchique d'un lot, sélectionner un thème de niveau 1
+  limite le tableau de niveau 2 à ses sous-thèmes. La relation est calculée depuis
+  les couples classés et respecte l'angle « thème principal » ou « toutes mentions » ;
+  annuler la sélection rétablit tous les sous-thèmes.
 - RG : les graphiques **thème × sentiment** du lot et de la vue globale classent
   les thèmes par **nombre absolu de verbatims négatifs décroissant**. Les égalités
   sont départagées par le volume total décroissant, puis par le libellé. Ce tri

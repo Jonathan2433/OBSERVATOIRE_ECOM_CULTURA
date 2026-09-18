@@ -46,6 +46,44 @@ def _distribution_mentions(db: Session, batch_id: Optional[int], col1, col2) -> 
     return dict(sorted(fusion.items(), key=lambda kv: -kv[1]))
 
 
+def _distribution_hierarchy(
+    db: Session,
+    batch_id: Optional[int],
+    pairs,
+) -> dict[str, dict[str, int]]:
+    """Compte les sous-thèmes sans perdre leur parent de niveau 1.
+
+    Les répartitions historiques ``subthemes*`` restent volontairement plates
+    pour préserver le contrat public existant. Cette vue complémentaire porte la
+    relation nécessaire au drill-down de l'interface. Elle est calculée depuis
+    les couples réellement persistés — corrections humaines comprises — plutôt
+    que reconstruite depuis la taxonomie active, qui peut différer de celle du lot.
+    """
+    hierarchy: dict[str, dict[str, int]] = {}
+    for niv1_column, niv2_column in pairs:
+        query = db.query(
+            niv1_column,
+            niv2_column,
+            func.count(Result.id),
+        ).filter(
+            niv1_column.isnot(None), niv1_column != "",
+            niv2_column.isnot(None), niv2_column != "",
+        )
+        query = _completed_results(query, batch_id)
+        for niv1, niv2, count in query.group_by(niv1_column, niv2_column).all():
+            children = hierarchy.setdefault(niv1, {})
+            children[niv2] = children.get(niv2, 0) + count
+
+    sorted_parents = sorted(
+        hierarchy.items(),
+        key=lambda item: (-sum(item[1].values()), item[0].casefold()),
+    )
+    return {
+        niv1: dict(sorted(children.items(), key=lambda item: (-item[1], item[0].casefold())))
+        for niv1, children in sorted_parents
+    }
+
+
 def _theme_sentiment(db: Session, batch_id: Optional[int] = None) -> dict:
     out: dict = {}
     for col_theme, col_sent in (
@@ -661,6 +699,19 @@ def batch_kpi(batch_id: int, reference_batch_id: Optional[int] = None,
         "subthemes_secondaires": _distribution(db, batch_id, Result.theme2_niv2),
         "themes_mentions": _distribution_mentions(db, batch_id, Result.theme1_niv1, Result.theme2_niv1),
         "subthemes_mentions": _distribution_mentions(db, batch_id, Result.theme1_niv2, Result.theme2_niv2),
+        "theme_hierarchy": {
+            "principal": _distribution_hierarchy(
+                db, batch_id, ((Result.theme1_niv1, Result.theme1_niv2),)),
+            "mentions": _distribution_hierarchy(
+                db, batch_id,
+                (
+                    (Result.theme1_niv1, Result.theme1_niv2),
+                    (Result.theme2_niv1, Result.theme2_niv2),
+                ),
+            ),
+            "secondaire": _distribution_hierarchy(
+                db, batch_id, ((Result.theme2_niv1, Result.theme2_niv2),)),
+        },
         "n_bi_themes": n_bi,
         "taux_bi_themes": (n_bi / n_classes) if n_classes else 0.0,
         "sentiments": _distribution(db, batch_id, Result.theme1_sentiment),

@@ -419,6 +419,17 @@ def test_second_theme_et_satisfaction(admin, SessionLocal) -> None:
     check("Les sous-thèmes suivent la même logique de mentions",
           (kpi.get("subthemes_mentions") or {}).get("Qualité") == 2,
           str(kpi.get("subthemes_mentions")))
+    hierarchy = kpi.get("theme_hierarchy") or {}
+    check("La hiérarchie principale rattache chaque sous-thème à son niveau 1",
+          (hierarchy.get("principal") or {}).get("Livraison") == {"Délai": 1}
+          and (hierarchy.get("principal") or {}).get("Produit") == {"Qualité": 1},
+          str(hierarchy.get("principal")))
+    check("La hiérarchie toutes mentions additionne les deux rangs par couple",
+          (hierarchy.get("mentions") or {}).get("Produit") == {"Qualité": 2},
+          str(hierarchy.get("mentions")))
+    check("La hiérarchie du second thème reste isolée du thème principal",
+          hierarchy.get("secondaire") == {"Produit": {"Qualité": 1}},
+          str(hierarchy.get("secondaire")))
     check("Bi-thèmes comptés", kpi.get("n_bi_themes") == 1, str(kpi.get("n_bi_themes")))
     check("Taux de bi-thèmes rapporté aux verbatims CLASSÉS",
           abs((kpi.get("taux_bi_themes") or 0) - 0.25) < 1e-9, str(kpi.get("taux_bi_themes")))

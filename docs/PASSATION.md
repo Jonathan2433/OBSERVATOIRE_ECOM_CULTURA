@@ -99,7 +99,7 @@ n'en supprime aucun ; **le retour arrière est une resélection**.
 (`fastapi httpx sqlalchemy pydantic pydantic-settings argon2-cffi PyJWT python-multipart pandas numpy openpyxl pyyaml redis rq`) :
 
 ```bash
-python app/tests/recette_v1.py   # -> 89 OK    python app/tests/recette_v4.py  # -> 50 OK
+python app/tests/recette_v1.py   # -> 92 OK    python app/tests/recette_v4.py  # -> 50 OK
 python app/tests/recette_v3.py   # -> 13 OK    python app/tests/recette_v5.py  # -> 112 OK
 python app/tests/recette_v6.py   # -> 26 OK
 python app/tests/test_satisfaction_respondents.py  # -> 10 OK

@@ -63,6 +63,11 @@ la priorisation métier : volume négatif décroissant, puis volume total
 décroissant et libellé alphabétique en cas d'égalité. Le tri s'applique au jeu de
 données affiché et compte le thème principal comme le second thème.
 
+Dans la carte **Répartition des thèmes** d'un lot, les lignes de niveau 1 sont
+sélectionnables. Le tableau de niveau 2 affiche alors uniquement les sous-thèmes
+du parent choisi, dans l'angle actif (« thème principal » ou « toutes mentions »).
+Un second clic ou l'action « Afficher tous » rétablit la distribution complète.
+
 ## État d'avancement
 Voir [../docs/SUIVI_LOTS.md](../docs/SUIVI_LOTS.md). **V1→V5 livrées**, V6 (revue et
 exports consolidés) incluse. Modèle **Cultura 2026** recetté et mis à disposition dans
@@ -72,7 +77,7 @@ Recettes automatisées :
 
 | Applicatives (torch-free) | Modèle (environnement ML) |
 |---|---|
-| `recette_v1.py` → 89 OK · `recette_v3.py` → 13 OK | `recette_l1a_chargeur.py` → dépend de spaCy et des fichiers réels |
+| `recette_v1.py` → 92 OK · `recette_v3.py` → 13 OK | `recette_l1a_chargeur.py` → dépend de spaCy et des fichiers réels |
 | `recette_v4.py` → 50 OK · `recette_v5.py` → 112 OK | `recette_l2_protocole.py` → 15 OK |
 | `recette_v6.py` → 26 OK · `test_satisfaction_respondents.py` → 10 OK | `recette_couche_decision.py` → 46 OK |
 
@@ -98,6 +103,6 @@ find app -name '*.py' | xargs python3 -m py_compile   # syntaxe Python
 python3 -m venv .venv_validate && .venv_validate/bin/python -m pip install --upgrade pip
 .venv_validate/bin/python -m pip install --prefer-binary fastapi httpx sqlalchemy \
   "pydantic>=2" pydantic-settings argon2-cffi PyJWT python-multipart pandas numpy openpyxl pyyaml redis rq
-.venv_validate/bin/python app/tests/recette_v1.py     # -> 89 OK · 0 ÉCHEC
+.venv_validate/bin/python app/tests/recette_v1.py     # -> 92 OK · 0 ÉCHEC
 ```
 Détail de la couverture (garde-fous §10 + DoD §11) : [../docs/RECETTE_V1.md](../docs/RECETTE_V1.md).

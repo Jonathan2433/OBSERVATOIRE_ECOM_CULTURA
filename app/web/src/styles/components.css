@@ -162,6 +162,46 @@
   border-radius: var(--r-sm); background: var(--cu-surface); color: var(--cu-text-muted);
   font-size: var(--fs-sm);
 }
+
+/* --- Graphique en barres et drill-down thèmes N1 → N2 ------------------ */
+.bar-list { display: grid; gap: var(--sp-2); }
+.bar-list__row {
+  display: grid; grid-template-columns: minmax(120px, 240px) 1fr 64px;
+  gap: var(--sp-3); align-items: center; min-height: 40px;
+}
+.bar-list__label {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--fs-sm); text-align: left;
+}
+.bar-list__track {
+  display: block; height: 12px; overflow: hidden;
+  border-radius: var(--r-pill); background: var(--cu-neutral-200);
+}
+.bar-list__fill {
+  display: block; height: 100%; border-radius: var(--r-pill);
+  transition: width var(--t-base);
+}
+.bar-list__value {
+  font-size: var(--fs-sm); font-variant-numeric: tabular-nums; text-align: right;
+}
+.bar-list__row--selectable {
+  width: 100%; padding: var(--sp-1) var(--sp-2); margin: 0;
+  color: inherit; font: inherit; border: 1px solid transparent;
+  border-radius: var(--r-sm); background: transparent; cursor: pointer;
+  transition: background var(--t-fast), border-color var(--t-fast), box-shadow var(--t-fast);
+}
+.bar-list__row--selectable:hover { background: var(--cu-primary-50); }
+.bar-list__row--selectable:focus-visible {
+  outline: none; border-color: var(--cu-primary-400); box-shadow: var(--cu-focus-ring);
+}
+.bar-list__row--selectable.is-selected {
+  border-color: var(--cu-primary-300); background: var(--cu-primary-50);
+  color: var(--cu-primary-800); font-weight: var(--fw-semibold);
+}
+.theme-drilldown__context {
+  margin-bottom: var(--sp-4); color: var(--cu-text-muted); font-size: var(--fs-sm);
+}
+
 .comparison-picker { grid-template-columns: minmax(260px, 420px) 1fr; align-items: end; }
 @media (max-width: 720px) {
   .comparison-picker, .satisfaction-source__scoreline { grid-template-columns: 1fr; }
@@ -172,6 +212,7 @@
   .satisfaction-segment > small { grid-column: 2; text-align: right; }
   .classification-ranking__item { grid-template-columns: 30px minmax(0, 1fr) auto; }
   .classification-ranking__trend { grid-column: 2 / -1; align-items: flex-start; }
+  .bar-list__row { grid-template-columns: minmax(100px, 1fr) minmax(90px, 1fr) 48px; }
 }
 @media (max-width: 1050px) {
   .business-card-grid { grid-template-columns: 1fr; }
