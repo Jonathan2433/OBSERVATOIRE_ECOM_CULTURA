@@ -1,8 +1,9 @@
 # Spec V4 — Second moteur de classification « LM Studio » (LLM local)
 
 > **Statut** : **implémentée et alignée Cultura 2026** (lots O1→O5, recette V4
-> 74/74 ; contrat V2 livré le 18/09/2026, après le tag historique `v4.0`. Incident de
-> concurrence/chargement JIT du 19/09/2026 corrigé, cf. §7.1).
+> 79/79 ; contrat V2 livré le 18/09/2026, après le tag historique `v4.0`. Incident de
+> concurrence/chargement JIT du 19/09/2026 corrigé, cf. §7.1 ; biais de sur-classement
+> Général/sentiment négatif du 19-20/09/2026 corrigé, cf. §7.2).
 > **Principe directeur** : **strictement additive**, aucun impact sur l'app existante
 > (analyste, contrats API, schéma DB, moteur CamemBERT) — gardée derrière `lmstudio.enabled`.
 
@@ -117,10 +118,17 @@ moteurs CamemBERT/stub.
 Le prompt courant est **`v2-cultura-2026`**. Il injecte le référentiel embarqué
 11 thèmes / 59 sous-thèmes et impose le contrat métier du moteur CamemBERT Cultura :
 
+- le couple `Général / Autre` est un **dernier recours explicite** — le sous-thème le
+  plus précis doit toujours être préféré ;
 - un thème par défaut ; un second uniquement si le texte porte explicitement deux
   sujets distincts — une hésitation entre catégories proches n'est pas un bi-thème ;
-- un sentiment unique par verbatim, recopié sur les deux thèmes ;
-- si un avis mêle positif et négatif, conservation du ou des thèmes négatifs ;
+- les **trois sentiments sont a priori également probables** ; un sentiment n'est
+  **jamais** présumé négatif par défaut ; un sentiment unique par verbatim, recopié
+  sur les deux thèmes ;
+- si un avis mêle, sur des sujets distincts, un aspect positif et un aspect négatif,
+  conservation du ou des thèmes négatifs uniquement ;
+- **5 exemples calibrés** (Positif/Négatif/Neutre, dont un cas mixte et un cas
+  `Général` légitime) — cf. §7.2 ;
 - note de satisfaction normalisée sur 1–4 utilisée comme contexte auxiliaire ;
 - confiance basse pour un texte court ou ambigu, trois signaux et JSON seul.
 
@@ -217,6 +225,40 @@ immédiatement avec `HTTP 500` (page générique LM Studio). Diagnostic confirm�
    le repli configuré est donc `"none"` (JSON demandé par le seul prompt, sans contrainte
    de schéma), seul mode confirmé fonctionnel en repli sur cette instance.
 
+### 7.2 Incident du 19-20/09/2026 — sur-classement « Général » et biais de sentiment négatif (résolu)
+
+Le premier lot réel exploitable (Lot 22, 520 verbatims, une fois l'incident §7.1
+corrigé) a classé **86,9 %** des verbatims en `Général / Autre` et **98,5 %** en
+sentiment `Négatif` — y compris des avis explicitement positifs notés 4/4 (« très
+rapide, je l'ai reçu 24h après » → `Négatif`, confiance 0,95).
+
+**Diagnostic confirmé par test A/B en direct** (même verbatim, seul le prompt varie) :
+le prompt `v2-cultura-2026` d'alors répétait le mot *Négatif* dans sa règle de
+sentiment mixte, créant un ancrage lexical disproportionné sur un modèle 7B, et ne
+fournissait **aucun exemple** pour discriminer 59 sous-thèmes — le modèle se
+repliait sur le seul couple qui lui était présenté comme une échappatoire,
+`Général / Autre`. Le mécanisme de revue humaine ne rattrapait pas ces erreurs :
+la confiance auto-déclarée restait élevée (0,85-0,95), confirmant qu'elle n'est
+pas corrélée à la justesse sur ce type de biais systématique (cf. §6).
+
+**Correctifs appliqués** (prompts proposeur et raffineur, `llm_common.py`) :
+- `Général / Autre` explicitement qualifié de **DERNIER RECOURS** ;
+- traitement symétrique des trois sentiments (« a priori également probables »,
+  « ne présume jamais... par défaut ») — la règle de priorité au négatif sur un
+  cas réellement mixte (D-26) est conservée, mais reformulée pour ne plus
+  s'appliquer par défaut aux textes purement positifs ou neutres ;
+- **5 exemples calibrés** ajoutés au prompt proposeur (Positif/Négatif/Neutre, un
+  cas mixte D-26, un cas `Général` légitime) pour ancrer le jugement du modèle.
+
+**Mesuré sur un échantillon de 60 verbatims du Lot 22, rejoués à l'identique** :
+`Général` 78,3 % → **38,3 %** ; sentiment `Négatif` 96,7 % → **56,7 %** (apparition
+cohérente de `Positif` et `Neutre`, ex. « livraison rapide » → `Réception
+commande / Livraison à domicile`, `Positif`). Aucun changement de schéma, de
+contrat de sortie ni des garde-fous de `map_llm_response` : seule la formulation
+du prompt a changé. Le résiduel de `Général` (38,3 %) reste à comparer à la
+distribution de CamemBERT sur le même échantillon (page **Comparaison**, non
+encore fait à ce stade) avant de considérer le sujet clos.
+
 ---
 
 ## 8. Offline / RGPD / sécurité
@@ -275,7 +317,7 @@ de `docker-compose.yml` pour atteindre le conteneur — cf. incident §7.1).
 | **O4** | Concurrence bornée + retries + fail-fast | ✅ |
 | **O5** | Alignement Cultura 2026, registre/référentiel API, doc et recette V4 | ✅ |
 
-**Validation** : `app/tests/recette_v4.py` **74/74** et `recette_v5.py` **115/115**
+**Validation** : `app/tests/recette_v4.py` **79/79** et `recette_v5.py` **115/115**
 (LM Studio mocké, torch-free). La recette couvre prompts proposeur/raffineur, taxonomie
 11/59, repli canonique, D-26 et référentiel servi à la revue.
 

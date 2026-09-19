@@ -202,6 +202,21 @@ def run() -> None:
     check("O5 : repli canonique présent dans le prompt",
           'niv1="Général", niv2="Autre"' in p26["user"])
 
+    # --- Incident du 19-20/09/2026 (lot 22, biais "tout en Général/Négatif") ---
+    # Garde-fous anti-régression sur le prompt lui-même, distincts des garde-fous
+    # de mapping (map_llm_response, inchangés). Sans eux, une réintroduction du
+    # déséquilibre lexical d'origine ("Négatif" répété, aucun exemple, aucune
+    # dissuasion du repli) ne serait détectée qu'en observant un vrai lot.
+    check("O5 : prompt V2 dissuade explicitement le repli Général/Autre par défaut",
+          "DERNIER RECOURS" in p26["system"])
+    check("O5 : prompt V2 traite les trois sentiments à égalité (pas de biais négatif)",
+          "également probables" in p26["system"]
+          and "ne présume jamais" in p26["system"])
+    check("O5 : prompt V2 fournit des exemples calibrés couvrant Positif/Négatif/Neutre",
+          p26["system"].count("sentiment=Positif") >= 1
+          and p26["system"].count("sentiment=Négatif") >= 1
+          and p26["system"].count("sentiment=Neutre") >= 1)
+
     r26_prompt = op.build_refiner_prompt(
         TAXO_2026, "bug mais accueil magasin agréable", {}, 1,
         "Général", "v2-cultura-2026", "Autre")
@@ -210,6 +225,10 @@ def run() -> None:
     check("O5 : raffineur applique D-26 et l'échelle 1-4",
           "uniquement le ou les thèmes négatifs" in r26_prompt["system"]
           and "(1-4) : 1" in r26_prompt["user"])
+    check("O5 : raffineur dissuade aussi le repli Général/Autre par défaut",
+          "DERNIER RECOURS" in r26_prompt["system"])
+    check("O5 : raffineur ne corrige jamais un sentiment vers Négatif par défaut",
+          "par défaut" in r26_prompt["system"] and "Négatif" in r26_prompt["system"])
 
     bug_n2 = TAXO_2026.children["Bug"][0]
     espace_n2 = TAXO_2026.children["Espace client"][0]
