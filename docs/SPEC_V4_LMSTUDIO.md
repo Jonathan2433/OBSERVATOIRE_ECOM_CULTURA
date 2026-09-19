@@ -1,7 +1,8 @@
 # Spec V4 — Second moteur de classification « LM Studio » (LLM local)
 
 > **Statut** : **implémentée et alignée Cultura 2026** (lots O1→O5, recette V4
-> 67/67 ; contrat V2 livré le 18/09/2026, après le tag historique `v4.0`).
+> 74/74 ; contrat V2 livré le 18/09/2026, après le tag historique `v4.0`. Incident de
+> concurrence/chargement JIT du 19/09/2026 corrigé, cf. §7.1).
 > **Principe directeur** : **strictement additive**, aucun impact sur l'app existante
 > (analyste, contrats API, schéma DB, moteur CamemBERT) — gardée derrière `lmstudio.enabled`.
 
@@ -171,11 +172,50 @@ Tout est paramétré dans `config.yaml → lmstudio.guardrails`.
 
 - **Pas d'objectif 11k < 1h** : 1 appel LLM/verbatim → traitement **long** assumé
   (l'UI ne bloque pas, barre de progression existante).
-- **Concurrence bornée** : pool de threads `lmstudio.max_parallel` (défaut 4).
-- **Timeouts + retries** par appel (`timeout_s`, `retries`).
+- **Concurrence bornée** : pool de threads `lmstudio.max_parallel` (**défaut 1**, cf.
+  incident §7.1 — augmenter uniquement après une recette de charge concluante sur le
+  poste cible).
+- **Échauffement** (`lmstudio.warmup_enabled`, défaut `true`) : un appel technique
+  séquentiel est envoyé avant la 1ʳᵉ rafale du lot, pour absorber le chargement à la
+  demande (JIT) du modèle avant que des appels concurrents ne partent.
+- **Timeouts + retries** par appel (`timeout_s`, `retries`), avec backoff exponentiel +
+  jitter entre tentatives (`retry_backoff_s`, `retry_backoff_max_s`) sur les statuts
+  transitoires (408/409/425/429/500/502/503/504).
+- **Repli de format** : sur un refus durable du schéma JSON (400/422/500),
+  `lmstudio.response_format_fallback` est tenté une fois avant d'abandonner. Le mode
+  supporté dépend du serveur/modèle cible (cf. §7.1) — ne pas remettre `json_object`
+  sans revalider contre l'instance visée.
 - **Annulation coopérative** : check « lot annulé » par chunk (R1/V3) respecté.
 - **Échec propre** : si LM Studio est injoignable, la 1ʳᵉ erreur **fait échouer le lot**
   (statut *failed* + message) — **aucun** repli silencieux vers CamemBERT.
+
+### 7.1 Incident du 19/09/2026 — HTTP 500 sur le premier lot Qwen (résolu)
+
+Le premier lot réel traité par `qwen2.5-vl-7b-instruct` (Lot 21, 520 verbatims) a échoué
+immédiatement avec `HTTP 500` (page générique LM Studio). Diagnostic confirmé sur pièces
+(logs worker + logs LM Studio + rejeu direct de l'appel HTTP) :
+
+1. **Cause racine** : `docker-compose.yml` ne transmettait pas la variable
+   `LMSTUDIO_MAX_PARALLEL` au conteneur `worker` (absente du bloc `environment:`). Malgré
+   `LMSTUDIO_MAX_PARALLEL=1` dans `.env`, le worker retombait silencieusement sur
+   `max_parallel: 4` de `config.yaml`.
+2. **Déclencheur** : à `max_parallel=4`, 4 threads (+ leurs retries immédiats, sans
+   backoff à l'époque) ont ouvert une **rafale de requêtes concurrentes** au tout premier
+   appel du lot. Les logs LM Studio montrent que le modèle **se chargeait encore** à ce
+   moment (chargement à la demande d'un modèle multimodal — poids + projecteur vision —
+   pris ~34 s) : le serveur ne peut pas absorber une rafale concurrente pendant cette
+   fenêtre et répond `500` à la quasi-totalité des appels reçus avant la fin du
+   chargement. **Le schéma JSON n'est pas en cause** : une fois le modèle chargé, les
+   mêmes appels (schéma identique, y compris rejoués à 6 en parallèle) réussissent
+   systématiquement et produisent un JSON conforme au contrat.
+3. **Correctifs appliqués** : câblage de `LMSTUDIO_MAX_PARALLEL` dans
+   `docker-compose.yml` (worker), défaut `max_parallel: 1` en configuration, ajout d'un
+   échauffement séquentiel (`warmup_enabled`) avant la rafale du lot, retries avec
+   backoff. Un repli `response_format_fallback: "json_object"` avait aussi été envisagé
+   pour un refus de grammaire JSON — **testé en direct sur ce poste, il est refusé par
+   LM Studio en HTTP 400** (`'response_format.type' must be 'json_schema' or 'text'`) ;
+   le repli configuré est donc `"none"` (JSON demandé par le seul prompt, sans contrainte
+   de schéma), seul mode confirmé fonctionnel en repli sur cette instance.
 
 ---
 
@@ -195,8 +235,14 @@ lmstudio:
   taxonomy: "data/models/cultura_2026/taxonomy.json"
   temperature: 0.1
   timeout_s: 120
-  max_parallel: 4
+  max_parallel: 1                # défaut sûr — cf. incident §7.1 (rafale pendant chargement JIT)
   retries: 2
+  retry_backoff_s: 2.0           # backoff exponentiel + jitter entre tentatives
+  retry_backoff_max_s: 12.0
+  warmup_enabled: true           # appel technique séquentiel avant la 1re rafale du lot
+  max_tokens: 256
+  response_format: "json_schema"          # mode nominal
+  response_format_fallback: "none"        # repli après échec durable (400/422/500) — cf. §7.1
   prompt_version: "v2-cultura-2026"
   contract_version: "cultura_2026"
   fallback_theme: "Général"
@@ -206,7 +252,9 @@ lmstudio:
     invalid_json_confidence_max: 0.30
     review_on_sentiment_conflict: true
 ```
-Surcharge env (`config_worker.py`) : `LMSTUDIO_ENABLED`, `LMSTUDIO_BASE_URL`, `LMSTUDIO_MODEL`.
+Surcharge env (`config_worker.py`) : `LMSTUDIO_ENABLED`, `LMSTUDIO_BASE_URL`, `LMSTUDIO_MODEL`,
+`LMSTUDIO_MAX_PARALLEL` (doit être déclarée dans le bloc `environment:` du service `worker`
+de `docker-compose.yml` pour atteindre le conteneur — cf. incident §7.1).
 
 ---
 
@@ -227,7 +275,7 @@ Surcharge env (`config_worker.py`) : `LMSTUDIO_ENABLED`, `LMSTUDIO_BASE_URL`, `L
 | **O4** | Concurrence bornée + retries + fail-fast | ✅ |
 | **O5** | Alignement Cultura 2026, registre/référentiel API, doc et recette V4 | ✅ |
 
-**Validation** : `app/tests/recette_v4.py` **67/67** et `recette_v5.py` **115/115**
+**Validation** : `app/tests/recette_v4.py` **74/74** et `recette_v5.py` **115/115**
 (LM Studio mocké, torch-free). La recette couvre prompts proposeur/raffineur, taxonomie
 11/59, repli canonique, D-26 et référentiel servi à la revue.
 

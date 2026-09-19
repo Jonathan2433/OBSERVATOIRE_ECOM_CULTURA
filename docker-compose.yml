@@ -102,6 +102,9 @@ services:
       LMSTUDIO_ENABLED: ${LMSTUDIO_ENABLED:-false}
       LMSTUDIO_BASE_URL: ${LMSTUDIO_BASE_URL:-http://host.docker.internal:1234/v1}
       LMSTUDIO_MODEL: ${LMSTUDIO_MODEL:-local-model}
+      # Important : la variable est lue par config_worker.py. Sans cette ligne,
+      # la valeur sûre définie dans .env ne traversait jamais Docker.
+      LMSTUDIO_MAX_PARALLEL: ${LMSTUDIO_MAX_PARALLEL:-1}
       # --- Moteur Claude (V5), COMPARAISON/TEST uniquement. Défaut : désactivé. ---
       # Clé via .env (jamais en base/UI). Sans clé -> moteur indisponible (mode dégradé).
       # Seul flux sortant possible : worker -> api.anthropic.com, et seulement en test/comparaison.

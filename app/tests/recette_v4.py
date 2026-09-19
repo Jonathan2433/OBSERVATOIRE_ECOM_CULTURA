@@ -245,6 +245,7 @@ def run() -> None:
           and TAXO_2026.is_valid_pair(r_invalid_26["theme1_niv1"], r_invalid_26["theme1_niv2"]))
 
     # --- 10. Client HTTP : parse OK (urlopen mocké) --------------------------
+    import io
     import json as _json
 
     class _FakeResp:
@@ -257,9 +258,23 @@ def run() -> None:
                            "signaux": {"rupture": False, "churn": False, "insatisfaction_forte": False}})
     orig_urlopen = op.urllib.request.urlopen
     try:
-        op.urllib.request.urlopen = lambda req, timeout=None: _FakeResp({"choices": [{"message": {"content": content}}]})
+        captured_payloads = []
+        def _ok(req, timeout=None):
+            captured_payloads.append(_json.loads(req.data.decode("utf-8")))
+            return _FakeResp({"choices": [{"message": {"content": content}}]})
+        op.urllib.request.urlopen = _ok
         parsed = op.call_llm_chat("http://x:1234/v1", "m", "sys", "usr", 0.1, 5)
         check("client : parse JSON OK (choices OpenAI)", isinstance(parsed, dict) and parsed.get("themes"), parsed)
+        check("client : schéma JSON et max_tokens transmis",
+              captured_payloads[-1]["response_format"]["type"] == "json_schema"
+              and "max_tokens" not in captured_payloads[-1])
+
+        op.call_llm_chat(
+            "http://x:1234/v1", "m", "sys", "usr", 0.1, 5,
+            response_format_mode="json_object", max_tokens=123)
+        check("client : mode json_object de compatibilité + borne de sortie",
+              captured_payloads[-1]["response_format"] == {"type": "json_object"}
+              and captured_payloads[-1]["max_tokens"] == 123)
 
         # JSON malformé dans content -> {} (repli géré par le mapping)
         op.urllib.request.urlopen = lambda req, timeout=None: _FakeResp({"choices": [{"message": {"content": "pas du json"}}]})
@@ -276,6 +291,18 @@ def run() -> None:
         except op.LMStudioError:
             raised = True
         check("client : LM Studio down -> LMStudioError", raised)
+
+        def _http_500(req, timeout=None):
+            raise urllib.error.HTTPError(
+                req.full_url, 500, "Internal Server Error", {},
+                io.BytesIO(b"<html> Internal Server Error </html>"))
+        op.urllib.request.urlopen = _http_500
+        try:
+            op.call_llm_chat("http://x:1234/v1", "m", "s", "u", 0.1, 5)
+            status_500_ok = False
+        except op.LMStudioError as exc:
+            status_500_ok = exc.status_code == 500 and exc.retryable and "format=json_schema" in str(exc)
+        check("client : HTTP 500 est marqué transitoire et diagnostiqué", status_500_ok)
     finally:
         op.urllib.request.urlopen = orig_urlopen
 
@@ -321,12 +348,30 @@ def run() -> None:
 
         from worker.config_worker import build_worker_cfg
 
-        container_cfg = build_worker_cfg()
+        previous_parallel = os.environ.get("LMSTUDIO_MAX_PARALLEL")
+        os.environ["LMSTUDIO_MAX_PARALLEL"] = "1"
+        try:
+            container_cfg = build_worker_cfg()
+        finally:
+            if previous_parallel is None:
+                os.environ.pop("LMSTUDIO_MAX_PARALLEL", None)
+            else:
+                os.environ["LMSTUDIO_MAX_PARALLEL"] = previous_parallel
         check("O5 : chemin taxonomie LM réécrit vers le volume modèles",
               str(container_cfg["lmstudio"]["taxonomy"]).endswith(
                   "/cultura_2026/taxonomy.json")
               and not str(container_cfg["lmstudio"]["taxonomy"]).startswith("data/models/"),
               container_cfg["lmstudio"]["taxonomy"])
+        check("O5 : concurrence LM Studio lue depuis l'environnement Docker",
+              container_cfg["lmstudio"]["max_parallel"] == 1,
+              container_cfg["lmstudio"]["max_parallel"])
+        # Incident du 19/09/2026 (Lot 21, HTTP 500) : le repli de schéma déclaré en
+        # configuration doit rester "none" — "json_object" est refusé (HTTP 400) par
+        # LM Studio sur ce poste. Un retour à "json_object" romprait silencieusement
+        # le repli en production.
+        check("O5 : repli de schéma configuré = 'none' (pas 'json_object', refusé par LM Studio)",
+              container_cfg["lmstudio"].get("response_format_fallback") == "none",
+              container_cfg["lmstudio"].get("response_format_fallback"))
 
         # 3. Joignable mais modèle absent -> available False + motif.
         op.list_llm_models = lambda *a, **k: ["autre-modele"]
@@ -363,13 +408,18 @@ def run() -> None:
         op.list_llm_models = orig_list
 
     # ====================== O4 : concurrence & robustesse ===================
-    def make_predictor(max_parallel=4, retries=0):
+    def make_predictor(max_parallel=1, retries=0, warmup=False):
         p = object.__new__(op.LMStudioPredictor)
         p.cfg, p.taxonomy, p.sentiment_labels = CFG, TAXO, SENT_LABELS
         p.base_url, p.model = "http://x:1234/v1", "m"
         p.temperature, p.timeout_s = 0.1, 5
         p.fallback_theme, p.prompt_version = "Autre / Non classé", "v1"
         p.max_parallel, p.retries = max_parallel, retries
+        p.max_tokens = 128
+        p.retry_backoff_s, p.retry_backoff_max_s = 0.0, 0.0
+        p.response_format_mode, p.response_format_fallback = "json_schema", "none"
+        p.warmup_enabled, p._warmup_done = warmup, False
+        p._warmup_lock = op.threading.Lock()
         return p
 
     VALID = {"themes": [{"niv1": N1, "niv2": N2, "sentiment": "Neutre", "confidence": 0.8}],
@@ -386,7 +436,19 @@ def run() -> None:
               [r["nb_themes"] for r in out])
         check("O4 : tous les verbatims traités", len(out) == 4)
 
-        # 2. Retries : échoue 2 fois puis réussit (retries=2).
+        # 2. Échauffement : un appel technique unique précède la rafale métier.
+        warmup_calls = []
+        def _warmup_call(*args, **kwargs):
+            warmup_calls.append((args[3], kwargs.get("response_format_mode")))
+            return dict(VALID)
+        op.call_llm_chat = _warmup_call
+        out_warmup = make_predictor(warmup=True).predict_cleaned_batch(["texte"], [None])
+        check("O4 : échauffement séquentiel unique avant classification",
+              len(warmup_calls) == 2 and warmup_calls[0][0] == op._WARMUP_USER
+              and out_warmup[0]["nb_themes"] == 1, warmup_calls)
+
+        # 3. Retries : échoue 2 fois puis réussit (retries=2), sans rafale immédiate
+        # dans la recette grâce à un backoff à zéro.
         calls = {"n": 0}
         def _flaky(*a, **k):
             calls["n"] += 1
@@ -397,7 +459,26 @@ def run() -> None:
         r = make_predictor(max_parallel=1, retries=2).predict_cleaned_batch(["texte"], [None])
         check("O4 : retry réussit après 2 échecs", r[0]["nb_themes"] >= 1 and calls["n"] == 3, calls["n"])
 
-        # 3. Fail-fast : LM Studio down -> LMStudioError propagée (lot 'failed').
+        # 4. Repli de compatibilité : après un refus durable du schéma (500),
+        # "none" est tenté puis repasse dans le mapper taxonomique. "none" (et non
+        # "json_object") est le repli configuré par défaut : testé en direct le
+        # 19/09/2026, ce LM Studio (Qwen2.5-VL-7B-Instruct) refuse "json_object"
+        # en HTTP 400 ("must be 'json_schema' or 'text'") mais accepte "none".
+        modes = []
+        def _schema_refused(*args, **kwargs):
+            mode = kwargs.get("response_format_mode")
+            modes.append(mode)
+            if mode == "json_schema":
+                raise op.LMStudioError("grammar refused", status_code=500, retryable=True,
+                                      response_format_mode=mode)
+            return dict(VALID)
+        op.call_llm_chat = _schema_refused
+        fallback_out = make_predictor(retries=0).predict_cleaned_batch(["texte"], [None])
+        check("O4 : HTTP 500 schéma -> repli 'none' contrôlé",
+              modes == ["json_schema", "none"] and fallback_out[0]["theme1_niv1"] == N1,
+              modes)
+
+        # 5. Fail-fast : LM Studio down -> LMStudioError propagée (lot 'failed').
         op.call_llm_chat = lambda *a, **k: (_ for _ in ()).throw(op.LMStudioError("down"))
         raised = False
         try:

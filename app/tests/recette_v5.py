@@ -100,6 +100,11 @@ def make_predictor(max_parallel=4, retries=0):
     p.temperature, p.timeout_s = 0.1, 5
     p.fallback_theme, p.fallback_niv2, p.prompt_version = "Autre / Non classé", "", "v1"
     p.max_parallel, p.retries = max_parallel, retries
+    p.max_tokens = 256
+    p.retry_backoff_s, p.retry_backoff_max_s = 0.0, 0.0
+    p.response_format_mode, p.response_format_fallback = "json_schema", "none"
+    p.warmup_enabled, p._warmup_done = False, False
+    p._warmup_lock = op.threading.Lock()
     return p
 
 
@@ -174,7 +179,7 @@ def run() -> None:
     try:
         captured: list[tuple[str, str]] = []
 
-        def _capture(base, model, system, user, temp, to):
+        def _capture(base, model, system, user, temp, to, **kwargs):
             captured.append((system, user))
             return dict(VALID)
 

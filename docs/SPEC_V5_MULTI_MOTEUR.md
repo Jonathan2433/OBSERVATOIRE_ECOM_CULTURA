@@ -317,7 +317,7 @@ Surcharge env : `ANTHROPIC_API_KEY`, `CLAUDE_ENABLED`, `CLAUDE_MODEL`.
 - Moteurs `real`/`stub`/`lmstudio` et front analyste : **inchangés** hors options opt-in.
 - `refiner_label = NULL` ⇒ pipeline V4 strictement identique.
 - Claude **jamais** dans un run de prod (refus serveur).
-- Recettes applicatives **V1 115/115, V3 13/13, V4 67/67, V5 115/115** restent vertes.
+- Recettes applicatives **V1 115/115, V3 13/13, V4 74/74, V5 115/115** restent vertes.
 
 ---
 
@@ -348,7 +348,7 @@ Chemin critique : **C1 → C2 → C3 → C4 → C5 → C6** (C2 ∥ C3 possibles
 - [ ] Garde-fous : offline strict **en production** intact ; anonymisation amont ; jamais
       hors taxonomie ; clé hors base/dépôt ; égress documenté + tracé audit.
 - [x] **Aucune régression** : `recette_v1` 115/115, `recette_v3` 13/13,
-      `recette_v4` 67/67 et `recette_v5` 115/115 ; campagne locale au vert.
+      `recette_v4` 74/74 et `recette_v5` 115/115 ; campagne locale au vert.
 
 ---
 
@@ -359,7 +359,7 @@ Chemin critique : **C1 → C2 → C3 → C4 → C5 → C6** (C2 ∥ C3 possibles
 | **Fuite de la posture offline** par un usage Claude en prod | Conformité RGPD | Refus serveur (Claude non activable, exclu des jobs de lot) + tests de recette dédiés. |
 | **Biais d'auto-évaluation** du juge (Claude juge Claude) | Comparaison faussée | Aveuglement + permutation (V5-D11) ; afficher clairement « juge = Claude » ; ne pas survendre le verdict. |
 | **Coût API** non maîtrisé | Budget | Échantillon plafonné, juge sur divergences seules, run admin-only, traçé. |
-| **Régression du moteur LM Studio** lors d'une évolution de `llm_common` | Casse V4/V5 | Contrats sélectionnés par moteur + recettes V4 67/67 et V5 115/115. |
+| **Régression du moteur LM Studio** lors d'une évolution de `llm_common` | Casse V4/V5 | Contrats sélectionnés par moteur + recettes V4 74/74 et V5 115/115. |
 | **Satisfaction absente** au replay | Sentiment dégradé en comparaison | **Levé le 15/09/2026** : la note est persistée en colonne dédiée (`results.satisfaction`, migration `0010`). Repli `original_columns` conservé pour les lots antérieurs, qui restent sans note. |
 | **Égress worker** bloqué chez le client | Comparaison/juge KO | Documenter le domaine `api.anthropic.com` à autoriser ; mode dégradé sinon. |
 

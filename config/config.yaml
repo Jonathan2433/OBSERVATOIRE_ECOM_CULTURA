@@ -488,8 +488,22 @@ lmstudio:
   taxonomy: "data/models/cultura_2026/taxonomy.json"
   temperature: 0.1
   timeout_s: 120
-  max_parallel: 4               # concurrence des appels (utilisée en O4)
+  # Défaut volontairement séquentiel : les VLM locaux échouent fréquemment si
+  # plusieurs requêtes arrivent pendant le chargement. N'augmenter qu'après une
+  # recette de charge concluante sur le poste cible.
+  max_parallel: 1
   retries: 2
+  retry_backoff_s: 2.0          # attente exponentielle entre 500/503/timeout transitoires
+  retry_backoff_max_s: 12.0
+  warmup_enabled: true          # requête technique séquentielle avant le premier verbatim du lot
+  max_tokens: 256               # borne la réponse JSON, sans tronquer le contrat attendu
+  response_format: "json_schema"          # mode nominal LM Studio
+  # Repli testé en direct le 19/09/2026 sur ce poste (Qwen2.5-VL-7B-Instruct) :
+  # "json_object" est REFUSÉ par ce serveur LM Studio (HTTP 400 : 'response_format.type'
+  # must be 'json_schema' or 'text'). "none" (aucun champ response_format, JSON demandé
+  # uniquement par le prompt) fonctionne. Ne pas remettre "json_object" sans revalider
+  # contre le serveur cible : le comportement dépend de la version de LM Studio / du runtime.
+  response_format_fallback: "none"        # seulement après échec durable du schéma (400/422/500)
   # L'ancien prompt `v1` reste implémenté pour rejouer les lots historiques.
   prompt_version: "v2-cultura-2026"
   contract_version: "cultura_2026"
