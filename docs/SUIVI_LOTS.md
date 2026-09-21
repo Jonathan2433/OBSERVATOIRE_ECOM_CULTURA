@@ -429,6 +429,26 @@ des thèmes. Leur éventuelle restitution exige un mapping validé séparément.
 
 ---
 
+## Correction manuelle depuis Résultats ✅ *(21 septembre 2026)*
+
+Jusqu'ici, la correction d'un verbatim (§ Revue humaine, L5) n'était accessible
+que depuis la file de revue, donc uniquement pour les verbatims que le moteur
+avait lui-même jugés incertains (`revue_requise=True`). Demande métier : pouvoir
+corriger **n'importe quel** verbatim, y compris ceux classés avec confiance.
+
+| Élément | État livré |
+|---|---|
+| Backend | Aucun changement de contrat : `PATCH /api/results/{id}` était déjà générique (pas de filtre sur `revue_requise`), ouvert à l'analyste comme à l'admin |
+| Front | Drawer de la page Résultats rendu éditable (bouton **Corriger**) ; formulaire extrait de la Revue vers un composant partagé (`components/CorrectionForm.tsx`) pour garantir des règles identiques (taxonomie du lot, saisie libre, contrainte niv.1→niv.2, signaux) |
+| Hors périmètre | Pas de bouton « Valider tel quel » depuis Résultats (n'a de sens que pour sortir un verbatim de la file de revue) ; pas de correction en masse |
+| Recette | `app/tests/recette_v7.py` — correction d'un résultat hors file de revue : `revue_requise` non modifié, traçabilité identique, visible « corrigé » dans Résultats et dans l'export de ré-entraînement, second thème et saisie libre fonctionnels depuis un résultat auto |
+
+**Validation du 21/09/2026** : `recette_v7` **17/17**, régression `recette_v1`
+**115/115 (1 skip)** · `recette_v3` **13/13** · `recette_v4` **88/88** ·
+`recette_v5` **115/115** · `recette_v6` **42/42**, `tsc --noEmit` OK.
+
+---
+
 ## Journal de décisions (ADR-lite)
 
 | # | Date | Décision | Justification |
@@ -483,3 +503,4 @@ des thèmes. Leur éventuelle restitution exige un mapping validé séparément.
 | D48 | 2026-09-18 | **Le croisement thème × sentiment est dépliable jusqu'au sous-thème** sur les dashboards lot et global ; un seul parent est ouvert à la fois et les enfants partagent l'échelle du graphique | Le métier doit pouvoir localiser l'irritant précis sans perdre la comparaison des volumes. L'API publie une hiérarchie additive issue des couples persistés et conserve `theme_sentiment` pour compatibilité |
 | D49 | 2026-09-18 | **Les répartitions N1/N2 sont classables par volume total, négatif, neutre ou positif**, pour les angles principal, toutes mentions et secondaire ; les zéros restent visibles | Un tri construit depuis le seul agrégat toutes mentions fausserait les vues principal/secondaire. L'API publie donc un bloc additif par angle ; le composant partagé applique le même critère sur les dashboards lot et global sans nouvel appel réseau |
 | D50 | 2026-09-18 | **LM Studio adopte le contrat `v2-cultura-2026`** : référentiel 11/59 dédié, un thème par défaut, bi-thème limité à deux sujets explicites, sentiment unique et priorité au négatif ; repli canonique `Général / Autre` | Le moteur LLM reposait encore sur la classification POC. Le mapper réapplique D-26 de façon déterministe si le modèle désobéit au prompt ; le référentiel LM est publié dans le registre et servi à la revue, y compris en fin de cascade. Claude reste en V1 pour isoler le changement |
+| D51 | 2026-09-21 | **La correction manuelle est ouverte à tous les verbatims depuis Résultats**, avec la même règle de permission (analyste + admin) que la file de revue, et sans bouton « Valider tel quel » hors file | Demande métier : corriger une classification même quand le moteur ne l'a pas lui-même mise en doute. Le endpoint `PATCH /api/results/{id}` était déjà générique ; seul le front limitait la correction à la file de revue. « Valider tel quel » n'a de sens que pour sortir un verbatim d'une file qu'un résultat auto n'a jamais rejointe |

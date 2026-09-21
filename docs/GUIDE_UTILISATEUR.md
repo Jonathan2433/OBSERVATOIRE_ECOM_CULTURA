@@ -79,6 +79,21 @@ Le panneau de détail d'une ligne affiche aussi ces éléments de traçabilité.
 Pour les lots historiques, une information non reconstructible reste vide : elle
 n'est jamais remplacée par une date ou un nom supposé.
 
+### Corriger un verbatim directement depuis les Résultats
+
+Le bouton **« Corriger »** du panneau de détail permet de modifier la
+classification de **n'importe quel** verbatim — pas seulement ceux que le moteur
+a lui-même mis en doute (statut **en revue**). Un verbatim classé **auto** avec
+confiance peut donc, lui aussi, être corrigé si l'analyse s'avère erronée.
+
+Le formulaire est identique à celui de la Revue (thème niv.1/niv.2 contraint par
+la taxonomie du moteur qui a produit ce lot, saisie libre possible, sentiment,
+second thème, signaux — voir §4 pour le détail de ces règles). La correction est
+enregistrée et tracée de la même façon, et le statut affiché passe immédiatement
+à **corrigé**. Il n'y a en revanche pas de bouton « Valider tel quel » ici : ce
+geste n'a de sens que dans la file de revue, qu'un verbatim « auto » n'a jamais
+rejointe.
+
 La référence prend la forme `REP-XXXXXXXXXXXXXXXX`. Elle permet de reconnaître
 plusieurs verbatims issus de la même réponse sans révéler l'identifiant du
 formulaire ni un numéro de commande. Ce n'est pas une donnée permettant de

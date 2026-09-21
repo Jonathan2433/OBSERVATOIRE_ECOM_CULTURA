@@ -1,10 +1,16 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { exportUrl, getMeta, listResults, type ResultFilters, type ResultRow, type ResultsResponse } from "../api";
+import {
+  correctResult, exportUrl, getMeta, getTaxonomy, listResults,
+  type ResultFilters, type ResultRow, type ResultsResponse, type TaxonomyTheme,
+} from "../api";
 import { Badge, type BadgeTone, Button, Card, Chip, Drawer, EmptyState, InfoTip, Input, Select, Spinner } from "../ui";
 import { CLIENT_STATUS_LABELS, satisfactionOnTen, SOURCE_LABELS } from "../satisfactionDisplay";
 import { useAnalysisFilters } from "../analysisFilters";
 import AnalysisFiltersBar from "../components/AnalysisFiltersBar";
+import {
+  buildCorrectionPayload, CorrectionFields, draftFromResult, isCorrectionValid, type CorrectionDraft,
+} from "../components/CorrectionForm";
 
 const PAGE = 50;
 
@@ -124,9 +130,63 @@ export default function ResultsPage() {
   // information l'affichage retombe sur son comportement d'origine.
   const [nonMesures, setNonMesures] = useState<string[]>([]);
 
+  // Correction depuis Résultats : référentiel du lot (D31, jamais celui du
+  // moteur actif) + brouillon d'édition du verbatim ouvert dans le Drawer.
+  const [themes, setThemes] = useState<TaxonomyTheme[]>([]);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<CorrectionDraft | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   useEffect(() => {
     getMeta().then((m) => setNonMesures(m.signaux_non_mesures ?? [])).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    getTaxonomy(batchId).then((t) => setThemes(t.themes)).catch(() => setThemes([]));
+  }, [batchId]);
+
+  const openDetail = (r: ResultRow) => {
+    setSelected(r);
+    setEditing(false);
+    setDraft(null);
+    setSaveError(null);
+  };
+  const closeDetail = () => {
+    setSelected(null);
+    setEditing(false);
+    setDraft(null);
+    setSaveError(null);
+  };
+  const startEdit = () => {
+    if (!selected) return;
+    setDraft(draftFromResult(selected));
+    setSaveError(null);
+    setEditing(true);
+  };
+  const cancelEdit = () => {
+    setEditing(false);
+    setDraft(null);
+    setSaveError(null);
+  };
+  const saveEdit = async () => {
+    if (!selected || !draft || saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const updated = await correctResult(selected.id, buildCorrectionPayload(draft, "correct"));
+      setData((d) => (d ? { ...d, items: d.items.map((it) => (it.id === updated.id ? updated : it)) } : d));
+      setSelected(updated);
+      setEditing(false);
+      setDraft(null);
+      // La correction a pu introduire un nouveau couple thème/sous-thème.
+      getTaxonomy(batchId).then((t) => setThemes(t.themes)).catch(() => { /* garde l'ancien */ });
+    } catch (e: any) {
+      setSaveError(e?.message ?? "Erreur");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   useEffect(() => {
     listResults(batchId, { ...filters, ...analysisFilters, limit: PAGE, offset })
@@ -194,7 +254,7 @@ export default function ResultsPage() {
                     </thead>
                     <tbody>
                       {data.items.map((r) => (
-                        <tr key={r.id} className="is-clickable" onClick={() => setSelected(r)}>
+                        <tr key={r.id} className="is-clickable" onClick={() => openDetail(r)}>
                           <td className="result-feedback">
                             <div className="ui-row ui-row--wrap" style={{ gap: 6 }}>
                               <Badge tone="neutral">{SOURCE_LABELS[r.source ?? ""] ?? r.source ?? "source inconnue"}</Badge>
@@ -227,41 +287,76 @@ export default function ResultsPage() {
         )}
       </div>
 
-      <Drawer open={!!selected} title={selected ? `Verbatim #${selected.row_index}` : ""} onClose={() => setSelected(null)}>
+      <Drawer open={!!selected} title={selected ? `Verbatim #${selected.row_index}` : ""} onClose={closeDetail}>
         {selected && (
           <div className="ui-stack">
             <div className="ui-verbatim">{selected.verbatim_analyse}</div>
-            <dl className="ui-dl">
-              <dt>Source</dt><dd>{SOURCE_LABELS[selected.source ?? ""] ?? selected.source ?? "—"}</dd>
-              <dt>Fichier source</dt><dd>{selected.source_file ?? "—"}</dd>
-              <dt>Référence réponse</dt><dd><code>{selected.response_reference ?? "—"}</code></dd>
-              <dt>Date de publication</dt><dd>{formatDate(selected.response_date)}</dd>
-              <dt>Date de traitement du lot</dt><dd>{formatDate(selected.batch_processed_at, true)}</dd>
-              <dt>Statut client</dt><dd>{selected.client_status
-                ? CLIENT_STATUS_LABELS[selected.client_status]
-                : "Statut client non disponible"}</dd>
-              <dt>Note client</dt><dd><SatisfactionPill note={selected.satisfaction_native} scale={selected.satisfaction_scale_max} /></dd>
-              <dt>Nombre de thèmes</dt><dd>{selected.nb_themes || "—"}</dd>
-              <dt>Thème 1</dt>
-              <dd>
-                {selected.theme1_niv1 ? `${selected.theme1_niv1}${selected.theme1_niv2 ? ` / ${selected.theme1_niv2}` : ""}` : "—"}
-                {selected.theme1_score != null ? ` (${selected.theme1_score.toFixed(2)})` : ""}
-                {selected.theme1_niv1 && (
-                  <> <Badge tone={sentimentTone(selected.theme1_sentiment)}>{selected.theme1_sentiment ?? "—"}</Badge></>
-                )}
-              </dd>
-              <dt>Thème 2</dt>
-              <dd>
-                {selected.theme2_niv1 ? `${selected.theme2_niv1}${selected.theme2_niv2 ? ` / ${selected.theme2_niv2}` : ""}` : "—"}
-                {selected.theme2_score != null ? ` (${selected.theme2_score.toFixed(2)})` : ""}
-                {selected.theme2_niv1 && (
-                  <> <Badge tone={sentimentTone(selected.theme2_sentiment)}>{selected.theme2_sentiment ?? "—"}</Badge></>
-                )}
-              </dd>
-              <dt>Signaux</dt><dd><SignalBadges r={selected} nonMesures={nonMesures} /></dd>
-              <dt>Confiance</dt><dd>{selected.confidence_globale != null ? selected.confidence_globale.toFixed(2) : "—"}</dd>
-              <dt>Statut</dt><dd>{selected.corrected ? "corrigé" : selected.revue_requise ? "en revue" : "auto"}</dd>
-            </dl>
+
+            {!editing ? (
+              <>
+                <dl className="ui-dl">
+                  <dt>Source</dt><dd>{SOURCE_LABELS[selected.source ?? ""] ?? selected.source ?? "—"}</dd>
+                  <dt>Fichier source</dt><dd>{selected.source_file ?? "—"}</dd>
+                  <dt>Référence réponse</dt><dd><code>{selected.response_reference ?? "—"}</code></dd>
+                  <dt>Date de publication</dt><dd>{formatDate(selected.response_date)}</dd>
+                  <dt>Date de traitement du lot</dt><dd>{formatDate(selected.batch_processed_at, true)}</dd>
+                  <dt>Statut client</dt><dd>{selected.client_status
+                    ? CLIENT_STATUS_LABELS[selected.client_status]
+                    : "Statut client non disponible"}</dd>
+                  <dt>Note client</dt><dd><SatisfactionPill note={selected.satisfaction_native} scale={selected.satisfaction_scale_max} /></dd>
+                  <dt>Nombre de thèmes</dt><dd>{selected.nb_themes || "—"}</dd>
+                  <dt>Thème 1</dt>
+                  <dd>
+                    {selected.theme1_niv1 ? `${selected.theme1_niv1}${selected.theme1_niv2 ? ` / ${selected.theme1_niv2}` : ""}` : "—"}
+                    {selected.theme1_score != null ? ` (${selected.theme1_score.toFixed(2)})` : ""}
+                    {selected.theme1_niv1 && (
+                      <> <Badge tone={sentimentTone(selected.theme1_sentiment)}>{selected.theme1_sentiment ?? "—"}</Badge></>
+                    )}
+                  </dd>
+                  <dt>Thème 2</dt>
+                  <dd>
+                    {selected.theme2_niv1 ? `${selected.theme2_niv1}${selected.theme2_niv2 ? ` / ${selected.theme2_niv2}` : ""}` : "—"}
+                    {selected.theme2_score != null ? ` (${selected.theme2_score.toFixed(2)})` : ""}
+                    {selected.theme2_niv1 && (
+                      <> <Badge tone={sentimentTone(selected.theme2_sentiment)}>{selected.theme2_sentiment ?? "—"}</Badge></>
+                    )}
+                  </dd>
+                  <dt>Signaux</dt><dd><SignalBadges r={selected} nonMesures={nonMesures} /></dd>
+                  <dt>Confiance</dt><dd>{selected.confidence_globale != null ? selected.confidence_globale.toFixed(2) : "—"}</dd>
+                  <dt>Statut</dt><dd>{selected.corrected ? "corrigé" : selected.revue_requise ? "en revue" : "auto"}</dd>
+                </dl>
+                <div className="ui-row">
+                  <div className="ui-spacer" />
+                  <Button variant="secondary" size="sm" onClick={startEdit}>Corriger</Button>
+                </div>
+              </>
+            ) : draft && (
+              <div className="ui-stack">
+                <div className="ui-row ui-row--wrap" style={{ fontSize: "var(--fs-sm)" }}>
+                  <span className="ui-muted">Classification actuelle :</span>
+                  <Badge tone="neutral">1 · {selected.theme1_niv1} / {selected.theme1_niv2}</Badge>
+                  <Badge tone="neutral">{selected.theme1_sentiment}</Badge>
+                  {selected.theme2_niv1 && (
+                    <>
+                      <Badge tone="info">2 · {selected.theme2_niv1} / {selected.theme2_niv2}</Badge>
+                      <Badge tone="info">{selected.theme2_sentiment || "sentiment non renseigné"}</Badge>
+                    </>
+                  )}
+                  <span className="ui-muted">confiance {selected.confidence_globale?.toFixed(2) ?? "—"}</span>
+                </div>
+
+                <CorrectionFields themes={themes} draft={draft} onChange={setDraft} />
+
+                {saveError && <p className="ui-field__error">{saveError}</p>}
+                <div className="ui-row" style={{ marginTop: "var(--sp-2)" }}>
+                  <Button variant="ghost" disabled={saving} onClick={cancelEdit}>Annuler</Button>
+                  <div className="ui-spacer" />
+                  <Button variant="primary" loading={saving} disabled={!isCorrectionValid(draft)} onClick={saveEdit}>
+                    Enregistrer
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </Drawer>
