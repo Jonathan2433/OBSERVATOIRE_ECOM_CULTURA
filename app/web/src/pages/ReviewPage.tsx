@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
-  correctResult, exportCorrectionsUrl, getReviewQueue, getTaxonomy,
+  correctResult, exportCorrectionsUrl, getFilteredReviewQueue, getTaxonomy,
   type ResultRow, type TaxonomyTheme,
 } from "../api";
 import { Badge, Button, Card, Chip, EmptyState, Input, ProgressBar, Select, Spinner } from "../ui";
+import { useAnalysisFilters } from "../analysisFilters";
+import AnalysisFiltersBar from "../components/AnalysisFiltersBar";
+import { SOURCE_LABELS } from "../satisfactionDisplay";
 
 const SENTIMENTS = ["Négatif", "Neutre", "Positif"];
 // Valeur sentinelle de la liste déroulante : bascule le champ en saisie libre.
@@ -24,6 +27,13 @@ const emptyTheme = (): ThemeDraft => ({
 });
 
 const norm = (s: string) => s.trim().toLowerCase();
+
+function formatResponseDate(value?: string | null): string {
+  if (!value) return "Date non disponible";
+  return new Intl.DateTimeFormat("fr-FR", {
+    day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC",
+  }).format(new Date(`${value}T00:00:00Z`));
+}
 
 /** Éditeur réutilisé pour le thème principal et le second thème. */
 function ThemeEditor({
@@ -130,6 +140,7 @@ export default function ReviewPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const initialTotal = useRef(0);
+  const { filters: analysisFilters, setFilters: setAnalysisFilters } = useAnalysisFilters();
 
   const [primary, setPrimary] = useState<ThemeDraft>(emptyTheme);
   const [secondary, setSecondary] = useState<ThemeDraft>(emptyTheme);
@@ -139,7 +150,7 @@ export default function ReviewPage() {
   const [sigI, setSigI] = useState(false);
 
   const loadNext = () => {
-    getReviewQueue(batchId, 0, 1)
+    getFilteredReviewQueue(batchId, analysisFilters, 0, 1)
       .then((r) => {
         setLoaded(true);
         setRemaining(r.total);
@@ -163,10 +174,12 @@ export default function ReviewPage() {
   };
 
   useEffect(() => {
+    setLoaded(false);
+    initialTotal.current = 0;
     getTaxonomy(batchId).then((t) => setThemes(t.themes)).catch(() => setThemes([]));
     loadNext();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [batchId]);
+  }, [batchId, analysisFilters]);
 
   const enableSecondary = () => {
     const first = themes[0];
@@ -220,6 +233,7 @@ export default function ReviewPage() {
 
   return (
     <div>
+      <AnalysisFiltersBar filters={analysisFilters} onChange={setAnalysisFilters} />
       {error && <p className="ui-field__error">{error}</p>}
       {!loaded && <Spinner label="Chargement de la file…" />}
 
@@ -239,6 +253,28 @@ export default function ReviewPage() {
           ) : (
             <Card title={`Verbatim #${item.row_index}`}>
               <div className="ui-stack">
+                <section className="review-context" aria-label="Contexte du retour client">
+                  <div className="review-context__source">
+                    <span className="ui-field__label">Contexte du retour</span>
+                    <Badge tone="info">
+                      {SOURCE_LABELS[item.source ?? ""] ?? item.source ?? "Source non disponible"}
+                    </Badge>
+                  </div>
+                  <dl className="review-context__details">
+                    <div>
+                      <dt>Fichier source</dt>
+                      <dd title={item.source_file ?? undefined}>{item.source_file ?? "Non disponible"}</dd>
+                    </div>
+                    <div>
+                      <dt>Référence réponse</dt>
+                      <dd><code>{item.response_reference ?? "Non disponible"}</code></dd>
+                    </div>
+                    <div>
+                      <dt>Date du retour</dt>
+                      <dd>{formatResponseDate(item.response_date)}</dd>
+                    </div>
+                  </dl>
+                </section>
                 <div className="ui-verbatim" style={{ fontStyle: "italic" }}>« {item.verbatim_analyse} »</div>
                 <div className="ui-row ui-row--wrap" style={{ fontSize: "var(--fs-sm)" }}>
                   <span className="ui-muted">Proposition modèle :</span>

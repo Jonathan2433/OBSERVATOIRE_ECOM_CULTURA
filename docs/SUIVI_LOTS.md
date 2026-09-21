@@ -183,6 +183,66 @@ Critères d'acceptation :
 
 **Validation automatisée** : test E2E FastAPI/SQLite **14/14 OK** (crosstab lot+global, config get/patch/validation, purge, audit des actions clés, RBAC analyste→403).
 **Validation PO le 2026-06-18** : stack reconstruite (`down -v` + `up --build`, migration 0005 appliquée), traitement de lot, page Administration et graphe thème×sentiment validés sur le poste.
+
+### Amélioration dataviz — priorisation des irritants *(18 septembre 2026)*
+
+Les deux graphiques **thème × sentiment** — lot et volumétrie globale — utilisent
+le même ordre métier : nombre absolu de mentions négatives décroissant, puis
+volume total décroissant et libellé alphabétique. Le composant partagé rend la
+règle visible sous la légende. Les valeurs, la longueur totale des barres, les
+segments et l'agrégation thème principal + second thème restent inchangés. Le tri
+est recalculé sur le périmètre de données reçu par le graphique.
+
+### Amélioration dataviz — navigation Niveau 1 vers Niveau 2 *(18 septembre 2026)*
+
+Dans la répartition des thèmes d'un lot, chaque barre de niveau 1 est un contrôle
+accessible à la souris et au clavier. Sa sélection limite le tableau de niveau 2
+aux sous-thèmes réellement classés sous ce parent. L'API publie pour cela une
+hiérarchie additive calculée depuis les couples persistés, corrections humaines
+comprises, pour les angles thème principal, toutes mentions et second thème.
+Les distributions plates historiques restent inchangées pour compatibilité.
+
+**Validation du 18/09/2026** : recette V1 **104/104**, recette V6 **36/36**,
+tests KPI répondant **10/10**, type-check TypeScript et build Vite au vert.
+
+### Amélioration dataviz — parité entre lot et tableau de bord global *(18 septembre 2026)*
+
+La vue globale reprend désormais la même lecture hiérarchique que le tableau de
+bord d'un lot : bascule « thème principal / toutes mentions », panneaux Niveau 1
+et Niveau 2, sélection du parent et vue dédiée au second thème. Un composant React
+unique porte ces interactions sur les deux écrans. L'endpoint de volumétrie publie
+les sous-thèmes et les hiérarchies globales de façon additive, en respectant les
+filtres source/date et les couples réellement persistés.
+
+**Validation du 18/09/2026** : recette V1 **107/107**, recette V6 **36/36**,
+tests KPI répondant **10/10**, type-check TypeScript et build Vite au vert.
+
+### Amélioration dataviz — sentiments dépliables par sous-thème *(18 septembre 2026)*
+
+Les graphiques **thème × sentiment** du lot et du tableau de bord global sont
+désormais hiérarchiques : sélectionner une ligne de niveau 1 affiche juste
+dessous ses sous-thèmes, avec le volume et la répartition Négatif / Neutre /
+Positif propres à chacun. Un second clic replie la ligne et un seul parent reste
+ouvert à la fois. L'agrégation additionne les thèmes de rang 1 et 2 avec leur
+sentiment respectif, utilise les couples persistés et respecte le périmètre
+source/date actif. Le champ historique de niveau 1 reste inchangé.
+
+**Validation du 18/09/2026** : recette V1 **110/110**, recette V6 **36/36**,
+type-check TypeScript et build Vite au vert.
+
+### Amélioration dataviz — classement des répartitions par sentiment *(18 septembre 2026)*
+
+La carte partagée **Répartition des thèmes** des dashboards lot et global propose
+désormais quatre classements : volume total, nombre absolu de mentions négatives,
+neutres ou positives. Le choix pilote simultanément l'ordre, les barres et les
+valeurs des niveaux 1 et 2, y compris après sélection d'un parent et dans la vue
+du second thème. Les comptes sont isolés par angle côté API, respectent les
+filtres source/date et les corrections persistées. Les thèmes à zéro restent
+visibles ; les champs historiques de l'API sont conservés.
+
+**Validation du 18/09/2026** : recette V1 **115/115**, recette V6 **42/42**,
+tri front ciblé **4/4**, type-check TypeScript et build Vite au vert.
+
 ## L8 — Durcissement, RGPD, perf, recette V1 ✅ (validé PO le 2026-06-18 — V1 complète)
 
 **Objectif** : clore la V1 — sécurité, conformité RGPD/offline, performance, recette §11, documentation.
@@ -200,7 +260,7 @@ Critères d'acceptation :
 
 ---
 
-## V4 — Second moteur « LM Studio » (LLM local) ✅ *(développé, recette 50/50)*
+## V4 — Second moteur « LM Studio » (LLM local) ✅ *(développé, recette 67/67)*
 
 **Objectif** : ajouter un moteur de classification alternatif (LLM local via LM Studio,
 API compatible OpenAI), sélectionnable côté admin, **sans rien changer** à l'app actuelle
@@ -209,17 +269,18 @@ API compatible OpenAI), sélectionnable côté admin, **sans rien changer** à l
 | Lot | Contenu | État |
 |---|---|---|
 | **O1** | Adaptateur `LMStudioPredictor` (interface commune, client `urllib`), dispatch `kind="lmstudio"`, `MODEL_KIND_LMSTUDIO`, bloc config `lmstudio:`, surcharge env, `extra_hosts` compose | ✅ |
-| **O2** | Prompt versionné + injection taxo + `response_format` JSON schema + **matching tolérant** (casse/accents) + repli sentinelle `Autre / Non classé` + garde-fous (2 plafonds, conflit de sentiment, dé-doublonnage) | ✅ |
-| **O3** | `_detect_lmstudio` (ping `/v1/models` + présence modèle), sync registre, `available` dynamique, onglet **Modèles** (badge, motif d'indisponibilité, Re-scanner = test de connexion) | ✅ |
+| **O2** | Prompts V1/V2 + injection taxo + `response_format` JSON schema + **matching tolérant** (casse/accents) + repli canonique V2 `Général / Autre` + garde-fous (2 plafonds, D-26, dé-doublonnage) | ✅ |
+| **O3** | `_detect_lmstudio` (ping `/v1/models` + présence modèle/référentiel), sync registre avec versions de prompt/contrat, `available` dynamique, onglet **Modèles** | ✅ |
 | **O4** | Concurrence bornée (`max_parallel`, pool de threads, ordre préservé), retries transitoires, **fail-fast / échec propre** si LM Studio down, annulation coopérative respectée | ✅ |
-| **O5** | Doc (EXPLOITATION §4 bis, TRANSMISSION, guide), recette V4, tag `v4.0` | ✅ |
+| **O5** | Alignement Cultura 2026 (11/59, bi-thème contrôlé, sentiment unique), référentiel API, doc et recette V4 | ✅ |
 
 **Garde-fous tenus** : `enabled: false` par défaut (app inchangée sans LM Studio) ; **0 migration
 DB, 0 nouvelle route API, 0 changement front analyste/CamemBERT/stub** ; anonymisation amont
 conservée ; jamais hors taxonomie (revalidation + repli) ; aucun flux hors machine.
 
-**Validation automatisée** : `app/tests/recette_v4.py` **50/50 OK** (LM Studio mocké, torch-free),
-non-régression **V1 48/48** + **V3 13/13**, `tsc`/build front OK, `docker compose config` OK.
+**Validation automatisée** : `app/tests/recette_v4.py` **67/67 OK** et
+`app/tests/recette_v5.py` **115/115 OK** (LLM mockés, torch-free). Couverture ajoutée :
+prompts proposeur/raffineur V2, taxonomie 11/59, D-26, repli canonique, registre et revue.
 **Reste (recette PO sur poste)** : installer LM Studio, charger un modèle + démarrer le serveur
 local, activer le moteur, traiter un lot et juger la qualité/latence vs CamemBERT (SLA détendue).
 
@@ -295,7 +356,8 @@ table `judge_verdicts`) ; non-régression **V1 48/48 · V3 13/13 · V4 50/50** ;
 - [x] Page Comparaison : accord inter-moteurs, win-rate (juge), confiance, latence, exemples commentés ; **mode dégradé** fonctionnel sans clé.
 - [x] Juge **aveuglé + permuté** ; appels limités aux divergences ; échantillon plafonné.
 - [x] Garde-fous : offline strict **en production** intact ; anonymisation amont ; jamais hors taxonomie ; clé hors base/dépôt ; égress documenté + tracé audit.
-- [x] **Aucune régression** : `recette_v1` 48/48, `recette_v3` 13/13, `recette_v4` 50/50, `recette_v5` 112/112 ; `tsc`/build front OK ; `docker compose config` OK.
+- [x] **Aucune régression** : état courant `recette_v1` 115/115, `recette_v3` 13/13,
+  `recette_v4` 67/67, `recette_v5` 115/115 et `recette_v6` 42/42.
 - [ ] **Tag `v5.0`** : à poser **après** validation PO + merges `--no-ff` des branches `v5/1`→`v5/6` sur `main`.
 
 > **Reste hors lots V5** : merges `--no-ff` (sur feu vert PO) puis tag `v5.0` ; recette PO sur poste
@@ -328,6 +390,42 @@ l'entraînement.
 bi-thèmes **2,97 %** pour 3,47 % annotés (dans la bande ±1,5×).
 
 Détail : [COUCHE_DECISION.md](COUCHE_DECISION.md) · [RECETTE_NOUVEAU_MODELE.md](RECETTE_NOUVEAU_MODELE.md)
+
+---
+
+## Restitution métier — satisfaction et analyse ✅ *(17 septembre 2026)*
+
+| Élément | État livré |
+|---|---|
+| Satisfaction | Une voix par `survey_response`, note native conservée, affichage sur 10 explicite |
+| Sources | Les quatre sources attendues restent visibles ; une source non reçue est distinguée d'un zéro mesuré |
+| Statut client | `Ancien`, `Nouveau` et « Statut client non disponible » restent visibles pour MDTC ; Mopinion n'invente aucun statut |
+| Comparaison | Période issue des dates de réponse, référence automatique ou explicite, delta en points sur 10 |
+| Classifications | Top 5 par source sur les réponses textuelles ouvertes uniquement ; questions fermées exclues |
+| Historique | Migrations additives `0011` et `0012`, sans rétro-remplissage impossible |
+
+**Validation du 17/09/2026** : `recette_v1` **101/101**, tests KPI répondant
+**10/10**, build Vite et type-check TypeScript OK, build Docker API/Web OK,
+contrôle live du lot 20 effectué. Recette L1a locale : **3 OK · 0 ÉCHEC ·
+1 SKIP**, le parcours réel étant explicitement ignoré sans `fr_core_news_sm`.
+
+### Traçabilité source/date et filtres transversaux ✅ *(17 septembre 2026)*
+
+| Élément | État livré |
+|---|---|
+| Import | Chemin technique et nom original séparés ; compatibilité avec les anciens lots |
+| Verbatim | Type et fichier source, référence de réponse pseudonymisée, date de publication et date de traitement exposés dans l'API et la revue |
+| Confidentialité | Référence `REP-…` dérivée par second hachage ; aucun identifiant source ni numéro de commande brut exposé |
+| Exports | Résultats CSV/XLSX et corrections validées enrichis des quatre champs de traçabilité |
+| Filtres | Multi-sources + plage inclusive de publication sur Résultats, Revue, KPI lot et tableaux globaux |
+| Agrégats | Volumes, thèmes, sentiments, signaux et satisfaction recalculés sur le périmètre filtré |
+| Performance | Index Alembic `0013_analysis_source_date_index` |
+
+**Validation du 18/09/2026** : `recette_v1` **111/111**, `recette_v6`
+**42/42**, tests KPI répondant **10/10**, type-check TypeScript et build Vite OK.
+
+**Décision restant au métier** : les questions fermées ne sont pas assimilées à
+des thèmes. Leur éventuelle restitution exige un mapping validé séparément.
 
 ---
 
@@ -374,3 +472,14 @@ Détail : [COUCHE_DECISION.md](COUCHE_DECISION.md) · [RECETTE_NOUVEAU_MODELE.md
 | D37 | 2026-09-15 | **La restitution compte les DEUX thèmes.** Chaque répartition est publiée sous deux angles explicites — *thème principal* (un verbatim, une voix) et *toutes mentions* (thème 1 + thème 2) — et le second thème est aussi publié seul | Le modèle retient jusqu'à deux thèmes ; ne compter que le premier sous-comptait structurellement les thèmes d'appui. Mesuré sur un lot réel de 561 verbatims : le thème `Académie` n'apparaît **jamais** en principal et 4 fois en second, donc il était invisible. Les deux angles sont gardés séparés parce qu'une somme supérieure au volume du lot se lirait sinon comme une erreur de comptage |
 | D38 | 2026-09-15 | **La note de satisfaction est persistée** en colonne dédiée `results.satisfaction` (échelle commune 1-4, migration `0010`), et un indicateur de satisfaction déclarée est publié à côté du signal d'insatisfaction | La note alimentait le modèle mais n'était conservée nulle part : sur le chemin Cultura 2026 la liste blanche (D-18) ne laisse passer aucune colonne d'origine. Sans colonne dédiée, aucun taux de satisfaction n'était calculable — seuls les mécontents étaient comptés. Une note est **nullable** : absente, elle est comptée à part et ne pèse sur aucune moyenne. Les lots antérieurs à la migration restent sans note |
 | D39 | 2026-09-15 | **Les colonnes de texte libre du fichier source ne sont plus recopiées** dans `results.original_columns` | Constat : le chargeur historique y recopiait TOUTES les colonnes, dont le verbatim **brut**. Les PII que l'anonymiseur venait de masquer revenaient donc en base et dans l'export enrichi, à côté de leur version masquée. Vérifié en recette : `CMD998877` et un numéro de téléphone étaient persistés en clair. Exclusion pilotée par `config.yaml` (colonnes de texte déclarées), donc liste **noire** : la liste blanche (D-18) du chemin 2026 reste la forme robuste et la cible |
+| D40 | 2026-09-17 | **Comparaison inter-lots sur la période métier** : la date de réponse est persistée à la maille répondant ; référence automatique = dernier lot terminé strictement antérieur et non chevauchant, référence manuelle possible | La date de création du lot mesure l'upload, pas la période analysée. L'utiliser ferait apparaître un export d'août déposé en septembre comme une évolution de septembre. Les anciens lots sans date restent explicitement non comparables |
+| D41 | 2026-09-17 | **Delta de satisfaction en points sur 10**, séparé par source et accompagné des deux effectifs ; KPI modèle comparés uniquement à modèle compatible, taux de revue également à seuil identique | `+0,1` doit signifier `8,1 → 8,2`, pas `+10 %`. Les volumes et notes déclarées sont indépendants du modèle ; thèmes, signaux et revue ne le sont pas |
+| D42 | 2026-09-17 | **Synthèse métier simplifiée** : cartes de satisfaction par source puis top 5 des sous-thèmes, avec volume, part, rang et évolution ; détails techniques relégués au second niveau | Une évolution de volume seule est trompeuse si le lot change de taille. La part et les deux dénominateurs rendent la comparaison interprétable. Les classifications portent sur tous les verbatims ; elles ne sont jamais confondues avec le signal ML d'insatisfaction |
+| D43 | 2026-09-17 | **Couverture attendue rendue explicite** : les quatre sources et les trois statuts MDTC restent visibles ; une source non reçue est distinguée d'un zéro mesuré ; les classifications sont libellées comme une analyse des seules réponses ouvertes | Masquer les segments vides faisait croire que « Nouveau » ou Mopinion mobile n'étaient pas gérés. Le libellé technique `non_renseigne` était aussi confondu avec une note absente, tandis que les thèmes automatiques pouvaient être interprétés comme intégrant les questions fermées |
+| D44 | 2026-09-17 | **Un seul périmètre source/date pour toute l'analyse** : sélection multi-sources et plage inclusive sur la date de publication, partagées par Résultats, Revue, exports et KPI | Filtrer seulement le tableau laisserait les graphiques afficher un autre univers. Les agrégats sont donc recalculés côté base ; une date absente est exclue d'une plage explicite et n'est jamais remplacée par la date d'upload |
+| D45 | 2026-09-17 | **Traçabilité par verbatim** : nom original du fichier séparé du chemin technique, `response_date` pour la publication et `finished_at` pour le traitement | Le renommage interne sécurise les uploads mais détruisait la provenance métier visible. Les champs existants portent déjà les deux dates ; aucun duplicat de donnée n'est créé, et les lots historiques restent lisibles sans inventer l'information manquante |
+| D46 | 2026-09-18 | **Le drill-down N1 → N2 utilise les couples persistés**, dans l'angle et le périmètre source/date actifs ; les agrégats plats sont conservés | Reconstruire la parenté depuis la seule taxonomie active ignorerait les corrections humaines et pourrait servir un référentiel différent de celui du lot. Un contrat API additif évite aussi toute rupture des consommateurs existants |
+| D47 | 2026-09-18 | **La répartition hiérarchique est un composant partagé entre la vue lot et la vue globale** ; l'API globale publie N1, N2 et leurs couples pour les trois angles | La duplication visuelle faisait diverger les deux tableaux de bord et la vue globale ne pouvait pas relier un sous-thème à son parent. Le contrat reste additif et les champs historiques sont conservés |
+| D48 | 2026-09-18 | **Le croisement thème × sentiment est dépliable jusqu'au sous-thème** sur les dashboards lot et global ; un seul parent est ouvert à la fois et les enfants partagent l'échelle du graphique | Le métier doit pouvoir localiser l'irritant précis sans perdre la comparaison des volumes. L'API publie une hiérarchie additive issue des couples persistés et conserve `theme_sentiment` pour compatibilité |
+| D49 | 2026-09-18 | **Les répartitions N1/N2 sont classables par volume total, négatif, neutre ou positif**, pour les angles principal, toutes mentions et secondaire ; les zéros restent visibles | Un tri construit depuis le seul agrégat toutes mentions fausserait les vues principal/secondaire. L'API publie donc un bloc additif par angle ; le composant partagé applique le même critère sur les dashboards lot et global sans nouvel appel réseau |
+| D50 | 2026-09-18 | **LM Studio adopte le contrat `v2-cultura-2026`** : référentiel 11/59 dédié, un thème par défaut, bi-thème limité à deux sujets explicites, sentiment unique et priorité au négatif ; repli canonique `Général / Autre` | Le moteur LLM reposait encore sur la classification POC. Le mapper réapplique D-26 de façon déterministe si le modèle désobéit au prompt ; le référentiel LM est publié dans le registre et servi à la revue, y compris en fin de cascade. Claude reste en V1 pour isoler le changement |

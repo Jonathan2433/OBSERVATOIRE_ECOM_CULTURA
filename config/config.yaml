@@ -371,12 +371,14 @@ sources:
   mdtc:
     date_col: "Date de commande"
     satisfaction_col: "Niveau de satisfaction général"
+    client_status_col: "Client"
     # Colonne principale à classifier + colonne secondaire concaténée si présente
     text_col_primary: "Verbatim justification"
     text_col_secondary: "Verbatim suggestion"
   mopinion:
     date_col: "Date du retour"
     satisfaction_col: "Niveau de satisfaction général"
+    respondent_id_col: "id"
     # Insatisfaits -> "Description du bug" ; satisfaits -> "Suggestion".
     # On prend la première non-vide (cf. loader.py).
     text_cols_primary: ["Description du bug", "Suggestion"]
@@ -469,7 +471,7 @@ moteurs_camembert:
     seuil_revue: 0.70
 
 # -----------------------------------------------------------------------------
-#  Moteur LM Studio (V4) — second moteur LLM local, optionnel.
+#  Moteur LM Studio (V4 + contrat Cultura 2026) — moteur LLM local optionnel.
 #  Désactivé par défaut : si enabled=false, l'app se comporte exactement comme
 #  avant (moteurs CamemBERT/stub uniquement). LM Studio tourne en NATIF sur l'hôte
 #  (GPU Metal) et expose une API compatible OpenAI ; le worker l'appelle via
@@ -480,16 +482,41 @@ lmstudio:
   enabled: false
   base_url: "http://host.docker.internal:1234/v1"   # API compatible OpenAI de LM Studio
   model: "local-model"           # id du modèle chargé dans LM Studio (cf. /v1/models)
+  # Le référentiel est explicite : `paths.taxonomy` reste celui du POC pour la
+  # rétrocompatibilité. Le fichier embarqué voyage avec le modèle Cultura 2026
+  # et est monté au même chemin dans les conteneurs worker et API.
+  taxonomy: "data/models/cultura_2026/taxonomy.json"
   temperature: 0.1
   timeout_s: 120
-  max_parallel: 4               # concurrence des appels (utilisée en O4)
+  # Défaut volontairement séquentiel : les VLM locaux échouent fréquemment si
+  # plusieurs requêtes arrivent pendant le chargement. N'augmenter qu'après une
+  # recette de charge concluante sur le poste cible.
+  max_parallel: 1
   retries: 2
-  prompt_version: "v1"
-  fallback_theme: "Autre / Non classé"   # sentinelle moteur (NON ajoutée à la taxo CamemBERT)
+  retry_backoff_s: 2.0          # attente exponentielle entre 500/503/timeout transitoires
+  retry_backoff_max_s: 12.0
+  warmup_enabled: true          # requête technique séquentielle avant le premier verbatim du lot
+  max_tokens: 256               # borne la réponse JSON, sans tronquer le contrat attendu
+  response_format: "json_schema"          # mode nominal LM Studio
+  # Repli testé en direct le 19/09/2026 sur ce poste (Qwen2.5-VL-7B-Instruct) :
+  # "json_object" est REFUSÉ par ce serveur LM Studio (HTTP 400 : 'response_format.type'
+  # must be 'json_schema' or 'text'). "none" (aucun champ response_format, JSON demandé
+  # uniquement par le prompt) fonctionne. Ne pas remettre "json_object" sans revalider
+  # contre le serveur cible : le comportement dépend de la version de LM Studio / du runtime.
+  response_format_fallback: "none"        # seulement après échec durable du schéma (400/422/500)
+  # L'ancien prompt `v1` reste implémenté pour rejouer les lots historiques.
+  prompt_version: "v2-cultura-2026"
+  contract_version: "cultura_2026"
+  # Repli canonique du nouveau référentiel : contrairement à l'ancienne
+  # sentinelle `Autre / Non classé`, ce couple reste dans la taxonomie 11/59.
+  fallback_theme: "Général"
+  fallback_niv2: "Autre"
   guardrails:
     repli_confidence_max: 0.40           # plafond confiance si couple/sentiment hors taxo
     invalid_json_confidence_max: 0.30    # plafond confiance si réponse JSON hors-forme
-    review_on_sentiment_conflict: true   # 2 thèmes au sentiment divergent (dont Négatif) -> revue
+    # Contrat Cultura 2026 (D-26) : le mapper résout d'abord les divergences en
+    # sentiment unique et priorité au négatif. Ce drapeau ne concerne que V1.
+    review_on_sentiment_conflict: true
 
 # -----------------------------------------------------------------------------
 #  Moteur Claude (V5) — API Anthropic, COMPARAISON / TEST UNIQUEMENT.
@@ -506,7 +533,7 @@ claude:
   max_tokens: 1024                         # sortie structurée (tool use) : réponse JSON courte
   max_parallel: 4                          # concurrence des appels
   retries: 2
-  prompt_version: "v1"                     # mêmes prompts proposeur/raffineur que LM Studio
+  prompt_version: "v1"                     # contrat historique, distinct de LM Studio V2
   fallback_theme: "Autre / Non classé"     # sentinelle moteur (NON ajoutée à la taxo CamemBERT)
   # NB : temperature non envoyée (rejetée par Opus 4.7+/Fable) ; clé via ANTHROPIC_API_KEY (.env)
 
@@ -616,6 +643,7 @@ cultura_sources:
         __produit_non_trouve__: "produits non trouvés"
       satisfaction_col: "satisfaction"
       echelle_satisfaction: "mdtc_1_4"
+      client_status_col: "client"
       respondent_id_col: null        # aucun identifiant -> généré (§5)
       meta:
         __date__: "date de réponse"
@@ -630,6 +658,7 @@ cultura_sources:
       champs_contexte: {}
       satisfaction_col: "satisfaction"
       echelle_satisfaction: "mdtc_1_4"
+      client_status_col: "client"
       respondent_id_col: null
       meta:
         __date__: "date de réponse"
@@ -645,6 +674,7 @@ cultura_sources:
       champs_contexte: {}
       satisfaction_col: "quel est votre degré de satisfaction concernant cultura"
       echelle_satisfaction: "mopinion_1_5"
+      client_status_col: null
       respondent_id_col: "id"
       meta:
         __date__: "datetime"
@@ -664,6 +694,7 @@ cultura_sources:
       champs_contexte: {}
       satisfaction_col: "quel est votre degré de satisfaction concernant le site de cultura"
       echelle_satisfaction: "mopinion_1_5"
+      client_status_col: null
       respondent_id_col: "id"
       meta:
         __date__: "datetime"
@@ -677,6 +708,7 @@ cultura_sources:
   # ---------------------------------------------------------------------------
   echelles_satisfaction:
     mdtc_1_4:
+      maximum_natif: 4
       valeurs_attendues: [1, 2, 3, 4]
       conversion: null               # identité
       hypothese: false
@@ -705,13 +737,20 @@ cultura_sources:
         "Plutôt satisfait(e)": 3
         "Très satisfait(e)": 4
     mopinion_1_5:
+      maximum_natif: 5
       valeurs_attendues: [1, 2, 3, 4, 5]
       # ⚠️ HYPOTHÈSE eXalt — aucune table officielle Cultura (Q-17 / Q-23, A6 sans
       # réponse). Le 3 est rabattu vers l'insatisfaction : ces formulaires
-      # recueillent des irritants. Influence toute comparaison de volumes entre
-      # sources (O-3) : à faire valider avant de communiquer un chiffre agrégé.
+      # recueillent des irritants. Cette conversion alimente uniquement le modèle
+      # ML historique; les KPI utilisent la note native 1-5.
       conversion: {1: 1, 2: 2, 3: 2, 4: 3, 5: 4}
       hypothese: true
+
+  # Seuls ces libellés explicites sont interprétés. Toute autre valeur, ainsi
+  # que l'absence de colonne, devient `non_renseigne` sans aucune déduction.
+  statuts_client:
+    ancien: ["ancien"]
+    nouveau: ["nouveau"]
 
 # =============================================================================
 #  NORMALISATION DES LABELS — lot L1a, §8 de SPEC_CHARGEUR (D-31)

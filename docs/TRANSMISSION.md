@@ -23,7 +23,7 @@ Produit `transmission/oes-bundle-AAAAMMJJ-HHMMSS.tar.gz` contenant :
 | `data-models.tgz` / `data-uploads.tgz` / `data-output.tgz` | volumes (modèle entraîné, fichiers déposés, exports) |
 | `docker-compose.yml`, `.env.example`, `data-raw/taxonomy…` | configuration de déploiement |
 | `restore_app.sh` | script de restauration |
-| `manifest.txt` | **comptages de référence** (vérification d'intégrité) |
+| `manifest.txt` | **comptages de référence**, dont `survey_responses` (vérification d'intégrité) |
 
 Transférer ce `.tar.gz` (USB, disque…) vers la cible.
 
@@ -49,6 +49,7 @@ Sortie attendue :
 === Vérification d'intégrité ===
   ✅ users            3
   ✅ batches          12
+  ✅ survey_responses 11840
   ✅ results          13456
   ✅ corrections      87
   ✅ audit_log        212
@@ -65,6 +66,9 @@ Sortie attendue :
   soit la valeur — mais gardez le même `.env` ensuite (cf. dépannage exploitation).
 - **Migrations** : au démarrage, l'API applique Alembic ; le dump contenant déjà le schéma
   à jour (`alembic_version`), c'est un no-op — pas de conflit.
+- **Maille répondant** : le dump et le manifeste incluent `survey_responses` ; la
+  restauration conserve donc les notes natives, statuts clients et dates métier
+  nécessaires aux tableaux de bord et comparaisons.
 - **Offline strict préservé** : images transférées en fichier, modèle de base déjà local,
   aucun `docker pull`.
 - **Sauvegarde courante** : le même `package_app.sh` sert de **sauvegarde complète** datée.
@@ -72,6 +76,8 @@ Sortie attendue :
 - **Moteur LM Studio (V4)** : c'est une **dépendance hôte hors bundle Docker**. Si le poste
   cible doit l'utiliser, y installer LM Studio, **charger un modèle** et démarrer le serveur
   local (cf. [EXPLOITATION.md](EXPLOITATION.md) §4 bis), puis `LMSTUDIO_ENABLED=true` dans `.env`.
+  Le bundle doit conserver `data/models/cultura_2026/taxonomy.json` : le registre refuse
+  de déclarer le moteur disponible si ce référentiel du prompt V2 est absent.
   Le bundle transféré fonctionne **sans** LM Studio (moteur désactivé par défaut → CamemBERT/stub).
 - **Moteur Claude (V5)** : la clé **`ANTHROPIC_API_KEY` n'est JAMAIS dans le bundle** (comme tout
   secret, elle n'est ni en base, ni en image, ni commitée). Un poste cible **sans clé** fonctionne

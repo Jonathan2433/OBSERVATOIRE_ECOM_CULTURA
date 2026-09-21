@@ -24,7 +24,7 @@ python3 -m venv .venv_validate
 .venv_validate/bin/python app/tests/recette_v1.py
 ```
 
-Sortie attendue : **`Bilan : 48 OK · 0 ÉCHEC · 0 SKIP`** (code de sortie 0).
+Sortie attendue : **`Bilan : 115 OK · 0 ÉCHEC · 0 SKIP`** (code de sortie 0).
 
 > Les sections skippent proprement si une couche est absente de l'environnement
 > (ex. `fastapi` hors image API, `src/` hors image worker). Dans le venv de recette
@@ -38,9 +38,10 @@ Sortie attendue : **`Bilan : 48 OK · 0 ÉCHEC · 0 SKIP`** (code de sortie 0).
 | Anonymisation | e-mail / téléphone / n° de commande masqués + comptage | §10 #2 |
 | Taxonomie | tous les couples (niv.1, niv.2) émis sont valides ; couple invalide rejeté | §10 #3 |
 | Auth / RBAC | non-authentifié → 401 ; analyste → 403 sur audit/config/users ; verrouillage 429 | §10 #11, §7.9 |
-| Résultats / export | confiance + statut exposés ; filtre Thème « contient » ; CSV colonnes POC + BOM ; pas de PII | §11, §10 #6 |
+| Résultats / export | confiance + statut exposés ; absence explicite de référence sur les lots historiques ; filtres thème, multi-sources et date inclusive ; CSV colonnes POC + traçabilité fichier/référence pseudonymisée/publication/traitement + BOM ; pas de PII | §11, §10 #6 |
+| Second thème / satisfaction | deux thèmes comptés sans doublon ; hiérarchies N1 → N2 publiées pour les volumes et pour le croisement de sentiments au niveau lot comme global ; sentiments isolés par angle pour les quatre classements ; sentiment propre à chaque thème et sous-thème ; unité répondant ; quatre sources visibles ; absence distincte de zéro ; notes natives et statuts MDTC ; KPI globaux recalculés après filtre | §6.2, §11 |
 | Config / purge / audit | validation config ; purge supprime hors-rétention, conserve récent ; actions tracées | §11, §10 #7 |
-| E2E pipeline (stub) | lot traité `done` ; **aucune PII en base** ; couples prédits valides | §11, §10 #2/#3 |
+| E2E pipeline (stub) | lot traité `done` ; **aucune PII en base** ; réponse source persistée une fois avec le nom original du fichier ; note invalide exclue ; couples prédits valides | §11, §10 #2/#3 |
 
 ---
 
@@ -50,20 +51,30 @@ Sortie attendue : **`Bilan : 48 OK · 0 ÉCHEC · 0 SKIP`** (code de sortie 0).
 |---|---|---|---|
 | 1 | `docker compose up` démarre toute la stack (arm64), sans réseau | `docker compose up --build` → 5 services *healthy*, `web` sur 127.0.0.1 | ✅ (run live) |
 | 2 | Connexion + rôles ; non-authentifié n'accède à rien | Recette auto (auth/RBAC) | ✅ auto |
-| 3 | Upload 2 Excel → validation colonnes → lot créé | UI *Nouveau lot* (+ refus si schéma KO) | ✅ (run live) |
+| 3 | Upload multiple CSV/XLSX → détection des quatre schémas → lot créé | UI *Nouveau lot* (+ refus si schéma KO) | ✅ auto + run live |
 | 4 | Traitement async d'un lot 11k **< ~1 h** + progression + notification | UI sur lot réel (modèle CamemBERT) | ⏳ à mesurer sur modèle réel |
 | 5 | Résultats consultables/filtrables ; détail conforme | Recette auto + UI | ✅ auto + UI |
 | 6 | Export CSV/XLSX **conforme POC** | Recette auto (colonnes + BOM) | ✅ auto |
 | 7 | File de revue + correction (hiérarchie) + export corrections | UI *Revue* (+ E2E lots précédents) | ✅ (run live) |
-| 8 | Dashboards KPI modèle / résultats / volumétrie | UI *Tableaux de bord* | ✅ (run live) |
+| 8 | Dashboards KPI modèle / résultats / volumétrie ; satisfaction répondant et sources absentes explicites ; thème×sentiment trié par volume négatif décroissant et sous-thèmes dépliables ; répartitions classables par volume/négatif/neutre/positif | Recette auto + UI *Tableaux de bord* | ✅ auto + run live |
 | 9 | Historique des lots + journal d'audit | UI *Lots* + *Administration* ; recette auto (audit) | ✅ auto + UI |
 | 10 | Activation d'une version de modèle déposée, sans rebuild | Déposer dans `data/models` + activer (UI) | ✅ (procédure §4 EXPLOITATION) |
 | 11 | Rétention configurable + purge auto et manuelle | Recette auto (purge) + purge au démarrage worker | ✅ auto |
 | 12 | Tous les garde-fous §10 vérifiés | Tableau §3 ci-dessous | ✅ |
 
 > **#4** : seul critère dépendant du **modèle réel** (non déposé à ce stade). Le chemin
-> performance est en place (ONNX int8, worker chaud, `batch_size` réglable, un seul job
-> lourd) ; la mesure des 11k < 1 h se fait au dépôt du modèle entraîné.
+> performance est en place (PyTorch qualifié, worker chaud, `batch_size` réglable,
+> un seul job lourd) ; la mesure des 11k < 1 h se fait au dépôt du modèle entraîné.
+
+Contrôle UI du critère #8 : préparer un thème A plus volumineux au total mais
+moins négatif qu'un thème B. B doit apparaître avant A dans le graphique du lot
+et dans le graphique global. En cas d'égalité sur le négatif, vérifier le volume
+total décroissant puis le libellé alphabétique. Sélectionner ensuite B : ses
+sous-thèmes doivent apparaître juste dessous, avec leurs trois segments de
+sentiment, puis disparaître au second clic sans modifier les autres graphiques.
+Dans *Répartition des thèmes*, vérifier successivement les quatre contrôles : la
+barre, la valeur et l'ordre doivent suivre le critère choisi aux niveaux 1 et 2,
+sur les angles principal/toutes mentions/secondaire. Un thème à zéro reste visible.
 
 ---
 
@@ -90,4 +101,4 @@ Sortie attendue : **`Bilan : 48 OK · 0 ÉCHEC · 0 SKIP`** (code de sortie 0).
 
 La V1 satisfait l'intégralité du DoD §11 et des garde-fous §10, **à l'exception de la
 mesure de performance #4** qui requiert le dépôt du modèle CamemBERT réel (le chemin
-technique est en place et vérifiable au dépôt). Recette automatisée : **48/48**.
+technique est en place et vérifiable au dépôt). Recette automatisée : **115/115**.

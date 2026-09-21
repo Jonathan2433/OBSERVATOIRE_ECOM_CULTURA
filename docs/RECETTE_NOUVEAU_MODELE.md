@@ -169,8 +169,8 @@ Rejouées le **11/09**, après l'industrialisation de la couche de décision :
 |---|---|---|
 | V1 | **48 OK · 0 ÉCHEC · 0 SKIP** | 48/48 ✅ |
 | V3 | **13 OK · 0 ÉCHEC** | 13/13 ✅ |
-| V4 | **50/50 OK** | 50/50 ✅ |
-| V5 | **112/112 OK** | 112/112 ✅ |
+| V4 | **67/67 OK** | 67/67 ✅ — contrat LM Studio Cultura 2026 inclus |
+| V5 | **115/115 OK** | 115/115 ✅ — référentiel LM direct/cascade inclus |
 | V6 | **26/26 OK** | non documentée jusqu'ici ✅ |
 
 Plus les trois recettes créées par ce projet :

@@ -1,6 +1,13 @@
 # Spec V4 — Second moteur de classification « LM Studio » (LLM local)
 
-> **Statut** : **implémentée** (lots O1→O5, recette V4 50/50, tag `v4.0`).
+> **Statut** : **implémentée, alignée Cultura 2026 et validée par comparaison objective**
+> (lots O1→O6, recette V4 88/88 ; contrat V2 livré le 18/09/2026, après le tag
+> historique `v4.0`. Incident de concurrence/chargement JIT du 19/09/2026 corrigé,
+> cf. §7.1 ; biais de sur-classement Général/sentiment négatif du 19-20/09/2026
+> corrigé, cf. §7.2 ; format du bloc taxonomie et coquilles du référentiel du
+> 20-21/09/2026 corrigés, cf. §7.3 ; comparaison LM Studio vs CamemBERT du
+> 21/09/2026 — 64 % d'accord niv.1, sentiment quasi identique, aucun bug trouvé,
+> cf. §7.4).
 > **Principe directeur** : **strictement additive**, aucun impact sur l'app existante
 > (analyste, contrats API, schéma DB, moteur CamemBERT) — gardée derrière `lmstudio.enabled`.
 
@@ -51,8 +58,8 @@ le champ **`model_label`** du lot (ex. `lmstudio:mon-modele` au lieu de
 ### 3.2 Côté admin — **Administration → Modèles**
 - Le moteur LM Studio apparaît comme une **ligne de modèle** :
   - `Version` = `lmstudio:<modèle>` ; `Type` = `LM Studio (LLM)`.
-  - `Disponible` = **oui** si LM Studio répond *et* le modèle est chargé ; **non**
-    (grisé) sinon, avec le motif (*LM Studio injoignable* / *modèle non chargé*).
+  - `Disponible` = **oui** si LM Studio répond, le modèle est chargé et le référentiel
+    configuré est lisible ; **non** (grisé) sinon.
   - Bouton **Activer** (endpoint existant `POST /api/models/{id}/activate`).
 - Bouton **Re-scanner** = **test de connexion** (relance la détection : ping `/v1/models`).
 - Le changement de moteur n'affecte que les **nouveaux** lots.
@@ -75,7 +82,8 @@ le champ **`model_label`** du lot (ex. `lmstudio:mon-modele` au lieu de
 1. **`LMStudioPredictor`** (`app/worker/lmstudio_predictor.py`) — torch-free, client
    **`urllib`** (stdlib). Même interface que les deux autres prédicteurs.
 2. **Dispatch** : `if kind == "lmstudio": return LMStudioPredictor(cfg)`.
-3. **Détection** : `_detect_lmstudio(cfg)` (ping `/v1/models` + présence du modèle).
+3. **Détection** : `_detect_lmstudio(cfg)` (ping `/v1/models` + présence du modèle et
+   du référentiel déclaré ; versions de prompt/contrat publiées dans le registre).
 4. **Config** : bloc `lmstudio:` dans `config.yaml` (+ surcharge env `config_worker.py`).
 5. **Compose** : `extra_hosts: ["host.docker.internal:host-gateway"]` sur `worker`.
 
@@ -110,10 +118,26 @@ moteurs CamemBERT/stub.
 6. Renvoie le dict au **format identique** à `build_output()` (mêmes colonnes).
 
 ### 5.2 Prompt (versionné `lmstudio.prompt_version`)
-Rôle « classifieur de verbatims e-commerce Cultura » ; consignes dures : 1–2 thèmes
-**uniquement** des couples niv1/niv2 valides (liste injectée) ; recopie exacte des
-libellés ; sentiment ∈ {Négatif, Neutre, Positif} ; confiance honnête ; 3 signaux ;
-repli `Autre / Non classé` si rien ne correspond ; **réponse JSON uniquement**.
+
+Le prompt courant est **`v2-cultura-2026`**. Il injecte le référentiel embarqué
+11 thèmes / 59 sous-thèmes et impose le contrat métier du moteur CamemBERT Cultura :
+
+- le couple `Général / Autre` est un **dernier recours explicite** — le sous-thème le
+  plus précis doit toujours être préféré ;
+- un thème par défaut ; un second uniquement si le texte porte explicitement deux
+  sujets distincts — une hésitation entre catégories proches n'est pas un bi-thème ;
+- les **trois sentiments sont a priori également probables** ; un sentiment n'est
+  **jamais** présumé négatif par défaut ; un sentiment unique par verbatim, recopié
+  sur les deux thèmes ;
+- si un avis mêle, sur des sujets distincts, un aspect positif et un aspect négatif,
+  conservation du ou des thèmes négatifs uniquement ;
+- **5 exemples calibrés** (Positif/Négatif/Neutre, dont un cas mixte et un cas
+  `Général` légitime) — cf. §7.2 ;
+- note de satisfaction normalisée sur 1–4 utilisée comme contexte auxiliaire ;
+- confiance basse pour un texte court ou ambigu, trois signaux et JSON seul.
+
+La branche `v1` reste implémentée pour la reproductibilité des lots historiques et
+pour Claude, dont le contrat n'est pas modifié par cette évolution LM Studio.
 
 ### 5.3 Sortie structurée (`response_format` JSON schema)
 ```json
@@ -123,17 +147,23 @@ repli `Autre / Non classé` si rien ne correspond ; **réponse JSON uniquement**
 `themes` : 1 à 2 ; `confidence_globale` = confiance du thème principal.
 
 ### 5.4 Validation & repli (jamais hors taxonomie)
-- **Appariement tolérant** : libellés LLM normalisés (casse + accents + espaces) et
-  appariés aux libellés **canoniques** de la taxonomie — un thème correct mais mal
-  capitalisé/accentué est **récupéré** (réécrit au canonique), sans jamais « deviner ».
-- `niv1` introuvable **ou** `niv2` non-enfant de `niv1` → **sentinelle de repli**
-  `Autre / Non classé` (décision a) + **revue forcée** (décision c). *Pas de remap deviné.*
+- **Appariement exact**, puis **tolérant** : libellés LLM normalisés (casse + accents +
+  espaces) et appariés aux libellés **canoniques** de la taxonomie — un thème correct
+  mais mal capitalisé/accentué est **récupéré** (réécrit au canonique), sans jamais
+  « deviner ».
+- **3ᵉ recours — coquilles du référentiel** (`build_label_normalizer`, §7.3) : les
+  groupes de synonymes de `config.yaml → label_normalization` (déjà utilisés par le
+  chargeur d'entraînement) sont retentés avant le repli, pour les graphies qu'un
+  matching casse/accents ne couvre pas (ex. « Attente commande » vs « Attente
+  commmande » au référentiel).
+- `niv1` introuvable **ou** `niv2` non-enfant de `niv1` (même après les trois recours)
+  → couple canonique de repli **`Général / Autre`** + **revue forcée** + le couple brut
+  halluciné est **loggué** (jamais le verbatim). *Pas de remap deviné.*
 - JSON hors-forme → repli + revue, au plafond de confiance le plus bas (§6).
 - **Dé-doublonnage** : couples identiques fusionnés.
 
-> La sentinelle `Autre / Non classé` est un **label propre au moteur LM Studio**, **non
-> ajouté** à la taxonomie partagée (sinon l'espace de labels de CamemBERT — 20 niv.1 —
-> serait décalé et le modèle réel cassé).
+> Le repli V2 appartient au référentiel Cultura 2026. La sentinelle historique
+> `Autre / Non classé` n'est conservée que pour le contrat V1.
 
 ---
 
@@ -150,7 +180,8 @@ revue = confidence_globale < seuil_revue(batch)
 - couple niv1/niv2 hors taxo (après normalisation) → repli, revue, conf ≤ 0.40
 - réponse JSON hors-forme                          → repli, revue, conf ≤ 0.30
 - sentiment hors {Négatif,Neutre,Positif}          → Neutre + revue
-- 2 thèmes au sentiment divergent (dont Négatif)   → revue
+- contrat V2, sentiments divergents avec Négatif   → thèmes négatifs seuls + revue
+- contrat V2, divergence sans Négatif              → sentiment du thème 1 + revue
 ```
 Tout est paramétré dans `config.yaml → lmstudio.guardrails`.
 
@@ -160,11 +191,175 @@ Tout est paramétré dans `config.yaml → lmstudio.guardrails`.
 
 - **Pas d'objectif 11k < 1h** : 1 appel LLM/verbatim → traitement **long** assumé
   (l'UI ne bloque pas, barre de progression existante).
-- **Concurrence bornée** : pool de threads `lmstudio.max_parallel` (défaut 4).
-- **Timeouts + retries** par appel (`timeout_s`, `retries`).
+- **Concurrence bornée** : pool de threads `lmstudio.max_parallel` (**défaut 1**, cf.
+  incident §7.1 — augmenter uniquement après une recette de charge concluante sur le
+  poste cible).
+- **Échauffement** (`lmstudio.warmup_enabled`, défaut `true`) : un appel technique
+  séquentiel est envoyé avant la 1ʳᵉ rafale du lot, pour absorber le chargement à la
+  demande (JIT) du modèle avant que des appels concurrents ne partent.
+- **Timeouts + retries** par appel (`timeout_s`, `retries`), avec backoff exponentiel +
+  jitter entre tentatives (`retry_backoff_s`, `retry_backoff_max_s`) sur les statuts
+  transitoires (408/409/425/429/500/502/503/504).
+- **Repli de format** : sur un refus durable du schéma JSON (400/422/500),
+  `lmstudio.response_format_fallback` est tenté une fois avant d'abandonner. Le mode
+  supporté dépend du serveur/modèle cible (cf. §7.1) — ne pas remettre `json_object`
+  sans revalider contre l'instance visée.
 - **Annulation coopérative** : check « lot annulé » par chunk (R1/V3) respecté.
 - **Échec propre** : si LM Studio est injoignable, la 1ʳᵉ erreur **fait échouer le lot**
   (statut *failed* + message) — **aucun** repli silencieux vers CamemBERT.
+
+### 7.1 Incident du 19/09/2026 — HTTP 500 sur le premier lot Qwen (résolu)
+
+Le premier lot réel traité par `qwen2.5-vl-7b-instruct` (Lot 21, 520 verbatims) a échoué
+immédiatement avec `HTTP 500` (page générique LM Studio). Diagnostic confirmé sur pièces
+(logs worker + logs LM Studio + rejeu direct de l'appel HTTP) :
+
+1. **Cause racine** : `docker-compose.yml` ne transmettait pas la variable
+   `LMSTUDIO_MAX_PARALLEL` au conteneur `worker` (absente du bloc `environment:`). Malgré
+   `LMSTUDIO_MAX_PARALLEL=1` dans `.env`, le worker retombait silencieusement sur
+   `max_parallel: 4` de `config.yaml`.
+2. **Déclencheur** : à `max_parallel=4`, 4 threads (+ leurs retries immédiats, sans
+   backoff à l'époque) ont ouvert une **rafale de requêtes concurrentes** au tout premier
+   appel du lot. Les logs LM Studio montrent que le modèle **se chargeait encore** à ce
+   moment (chargement à la demande d'un modèle multimodal — poids + projecteur vision —
+   pris ~34 s) : le serveur ne peut pas absorber une rafale concurrente pendant cette
+   fenêtre et répond `500` à la quasi-totalité des appels reçus avant la fin du
+   chargement. **Le schéma JSON n'est pas en cause** : une fois le modèle chargé, les
+   mêmes appels (schéma identique, y compris rejoués à 6 en parallèle) réussissent
+   systématiquement et produisent un JSON conforme au contrat.
+3. **Correctifs appliqués** : câblage de `LMSTUDIO_MAX_PARALLEL` dans
+   `docker-compose.yml` (worker), défaut `max_parallel: 1` en configuration, ajout d'un
+   échauffement séquentiel (`warmup_enabled`) avant la rafale du lot, retries avec
+   backoff. Un repli `response_format_fallback: "json_object"` avait aussi été envisagé
+   pour un refus de grammaire JSON — **testé en direct sur ce poste, il est refusé par
+   LM Studio en HTTP 400** (`'response_format.type' must be 'json_schema' or 'text'`) ;
+   le repli configuré est donc `"none"` (JSON demandé par le seul prompt, sans contrainte
+   de schéma), seul mode confirmé fonctionnel en repli sur cette instance.
+
+### 7.2 Incident du 19-20/09/2026 — sur-classement « Général » et biais de sentiment négatif (résolu)
+
+Le premier lot réel exploitable (Lot 22, 520 verbatims, une fois l'incident §7.1
+corrigé) a classé **86,9 %** des verbatims en `Général / Autre` et **98,5 %** en
+sentiment `Négatif` — y compris des avis explicitement positifs notés 4/4 (« très
+rapide, je l'ai reçu 24h après » → `Négatif`, confiance 0,95).
+
+**Diagnostic confirmé par test A/B en direct** (même verbatim, seul le prompt varie) :
+le prompt `v2-cultura-2026` d'alors répétait le mot *Négatif* dans sa règle de
+sentiment mixte, créant un ancrage lexical disproportionné sur un modèle 7B, et ne
+fournissait **aucun exemple** pour discriminer 59 sous-thèmes — le modèle se
+repliait sur le seul couple qui lui était présenté comme une échappatoire,
+`Général / Autre`. Le mécanisme de revue humaine ne rattrapait pas ces erreurs :
+la confiance auto-déclarée restait élevée (0,85-0,95), confirmant qu'elle n'est
+pas corrélée à la justesse sur ce type de biais systématique (cf. §6).
+
+**Correctifs appliqués** (prompts proposeur et raffineur, `llm_common.py`) :
+- `Général / Autre` explicitement qualifié de **DERNIER RECOURS** ;
+- traitement symétrique des trois sentiments (« a priori également probables »,
+  « ne présume jamais... par défaut ») — la règle de priorité au négatif sur un
+  cas réellement mixte (D-26) est conservée, mais reformulée pour ne plus
+  s'appliquer par défaut aux textes purement positifs ou neutres ;
+- **5 exemples calibrés** ajoutés au prompt proposeur (Positif/Négatif/Neutre, un
+  cas mixte D-26, un cas `Général` légitime) pour ancrer le jugement du modèle.
+
+**Mesuré sur un échantillon de 60 verbatims du Lot 22, rejoués à l'identique** :
+`Général` 78,3 % → **38,3 %** ; sentiment `Négatif` 96,7 % → **56,7 %** (apparition
+cohérente de `Positif` et `Neutre`, ex. « livraison rapide » → `Réception
+commande / Livraison à domicile`, `Positif`). Aucun changement de schéma, de
+contrat de sortie ni des garde-fous de `map_llm_response` : seule la formulation
+du prompt a changé. Le résiduel de `Général` (38,3 %) a été comparé à la
+distribution de CamemBERT via la page **Comparaison** une fois §7.3 corrigé —
+voir §7.4 : distributions de sentiment quasi identiques entre les deux moteurs.
+
+### 7.3 Incident du 20-21/09/2026 — le « Général » résiduel était un rejet du garde-fou, pas un choix du modèle (résolu)
+
+Le lot suivant (Lot 23, 199 verbatims, une fois §7.2 corrigé) restait à **56,8 %**
+de `Général / Autre`. Diagnostic affiné en inspectant, verbatim par verbatim, le
+JSON **brut** renvoyé par le LLM avant mapping (jusque-là invisible : il fallait
+rejouer le texte à la main pour le voir) : **95 des 113 lignes `Général / Autre`
+étaient à confidence exactement 0,40**, le plafond du garde-fou de repli — ce
+n'est pas le modèle qui choisit `Général`, c'est `map_llm_response` qui **rejette**
+sa proposition. Deux causes prouvées, distinctes du biais de sentiment de §7.2 :
+
+1. **Troncation des libellés niv2 composés.** Le bloc taxonomie listait les
+   sous-thèmes séparés par des virgules (`"- Choix produit : Informations
+   produit, Stock, disponibilité, Prix, promotions..."`), ambigu dès qu'un
+   libellé contient lui-même une virgule (`Stock, disponibilité`, `Prix,
+   promotions`) : le LLM répondait `niv2="Stock"` ou `niv2="Prix"`, rejetés.
+2. **Une coquille du référentiel non couverte par le matching tolérant.** Le
+   référentiel porte `"Attente commmande"` (3 « m », déjà connue et déclarée
+   dans `label_normalization.groupes_themes`, cf. `config.yaml`) ; le LLM
+   répond naturellement `"Attente commande"` (orthographe standard) — deviné
+   juste, rejeté quand même. Le matching de `map_llm_response` ne couvrait que
+   casse/accents/espaces, pas les groupes de synonymes déjà utilisés par le
+   chargeur d'entraînement pour cette même coquille.
+
+**Correctifs** (`llm_common.py`) :
+- `_taxonomy_block` rend désormais un sous-thème par ligne, à puce, sans
+  séparateur ambigu ;
+- `build_label_normalizer` construit, **une fois par prédicteur**, le même
+  `LabelNormalizer` que le chargeur d'entraînement (`src/preprocessing/
+  label_norm.py`), à partir de `config.yaml → label_normalization` — une seule
+  source de vérité pour les coquilles du référentiel, pas une table dupliquée
+  côté LLM. Défensif : si le référentiel chargé n'est pas compatible avec les
+  groupes déclarés (cas du profil V1/POC), retourne `None` sans faire échouer
+  le moteur — le matching casse/accents reste seul actif ;
+- `map_llm_response` tente ce normaliseur en **3ᵉ recours**, après
+  l'appariement exact puis tolérant, avant de tomber en repli ;
+- **observabilité** : tout repli forcé logue désormais le couple brut halluciné
+  par le LLM (jamais le verbatim). Sans ça, ce diagnostic n'était possible qu'en
+  rejouant les textes un par un.
+
+**Mesuré sur un échantillon de 100 verbatims du Lot 23, rejoués à l'identique** :
+
+| Indicateur | Avant | Après |
+|---|---|---|
+| `Général / Autre` | 62,0 % | **19,0 %** |
+| dont repli forcé (confidence = 0,40) | 55,0 % | **13,0 %** |
+| Revue humaine requise | 58,0 % | **13,0 %** (dans la cible métier D-9, 10-15 %) |
+| Sentiment (Positif/Négatif/Neutre) | 44/48/8 | 44/47/9 (stable — ce correctif ne touche pas le sentiment) |
+
+54 % des lignes de l'échantillon ont changé de sortie. Le thème `Attente
+commmande` (délais, suivi, annulation — des motifs fréquents) passe de 1 à 39
+occurrences sur les 100 : c'est le signe le plus net que la coquille référentiel
+bloquait un thème à fort volume, pas un cas marginal.
+
+### 7.4 Validation croisée du 21/09/2026 — comparaison LM Studio vs CamemBERT (page Comparaison)
+
+Une fois §7.1-§7.3 corrigés, comparaison officielle lancée depuis l'app (Lot 23,
+run #10, `n=50`, moteurs `lmstudio:qwen2.5-vl-7b-instruct` et
+`camembert-cultura_2026-20260910_115611`, sans juge) :
+
+| Métrique | Valeur |
+|---|---|
+| Accord sur le grand thème (niv.1) | **64 %** (18 désaccords / 50) |
+| Distribution de sentiment | LM Studio {Négatif 23, Neutre 4, Positif 23} — CamemBERT {Négatif 25, Neutre 1, Positif 24} |
+| Confiance moyenne (auto-déclarée, non calibrée) | LM Studio 0,904 — CamemBERT 0,822 |
+| Latence | LM Studio 4180 ms/verbatim — CamemBERT 318 ms/verbatim (~13×) |
+
+**La distribution de sentiment est désormais quasi identique entre les deux
+moteurs** — confirmation indépendante, via l'outil de mesure objective de l'app,
+que le correctif de §7.2 tient sur un lot différent de celui où il a été mesuré.
+
+**Les 18 désaccords de thème ont été relus un par un** (texte + les deux
+sorties) : 17 sur 18 portent le **même sentiment** des deux côtés — ce sont des
+désaccords de sous-thème fin entre catégories proches et légitimement
+ambiguës (ex. « respect du délai de livraison » → `Attente commmande/Respect
+des délais` pour LM Studio contre `Réception commande/Conformité commande`
+pour CamemBERT ; les deux sont défendables), pas des erreurs grossières d'un
+côté. **Aucun bug de code identifié** dans ce run : un taux d'accord de 64 %
+entre un LLM généraliste 7B et un modèle spécialisé fine-tuné, sur une
+taxonomie à 59 sous-thèmes fins, est un résultat sain, pas un signal
+d'alerte.
+
+**Point de vigilance mineur, pas corrigé** (rendement décroissant d'un
+correctif de prompt de plus, risque de sur-ajustement) : LM Studio choisit
+`Choix produit / Prix, promotions` sur 3 des 18 désaccords (rows 85, 143, 163)
+alors que le texte ne mentionne pas explicitement de prix. À surveiller sur un
+volume plus large avant d'y toucher.
+
+L'unique désaccord de **sentiment** (verbatim 194, un cadeau sans emballage
+disponible : LM Studio dit Neutre, CamemBERT dit Négatif, à raison — le texte
+exprime une vraie déception) reste un exemple isolé, pas un pattern.
 
 ---
 
@@ -181,18 +376,29 @@ lmstudio:
   enabled: false                 # V4 désactivée par défaut → app inchangée
   base_url: "http://host.docker.internal:1234/v1"
   model: "local-model"           # id du modèle chargé (cf. GET /v1/models)
+  taxonomy: "data/models/cultura_2026/taxonomy.json"
   temperature: 0.1
   timeout_s: 120
-  max_parallel: 4
+  max_parallel: 1                # défaut sûr — cf. incident §7.1 (rafale pendant chargement JIT)
   retries: 2
-  prompt_version: "v1"
-  fallback_theme: "Autre / Non classé"
+  retry_backoff_s: 2.0           # backoff exponentiel + jitter entre tentatives
+  retry_backoff_max_s: 12.0
+  warmup_enabled: true           # appel technique séquentiel avant la 1re rafale du lot
+  max_tokens: 256
+  response_format: "json_schema"          # mode nominal
+  response_format_fallback: "none"        # repli après échec durable (400/422/500) — cf. §7.1
+  prompt_version: "v2-cultura-2026"
+  contract_version: "cultura_2026"
+  fallback_theme: "Général"
+  fallback_niv2: "Autre"
   guardrails:
     repli_confidence_max: 0.40
     invalid_json_confidence_max: 0.30
     review_on_sentiment_conflict: true
 ```
-Surcharge env (`config_worker.py`) : `LMSTUDIO_ENABLED`, `LMSTUDIO_BASE_URL`, `LMSTUDIO_MODEL`.
+Surcharge env (`config_worker.py`) : `LMSTUDIO_ENABLED`, `LMSTUDIO_BASE_URL`, `LMSTUDIO_MODEL`,
+`LMSTUDIO_MAX_PARALLEL` (doit être déclarée dans le bloc `environment:` du service `worker`
+de `docker-compose.yml` pour atteindre le conteneur — cf. incident §7.1).
 
 ---
 
@@ -208,13 +414,14 @@ Surcharge env (`config_worker.py`) : `LMSTUDIO_ENABLED`, `LMSTUDIO_BASE_URL`, `L
 | Lot | Contenu | État |
 |---|---|---|
 | **O1** | Adaptateur `LMStudioPredictor` + dispatch + config + compose | ✅ |
-| **O2** | Prompt versionné + schéma + matching tolérant + repli + garde-fous | ✅ |
+| **O2** | Prompts V1/V2 versionnés + schéma + matching tolérant + repli + garde-fous | ✅ |
 | **O3** | `_detect_lmstudio` (`/v1/models`) + sync + onglet Modèles | ✅ |
 | **O4** | Concurrence bornée + retries + fail-fast | ✅ |
-| **O5** | Doc + recette V4 + tag `v4.0` | ✅ |
+| **O5** | Alignement Cultura 2026, registre/référentiel API, doc et recette V4 | ✅ |
 
-**Validation** : `app/tests/recette_v4.py` **50/50** (LM Studio mocké, torch-free),
-non-régression V1 48/48 + V3 13/13, `tsc`/build front OK.
+**Validation** : `app/tests/recette_v4.py` **88/88** et `recette_v5.py` **115/115**
+(LM Studio mocké, torch-free). La recette couvre prompts proposeur/raffineur, taxonomie
+11/59, repli canonique, D-26 et référentiel servi à la revue.
 
 ---
 

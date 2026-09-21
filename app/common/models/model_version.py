@@ -19,10 +19,10 @@ class ModelVersion(Base):
     __tablename__ = "model_versions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    kind: Mapped[str] = mapped_column(String(10), nullable=False)        # stub | real
+    kind: Mapped[str] = mapped_column(String(10), nullable=False)        # stub | real | lmstudio | claude
     label: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    metrics: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True) # extrait de eval_report.json
+    metrics: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True) # rapport ML ou état/version du moteur LLM
     is_active: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     available: Mapped[bool] = mapped_column(Boolean, default=True)
     registered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

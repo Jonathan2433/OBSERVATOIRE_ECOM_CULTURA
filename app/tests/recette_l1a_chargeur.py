@@ -237,7 +237,9 @@ def main() -> int:
 
     attendues = {
         "__source__", "__fichier__", "__respondent_id__", "__field__", "__text_raw__",
-        "__satisfaction__", "__satisfaction_raw__", "__date__", "__page_type__",
+        "__satisfaction__", "__satisfaction_native__", "__satisfaction_scale_max__",
+        "__satisfaction_invalid__", "__satisfaction_raw__", "__client_status__",
+        "__date__", "__page_type__",
         "__url__", "__device__", "theme1_niv1", "theme1_niv2", "theme2_niv1",
         "theme2_niv2", "sentiment", "signal", "__anomalies__", "__produit_non_trouve__",
     }

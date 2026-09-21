@@ -26,6 +26,7 @@ import io
 import os
 import sys
 import tempfile
+from datetime import date
 from pathlib import Path
 
 HERE = Path(__file__).resolve()
@@ -47,7 +48,7 @@ os.environ.update(
 from fastapi.testclient import TestClient  # noqa: E402
 
 from common.db import Base, SessionLocal, engine  # noqa: E402
-from common.models import Batch, Correction, Result, TaxonomyEntry  # noqa: E402
+from common.models import Batch, Correction, Result, SurveyResponse, TaxonomyEntry  # noqa: E402
 
 _RESULTS: list[tuple[str, str, str]] = []
 
@@ -99,7 +100,18 @@ def run() -> None:
             ("carte cadeau en minuscule", "Produit", None, "Neutre", False),
         ]
         for i, (v, n1, n2, sent, churn) in enumerate(rows):
-            db.add(Result(batch_id=b.id, row_index=i, verbatim_analyse=v,
+            response = SurveyResponse(
+                batch_id=b.id, source_type="MDTC-postachat",
+                source_file="export_mdtc.csv",
+                # Valeur volontairement sensible en clair dans la fixture :
+                # ni l'API ni les deux formats d'export ne doivent la révéler.
+                respondent_key=f"source-order-P9000000{i}",
+                response_date=date(2026, 9, 10 + i),
+                satisfaction_scale_max=4,
+            )
+            db.add(response); db.flush()
+            db.add(Result(batch_id=b.id, survey_response_id=response.id,
+                          row_index=i, source=response.source_type, verbatim_analyse=v,
                           nb_themes=1, theme1_niv1=n1, theme1_niv2=n2, theme1_sentiment=sent,
                           signal_churn=churn, revue_requise=False, confidence_globale=0.9))
         db.commit()
@@ -110,6 +122,12 @@ def run() -> None:
     full_rows = _parse_csv(full.content)
     check("export CSV complet -> 200", full.status_code == 200, full.status_code)
     check("export CSV complet -> 4 lignes de données", len(full_rows) - 1 == 4, len(full_rows) - 1)
+    reference_col = full_rows[0].index("reference_reponse")
+    references = [row[reference_col] for row in full_rows[1:]]
+    check("export CSV contient une référence réponse opaque",
+          all(ref.startswith("REP-") and len(ref) == 20 for ref in references), references)
+    check("export CSV ne divulgue aucun identifiant source ou numéro de commande",
+          "source-order" not in full.text and "P9000000" not in full.text)
 
     # Filtre churn + recherche texte « CARTE CADEAU » -> 2 lignes (r0, r2).
     filt = admin.get(f"/api/batches/{bid}/export?format=csv&churn=true&q=CARTE+CADEAU")
@@ -129,6 +147,13 @@ def run() -> None:
     xrows = _parse_xlsx(fx.content)
     check("export XLSX filtré -> 200", fx.status_code == 200, fx.status_code)
     check("export XLSX filtré -> 2 lignes", len(xrows) - 1 == 2, len(xrows) - 1)
+    xref_col = xrows[0].index("reference_reponse")
+    check("export XLSX contient la même référence opaque",
+          all(str(row[xref_col]).startswith("REP-") for row in xrows[1:]),
+          [row[xref_col] for row in xrows[1:]])
+    check("export XLSX ne divulgue aucun identifiant source ou numéro de commande",
+          all("source-order" not in str(cell) and "P9000000" not in str(cell)
+              for row in xrows for cell in row))
 
     # Filtre niv1 « contient » -> 2 lignes « Suivi de commande… ».
     fn = admin.get(f"/api/batches/{bid}/export?format=csv&niv1=Suivi")
@@ -154,13 +179,37 @@ def run() -> None:
         db.add(rb); db.flush()
         rev_ids = []
         for i in range(3):
+            response = SurveyResponse(
+                batch_id=rb.id,
+                source_type="MDTC-postrecep" if i < 2 else "Mopinion-mobile",
+                source_file="revue_mdtc.xlsx" if i < 2 else "revue_mobile.xlsx",
+                respondent_key=f"revue-{i}",
+                response_date=date(2026, 9, 10 + i),
+                satisfaction_scale_max=4 if i < 2 else 5,
+            )
+            db.add(response); db.flush()
             res = Result(batch_id=rb.id, row_index=i, verbatim_analyse=f"verbatim à revoir {i}",
+                         source=response.source_type, survey_response_id=response.id,
                          nb_themes=1, theme1_niv1="Produit", theme1_niv2="Qualité produit",
                          theme1_sentiment="Neutre", revue_requise=True, reviewed=False,
                          confidence_globale=0.2)
             db.add(res); db.flush()
             rev_ids.append(res.id)
         db.commit()
+        rb_id = rb.id
+
+    scoped_review = admin.get(
+        f"/api/batches/{rb_id}/review?source=MDTC-postrecep&date_from=2026-09-11&date_to=2026-09-11")
+    scoped_payload = scoped_review.json() if scoped_review.status_code == 200 else {}
+    scoped_item = (scoped_payload.get("items") or [{}])[0]
+    check("file de revue filtrée par source et date",
+          scoped_payload.get("total") == 1
+          and scoped_item.get("source_file") == "revue_mdtc.xlsx",
+          str(scoped_payload))
+    check("file de revue expose la source et une référence opaque",
+          scoped_item.get("source") == "MDTC-postrecep"
+          and str(scoped_item.get("response_reference", "")).startswith("REP-")
+          and "revue-1" not in str(scoped_item), str(scoped_item))
 
     tax0 = admin.get("/api/taxonomy").json()["themes"]
     base_niv1 = {t["niv1"] for t in tax0}
@@ -338,6 +387,25 @@ def run() -> None:
         untouched = db.get(Result, incomplete_id)
         still_pending = untouched is not None and not untouched.reviewed and not untouched.theme2_niv1
     check("revue : erreur de validation laisse le verbatim dans la file", still_pending)
+
+    corrections = admin.get("/api/corrections/export")
+    correction_rows = _parse_csv(corrections.content) if corrections.status_code == 200 else []
+    correction_header = correction_rows[0] if correction_rows else []
+    check("export corrections contient toute la traçabilité source/date/référence",
+          {"fichier_source", "reference_reponse", "date_publication_verbatim", "date_traitement_lot"}
+          <= set(correction_header), str(correction_header))
+    correction_reference_col = (correction_header.index("reference_reponse")
+                                if "reference_reponse" in correction_header else -1)
+    correction_references = (
+        [row[correction_reference_col] for row in correction_rows[1:]
+         if len(row) > correction_reference_col and row[correction_reference_col]]
+        if correction_reference_col >= 0 else []
+    )
+    check("export corrections utilise uniquement des références opaques",
+          bool(correction_references)
+          and all(ref.startswith("REP-") for ref in correction_references)
+          and "revue-" not in corrections.text,
+          str(correction_references))
 
 
 def main() -> int:

@@ -1,5 +1,11 @@
 # Prompt Codex — satisfaction native par répondant
 
+> **Statut : implémenté le 17/09/2026.** Ce fichier conserve le brief initial à
+> titre de traçabilité. Le contrat courant est décrit dans
+> `MIGRATION_SATISFACTION_REPONDANT.md`, `GUIDE_UTILISATEUR.md` et
+> `CAHIER_DES_CHARGES.md` ; l'interface affiche désormais « Statut client non
+> disponible » à la place du code technique `non_renseigne`.
+
 > Version de cadrage : 16 septembre 2026
 >
 > Branche cible : `preprod`

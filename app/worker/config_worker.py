@@ -4,8 +4,9 @@ Charge la config.yaml du POC (seuils, nettoyage, anonymisation, sentiment,
 signaux) puis réécrit les CHEMINS en absolu vers les volumes du conteneur
 (/data/...), au lieu des chemins relatifs du POC.
 
-⚠️ Les **profils de moteurs** (`moteurs_camembert`) doivent être réécrits eux
-aussi. Ils déclarent des chemins relatifs à la racine du projet
+⚠️ Les **profils de moteurs** (`moteurs_camembert`) et le référentiel déclaré
+par LM Studio doivent être réécrits eux aussi. Ils utilisent des chemins relatifs
+à la racine du projet
 (`data/models/cultura_2026`) qui, dans le conteneur, se résoudraient en
 `/app/data/models/...` — un répertoire qui n'existe pas, puisque les modèles
 sont montés sur `/data/models`. Sans cette réécriture, AUCUN moteur CamemBERT
@@ -35,13 +36,18 @@ def build_worker_cfg() -> Dict[str, Any]:
 
     _reecrire_profils(cfg, models, processed)
 
-    # --- Moteur LM Studio (V4) : surcharge env du bloc lmstudio de config.yaml --
+    # --- LM Studio : surcharge env + chemin du référentiel Cultura 2026 monté --
     lms = cfg.setdefault("lmstudio", {})
     enabled_env = os.environ.get("LMSTUDIO_ENABLED")
     if enabled_env is not None:
         lms["enabled"] = enabled_env.strip().lower() in ("1", "true", "yes", "on")
     lms["base_url"] = os.environ.get("LMSTUDIO_BASE_URL", lms.get("base_url", "http://host.docker.internal:1234/v1"))
     lms["model"] = os.environ.get("LMSTUDIO_MODEL", lms.get("model", "local-model"))
+    taxonomy = str(lms.get("taxonomy") or "")
+    if taxonomy == "data/models":
+        lms["taxonomy"] = models
+    elif taxonomy.startswith("data/models/"):
+        lms["taxonomy"] = f"{models}/{taxonomy[len('data/models/'):]}"
     mp = os.environ.get("LMSTUDIO_MAX_PARALLEL")
     if mp:
         try:

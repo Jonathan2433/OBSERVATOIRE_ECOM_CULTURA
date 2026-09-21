@@ -154,7 +154,7 @@ Passage de la **barre de menu horizontale** à une **barre latérale gauche** (p
 | **Détail lot** | Texte de statut | En-tête avec **Badge** statut + **ProgressBar** + métadonnées en cartes + raccourcis (Résultats, Revue, KPI) |
 | **Résultats** | Table dense + filtres bruts | Barre de filtres en **chips**, **Table** triable/paginée, **Drawer** de détail verbatim, exports en boutons, états vides |
 | **Revue** | Formulaire séquentiel | **Mode focus** : une carte verbatim, sélecteurs niv.1/niv.2 contraints, raccourcis clavier, progression dans la file |
-| **Tableaux de bord** | Listes de KPI + barres | Grille de **StatCard** + **Charts** stylés (thèmes, sentiments, thème×sentiment, tendances) + alertes seuils modèle |
+| **Tableaux de bord** | Listes de KPI + barres | Grille de **StatCard** + **Charts** stylés (thèmes, sentiments, thème×sentiment, tendances) + alertes seuils modèle ; thème×sentiment ordonné par volume négatif décroissant |
 | **Test à la volée** | Champ + JSON | Saisie + **carte de prédiction** lisible (thèmes, sentiment, signaux, confiance, badge modèle) |
 | **Utilisateurs** | Table + formulaire | **Table** + **Dialog** création/édition, badges rôle/état |
 | **Administration** | 3 sections empilées | **Tabs** (Configuration · Rétention · Audit) ; purge en **Dialog** de confirmation danger ; audit en table filtrable |
@@ -169,6 +169,13 @@ Passage de la **barre de menu horizontale** à une **barre latérale gauche** (p
 - **Compatibilité** : Safari/Chrome desktop récents (poste cible).
 - **Mode sombre** : *hors périmètre V2* (tokens conçus pour le permettre plus tard sans refonte).
 - **Aucune régression** : routes, RBAC, appels API et garde-fous inchangés ; la recette V1 (`recette_v1.py`) doit rester verte.
+- **Priorisation lisible** : le graphique thème×sentiment indique explicitement
+  son tri par nombre de verbatims négatifs ; la longueur totale et les segments
+  continuent de représenter les volumes, sans modifier les couleurs de sentiment.
+- **Classement explicite des répartitions** : quatre contrôles accessibles
+  « Volume total / Négatifs / Neutres / Positifs » pilotent simultanément les
+  barres et les valeurs. La couleur sémantique du sentiment sélectionné est
+  utilisée sans masquer les thèmes dont le compte vaut zéro.
 
 ---
 

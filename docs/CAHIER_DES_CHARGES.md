@@ -97,10 +97,13 @@ Transformer le POC en **application conteneurisée, utilisable par le métier**,
 - CA : un utilisateur sans session valide ne peut accéder à aucune donnée ni endpoint (hors /login, /health).
 
 ### F2 — Ingestion & validation des fichiers
-- Upload des fichiers **MDTC** et **Mopinion** (.xlsx) par glisser-déposer ; l'un ou l'autre peut être fourni seul.
+- Upload multiple des fichiers **MDTC** et **Mopinion** (`.xlsx` ou `.csv`) par
+  glisser-déposer ; leur source est reconnue depuis leur schéma.
 - RG : validation des **colonnes obligatoires** par source avant traitement ; message d'erreur explicite si manquantes.
-- RG : taille de fichier max paramétrable (défaut 50 Mo) ; formats acceptés .xlsx uniquement (V1).
+- RG : taille de fichier max paramétrable (défaut 50 Mo) ; 20 fichiers maximum par lot.
 - RG : les fichiers d'origine ne sont **jamais modifiés** ; ils sont stockés dans un volume sécurisé soumis à rétention.
+- RG : le chemin technique interne et le **nom original présenté au métier** sont
+  stockés séparément ; chaque réponse conserve le nom original de son fichier.
 - CA : un fichier au mauvais schéma est refusé avec un diagnostic ; un fichier valide crée un lot en statut « en attente ».
 
 ### F3 — Traitement par lots (asynchrone)
@@ -112,13 +115,19 @@ Transformer le POC en **application conteneurisée, utilisable par le métier**,
 - CA : un lot de ~11 000 verbatims se traite **en moins d'~1 h** sur le laptop cible, avec progression visible et reprise propre en cas de relance.
 
 ### F4 — Consultation des résultats
-- Tableau paginé, **filtrable** (thème niv.1/niv.2, sentiment, signaux, statut revue, confiance) et triable.
-- Détail d'un verbatim : texte **analysé (anonymisé)**, thèmes + scores, sentiment, signaux, confiance globale, statut (auto / corrigé / en revue), colonnes d'origine.
+- Tableau paginé, **filtrable** (source multi-sélection, plage inclusive de date
+  de publication, thème niv.1/niv.2, sentiment, signaux, statut revue, confiance) et triable.
+- Détail d'un verbatim : texte **analysé (anonymisé)**, thèmes + scores,
+  sentiment, signaux, confiance globale, statut, **type et fichier source**,
+  référence de réponse pseudonymisée, date de publication client, date de
+  traitement du lot et colonnes d'origine. Aucun identifiant source ni numéro
+  de commande brut n'est exposé.
 - RG : affichage systématique du **score de confiance** et de la mention « prédiction automatique » tant qu'elle n'est pas validée.
 - CA : on retrouve un verbatim par filtre combiné en < 2 s sur un lot de 11k.
 
 ### F5 — Revue humaine (HITL) & corrections
 - File de revue = verbatims `revue_humaine_requise = vrai`, triés par confiance croissante.
+- La file utilise les mêmes filtres source/date que les résultats et les analyses.
 - L'analyste peut **corriger** : thème niv.1, niv.2 (contraint à la taxonomie), sentiment, signaux ; valider ou écarter.
 - RG : la correction respecte la **contrainte hiérarchique** (un niv.2 n'est sélectionnable que sous son niv.1).
 - RG : chaque correction est **historisée** (qui, quand, ancienne/nouvelle valeur) et le résultat est marqué « corrigé ».
@@ -128,16 +137,42 @@ Transformer le POC en **application conteneurisée, utilisable par le métier**,
 ### F6 — Tableaux de bord & KPI (cf. §6 pour le détail)
 - Trois familles : **KPI modèle**, **KPI résultats du lot**, **volumétrie & tendances**.
 - RG : les KPI modèle proviennent du rapport d'évaluation de la **version active** (`eval_report.json`) ; les KPI résultats/volumétrie sont calculés sur les lots traités.
+- RG : source(s) et plage de publication constituent un périmètre transversal ;
+  volumes, distributions, signaux, satisfaction et graphiques sont **recalculés**
+  sur ce périmètre, jamais filtrés uniquement à l'affichage.
+- RG : dans les répartitions hiérarchiques d'un lot comme de la vue globale,
+  sélectionner un thème de niveau 1 limite le tableau de niveau 2 à ses
+  sous-thèmes. La relation est calculée depuis les couples classés du périmètre
+  courant et respecte l'angle « thème principal », « toutes mentions » ou
+  « second thème seul » ; annuler la sélection rétablit tous les sous-thèmes.
+- RG : ces répartitions proposent un classement décroissant par **volume total**
+  ou par nombre absolu de mentions **négatives**, **neutres** ou **positives**.
+  Les barres et valeurs représentent le critère actif ; les thèmes à zéro restent
+  visibles. À égalité de sentiment, le volume total puis le libellé départagent
+  l'ordre. L'agrégation respecte l'angle, le niveau et le périmètre source/date.
+- RG : les graphiques **thème × sentiment** du lot et de la vue globale classent
+  les thèmes par **nombre absolu de verbatims négatifs décroissant**. Les égalités
+  sont départagées par le volume total décroissant, puis par le libellé. Ce tri
+  porte sur toutes les mentions (thème principal et second thème).
+- RG : dans ces graphiques, sélectionner un thème de niveau 1 déplie sous sa
+  ligne les sous-thèmes réellement classés avec leur propre répartition
+  Négatif / Neutre / Positif. Un second clic replie la ligne ; le tri métier et
+  le périmètre source/date restent identiques au niveau parent et au niveau enfant.
 - CA : chaque dashboard se charge en < 3 s et indique la version de modèle et la période concernées.
 
 ### F7 — Exports
 - Export du **CSV enrichi** (toutes colonnes d'origine + colonnes du modèle, format identique au POC) et en **XLSX**.
 - Export du **fichier de revue** (cas incertains) et du jeu de **corrections validées**.
 - RG : encodage UTF-8 (BOM) pour ouverture Excel FR ; le nom de fichier reprend le libellé du lot.
+- RG : chaque ligne de verbatim expose `fichier_source`, `reference_reponse`,
+  `date_publication_verbatim` et `date_traitement_lot`. `reference_reponse` est
+  opaque et ne contient ni identifiant source ni numéro de commande. L'export des
+  corrections validées porte la même traçabilité. L'export d'un lot honore tous les filtres actifs.
 - CA : le CSV exporté est ré-ouvrable dans Excel sans casse d'accents et contient exactement les colonnes attendues.
 
 ### F8 — Historique & traçabilité
-- Liste des lots (date, auteur, source, volumétrie, taux de revue, durée, version de modèle, statut).
+- Liste des lots (création et **fin de traitement**, auteur, fichiers source,
+  volumétrie, taux de revue, durée, version de modèle, statut).
 - **Journal d'audit** (admin) : connexions, lancements, corrections, activations de modèle, purges, modifications de configuration.
 - CA : toute action sensible est tracée avec utilisateur + horodatage.
 
@@ -198,12 +233,36 @@ Transformer le POC en **application conteneurisée, utilisable par le métier**,
   second. Le **second thème est aussi publié seul**.
 - Taux de **bi-thèmes**, rapporté aux verbatims classés.
 - Comptage des signaux : rupture / churn / insatisfaction (n et %).
-- **Satisfaction déclarée** : note moyenne, part de satisfaits (≥ 3) et
-  d'insatisfaits (< 3), répartition des notes sur l'échelle commune 1-4,
-  ventilation par source. Distincte du signal `insatisfaction`, qui est une
-  déduction du modèle sur le texte et non une déclaration du client. Une note
-  absente est comptée à part et ne pèse sur aucune moyenne ; un agrégat entre
-  sources porte la mention « conversion à valider » tant que Q-17 est ouverte.
+- **Satisfaction déclarée** : unité statistique **répondant**, jamais ligne de
+  verbatim. Moyenne séparée pour les quatre sources, note native conservée
+  (MDTC 1–4, Mopinion 1–5), affichage sur 10 par division par le maximum natif,
+  et ventilation MDTC `ancien` / `nouveau` / `non_renseigne`. Ce dernier code
+  technique est présenté à l'écran comme **« Statut client non disponible »** :
+  il signifie que la source ne porte pas le statut ancien/nouveau, et non que la
+  note de satisfaction est absente. Les quatre sources attendues restent
+  visibles même lorsqu'un export n'a pas été reçu ; cette indisponibilité est
+  distinguée d'un volume mesuré à zéro. Chaque moyenne indique sa source, son
+  échelle et le nombre de répondants notés. Notes nulles exclues, notes hors
+  plage comptées comme invalides. Un agrégat multi-source éventuel reste
+  secondaire et pondère chaque répondant une seule fois après conversion.
+- **Comparaison inter-lots** : le tableau de bord compare le lot courant à un
+  lot terminé de référence, choisi automatiquement ou explicitement. La période
+  affichée vient des dates de réponse des fichiers source, jamais de la date
+  d'upload. Les évolutions de satisfaction sont exprimées en **points sur 10**
+  et portent la période, l'effectif courant et l'effectif de référence. Une
+  source sans date, note native ou échelle compatible est marquée « non
+  comparable », sans valeur fabriquée.
+- **Évolution des classifications** : top 5 des sous-thèmes par source, en
+  *toutes mentions*, avec rang, nombre de verbatims, part dans les verbatims de
+  la source et écart au lot de référence. Un même verbatim ne compte jamais
+  deux fois dans une même classification, même si une sortie anormale répétait
+  le thème dans les deux rangs. Les deltas ne sont publiés que lorsque les lots
+  utilisent le même modèle/référentiel ; les volumes courants restent visibles
+  sinon avec la mention « non comparable ». Cette analyse porte uniquement sur
+  les **réponses textuelles ouvertes** classées par le modèle. Les réponses aux
+  questions fermées ne sont ni fusionnées ni implicitement comptées dans ces
+  thèmes ; leur analyse relève d'un indicateur séparé avec un mapping métier
+  explicite.
 - Répartition par source (MDTC / Mopinion) et par score de satisfaction.
 - Nombre de corrections effectuées (taux de correction).
 
@@ -266,8 +325,9 @@ Transformer le POC en **application conteneurisée, utilisable par le métier**,
 
 ### 7.4 Modèle de données (entités principales)
 - `users` (id, username, password_hash, role, active, created_at)
-- `batches` (id, label, statut, created_by, dates, model_version, seuil_revue, n_total, n_processed, n_review, n_errors, duration_s, source_files)
-- `results` (id, batch_id, row_index, source, **verbatim_analyse (anonymisé)**, nb_themes, **satisfaction (note client normalisée 1-4, nullable)**, theme1_niv1/niv2/sentiment/score, theme2_*, signaux, confidence_globale, revue_humaine_requise, corrected, original_columns (jsonb))
+- `batches` (id, label, statut, created_by, dates dont `finished_at`, model_version, seuil_revue, n_total, n_processed, n_review, n_errors, duration_s, `source_files` avec chemin interne + nom original)
+- `survey_responses` (id, batch_id, source_type, source_file, respondent_key opaque, **response_date**, satisfaction_native, satisfaction_scale_max, satisfaction_normalized, rating_invalid, client_status) — **une ligne par réponse source ayant produit au moins un verbatim**. `response_date` est la date métier du fichier, nullable et jamais remplacée par la date d'upload.
+- `results` (id, batch_id, survey_response_id, row_index, source, **verbatim_analyse (anonymisé)**, nb_themes, **satisfaction (normalisation ML historique 1-4, nullable)**, theme1_niv1/niv2/sentiment/score, theme2_*, signaux, confidence_globale, revue_humaine_requise, corrected, original_columns (jsonb))
   > `original_columns` ne reçoit **jamais** les colonnes de texte libre du fichier source : elles portent le verbatim **brut**, et les recopier remettrait en base les PII que l'anonymiseur vient de masquer.
 - `corrections` (id, result_id, user_id, champ, ancienne_valeur, nouvelle_valeur, created_at)
 - `model_versions` (id, version, path, metrics (jsonb), active, registered_at)
@@ -281,8 +341,11 @@ Transformer le POC en **application conteneurisée, utilisable par le métier**,
 - `GET/POST/PATCH/DELETE /api/users` (admin)
 - `POST /api/batches` (upload + params), `GET /api/batches`, `GET /api/batches/{id}`, `DELETE /api/batches/{id}`
 - `GET /api/batches/{id}/results` (filtres, pagination), `GET /api/batches/{id}/export?format=csv|xlsx`
-- `GET /api/review?batch_id=...`, `PATCH /api/results/{id}` (correction), `GET /api/corrections/export`
-- `GET /api/kpi/model`, `GET /api/kpi/batch/{id}`, `GET /api/kpi/volumetry?from=&to=`
+- `GET /api/batches/{id}/review`, `PATCH /api/results/{id}` (correction), `GET /api/corrections/export`
+- `GET /api/kpi/model`, `GET /api/batches/{id}/kpi?reference_batch_id=`, `GET /api/kpi/volumetry`
+- Les endpoints résultats, export, revue et KPI acceptent `source` répété,
+  `date_from` et `date_to` ; les bornes portent sur `survey_responses.response_date`
+  et sont inclusives.
 - `GET /api/models`, `POST /api/models/{id}/activate` (admin)
 - `GET/PATCH /api/config` (admin), `POST /api/admin/purge` (admin)
 - `GET /health` (sans auth)
