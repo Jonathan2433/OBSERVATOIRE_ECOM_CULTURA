@@ -103,10 +103,11 @@ dans les verbatims mixtes. Le prompt Claude reste en V1 pour isoler la comparais
 ## 6. Recettes (non-régression)
 
 **Applicatives** — hors ligne, sans Docker, venv torch-free
-(`fastapi httpx sqlalchemy pydantic pydantic-settings argon2-cffi PyJWT python-multipart pandas numpy openpyxl pyyaml redis rq`) :
+(`fastapi httpx sqlalchemy pydantic pydantic-settings argon2-cffi PyJWT python-multipart pandas numpy openpyxl pyyaml redis rq spacy`,
+plus `python -m spacy download fr_core_news_sm` pour le bloc NER élisions de `recette_v1`) :
 
 ```bash
-python app/tests/recette_v1.py   # -> 115 OK   python app/tests/recette_v4.py  # -> 67 OK
+python app/tests/recette_v1.py   # -> 119 OK   python app/tests/recette_v4.py  # -> 67 OK
 python app/tests/recette_v3.py   # -> 13 OK    python app/tests/recette_v5.py  # -> 115 OK
 python app/tests/recette_v6.py   # -> 42 OK
 python app/tests/test_satisfaction_respondents.py  # -> 10 OK

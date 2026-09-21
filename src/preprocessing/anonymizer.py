@@ -86,13 +86,33 @@ _PER_STOPLIST = {
     "décevant", "lent", "facile", "intuitive", "intuitif",
     # Enseigne (à protéger pour ne pas dégrader les signaux)
     "cultura",
+    # Délai (remontée métier 21/09/2026 : "Délai long pour un article
+    # présent en magasin" masqué en "[NOM] long..." — majuscule de début
+    # de phrase, faux positif documenté en R-14).
+    "délai", "délais",
 }
+
+# Élisions françaises ("n'", "qu'", "m'"...) que spaCy scinde en token à part
+# et que le petit modèle `fr_core_news_sm` étiquette parfois PER à tort
+# (remontée métier 21/09/2026 : "cela n'est pas rattrapable" -> "cela
+# [NOM]est pas rattrapable" ; "qu'une pièce d'identité" -> "[NOM]une pièce
+# d'identité"). Une élision seule ne peut jamais être un nom propre : le
+# span entier doit être une des formes listées, apostrophe droite ou
+# typographique.
+_ELISION_RE = re.compile(
+    r"^(?:jusqu|lorsqu|puisqu|quoiqu|qu|[cdjlmnst])['’]$", re.IGNORECASE
+)
 
 
 def _is_stoplisted(span_text: str, stoplist: set) -> bool:
     """True si tous les tokens du span sont du vocabulaire métier (à ne pas masquer)."""
     tokens = [t for t in re.split(r"\s+", span_text.strip().lower()) if t]
     return bool(tokens) and all(t in stoplist for t in tokens)
+
+
+def _is_elision_fragment(span_text: str) -> bool:
+    """True si le span n'est qu'une élision française (n', qu', d'...), jamais un nom."""
+    return bool(_ELISION_RE.match(span_text.strip()))
 
 
 class AnonymisationIndisponibleError(RuntimeError):
@@ -217,7 +237,9 @@ class Anonymizer:
         # afin d'éviter de masquer "Livraison", "Colis"... (faux positifs spaCy).
         spans = [
             ent for ent in doc.ents
-            if ent.label_ == "PER" and not _is_stoplisted(ent.text, self.per_stoplist)
+            if ent.label_ == "PER"
+            and not _is_stoplisted(ent.text, self.per_stoplist)
+            and not _is_elision_fragment(ent.text)
         ]
         if not spans:
             return text, 0

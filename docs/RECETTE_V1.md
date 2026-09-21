@@ -20,22 +20,25 @@ python3 -m venv .venv_validate
 .venv_validate/bin/python -m pip install --upgrade pip
 .venv_validate/bin/python -m pip install --prefer-binary \
     fastapi httpx sqlalchemy "pydantic>=2" pydantic-settings argon2-cffi \
-    PyJWT python-multipart pandas numpy openpyxl pyyaml redis rq
+    PyJWT python-multipart pandas numpy openpyxl pyyaml redis rq spacy
+.venv_validate/bin/python -m spacy download fr_core_news_sm
 .venv_validate/bin/python app/tests/recette_v1.py
 ```
 
-Sortie attendue : **`Bilan : 115 OK · 0 ÉCHEC · 0 SKIP`** (code de sortie 0).
+Sortie attendue : **`Bilan : 119 OK · 0 ÉCHEC · 0 SKIP`** (code de sortie 0).
 
 > Les sections skippent proprement si une couche est absente de l'environnement
-> (ex. `fastapi` hors image API, `src/` hors image worker). Dans le venv de recette
-> ci-dessus, **tout** s'exécute, y compris l'E2E du pipeline (stub).
+> (ex. `fastapi` hors image API, `src/` hors image worker, `spacy`/`fr_core_news_sm`
+> pour le bloc NER élisions). Dans le venv de recette ci-dessus, **tout** s'exécute,
+> y compris l'E2E du pipeline (stub). `spacy` reste **torch-free** : son ajout ne
+> remet pas en cause le caractère « applicatif, hors ligne » de cette recette.
 
 ### Couverture automatisée
 
 | Bloc | Vérifie | Garde-fou / DoD |
 |---|---|---|
 | Infrastructure | binding `127.0.0.1`, modèles `:ro`, `HF_HUB_OFFLINE`, en-têtes nginx, `.env` gitignoré | §10 #1/#4/#8/#9 |
-| Anonymisation | e-mail / téléphone / n° de commande masqués + comptage | §10 #2 |
+| Anonymisation | e-mail / téléphone / n° de commande masqués + comptage ; élisions françaises (`n'`, `qu'`, `m'`, `jusqu'`...) non confondues avec des noms propres (NER spaCy), vrai nom propre toujours masqué | §10 #2 |
 | Taxonomie | tous les couples (niv.1, niv.2) émis sont valides ; couple invalide rejeté | §10 #3 |
 | Auth / RBAC | non-authentifié → 401 ; analyste → 403 sur audit/config/users ; verrouillage 429 | §10 #11, §7.9 |
 | Résultats / export | confiance + statut exposés ; absence explicite de référence sur les lots historiques ; filtres thème, multi-sources et date inclusive ; CSV colonnes POC + traçabilité fichier/référence pseudonymisée/publication/traitement + BOM ; pas de PII | §11, §10 #6 |
