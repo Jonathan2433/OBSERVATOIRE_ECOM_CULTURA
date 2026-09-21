@@ -1,10 +1,13 @@
 # Spec V4 — Second moteur de classification « LM Studio » (LLM local)
 
-> **Statut** : **implémentée et alignée Cultura 2026** (lots O1→O6, recette V4
-> 88/88 ; contrat V2 livré le 18/09/2026, après le tag historique `v4.0`. Incident de
-> concurrence/chargement JIT du 19/09/2026 corrigé, cf. §7.1 ; biais de sur-classement
-> Général/sentiment négatif du 19-20/09/2026 corrigé, cf. §7.2 ; format du bloc
-> taxonomie et coquilles du référentiel du 20-21/09/2026 corrigés, cf. §7.3).
+> **Statut** : **implémentée, alignée Cultura 2026 et validée par comparaison objective**
+> (lots O1→O6, recette V4 88/88 ; contrat V2 livré le 18/09/2026, après le tag
+> historique `v4.0`. Incident de concurrence/chargement JIT du 19/09/2026 corrigé,
+> cf. §7.1 ; biais de sur-classement Général/sentiment négatif du 19-20/09/2026
+> corrigé, cf. §7.2 ; format du bloc taxonomie et coquilles du référentiel du
+> 20-21/09/2026 corrigés, cf. §7.3 ; comparaison LM Studio vs CamemBERT du
+> 21/09/2026 — 64 % d'accord niv.1, sentiment quasi identique, aucun bug trouvé,
+> cf. §7.4).
 > **Principe directeur** : **strictement additive**, aucun impact sur l'app existante
 > (analyste, contrats API, schéma DB, moteur CamemBERT) — gardée derrière `lmstudio.enabled`.
 
@@ -263,9 +266,9 @@ pas corrélée à la justesse sur ce type de biais systématique (cf. §6).
 cohérente de `Positif` et `Neutre`, ex. « livraison rapide » → `Réception
 commande / Livraison à domicile`, `Positif`). Aucun changement de schéma, de
 contrat de sortie ni des garde-fous de `map_llm_response` : seule la formulation
-du prompt a changé. Le résiduel de `Général` (38,3 %) reste à comparer à la
-distribution de CamemBERT sur le même échantillon (page **Comparaison**, non
-encore fait à ce stade) avant de considérer le sujet clos.
+du prompt a changé. Le résiduel de `Général` (38,3 %) a été comparé à la
+distribution de CamemBERT via la page **Comparaison** une fois §7.3 corrigé —
+voir §7.4 : distributions de sentiment quasi identiques entre les deux moteurs.
 
 ### 7.3 Incident du 20-21/09/2026 — le « Général » résiduel était un rejet du garde-fou, pas un choix du modèle (résolu)
 
@@ -319,6 +322,44 @@ sa proposition. Deux causes prouvées, distinctes du biais de sentiment de §7.2
 commmande` (délais, suivi, annulation — des motifs fréquents) passe de 1 à 39
 occurrences sur les 100 : c'est le signe le plus net que la coquille référentiel
 bloquait un thème à fort volume, pas un cas marginal.
+
+### 7.4 Validation croisée du 21/09/2026 — comparaison LM Studio vs CamemBERT (page Comparaison)
+
+Une fois §7.1-§7.3 corrigés, comparaison officielle lancée depuis l'app (Lot 23,
+run #10, `n=50`, moteurs `lmstudio:qwen2.5-vl-7b-instruct` et
+`camembert-cultura_2026-20260910_115611`, sans juge) :
+
+| Métrique | Valeur |
+|---|---|
+| Accord sur le grand thème (niv.1) | **64 %** (18 désaccords / 50) |
+| Distribution de sentiment | LM Studio {Négatif 23, Neutre 4, Positif 23} — CamemBERT {Négatif 25, Neutre 1, Positif 24} |
+| Confiance moyenne (auto-déclarée, non calibrée) | LM Studio 0,904 — CamemBERT 0,822 |
+| Latence | LM Studio 4180 ms/verbatim — CamemBERT 318 ms/verbatim (~13×) |
+
+**La distribution de sentiment est désormais quasi identique entre les deux
+moteurs** — confirmation indépendante, via l'outil de mesure objective de l'app,
+que le correctif de §7.2 tient sur un lot différent de celui où il a été mesuré.
+
+**Les 18 désaccords de thème ont été relus un par un** (texte + les deux
+sorties) : 17 sur 18 portent le **même sentiment** des deux côtés — ce sont des
+désaccords de sous-thème fin entre catégories proches et légitimement
+ambiguës (ex. « respect du délai de livraison » → `Attente commmande/Respect
+des délais` pour LM Studio contre `Réception commande/Conformité commande`
+pour CamemBERT ; les deux sont défendables), pas des erreurs grossières d'un
+côté. **Aucun bug de code identifié** dans ce run : un taux d'accord de 64 %
+entre un LLM généraliste 7B et un modèle spécialisé fine-tuné, sur une
+taxonomie à 59 sous-thèmes fins, est un résultat sain, pas un signal
+d'alerte.
+
+**Point de vigilance mineur, pas corrigé** (rendement décroissant d'un
+correctif de prompt de plus, risque de sur-ajustement) : LM Studio choisit
+`Choix produit / Prix, promotions` sur 3 des 18 désaccords (rows 85, 143, 163)
+alors que le texte ne mentionne pas explicitement de prix. À surveiller sur un
+volume plus large avant d'y toucher.
+
+L'unique désaccord de **sentiment** (verbatim 194, un cadeau sans emballage
+disponible : LM Studio dit Neutre, CamemBERT dit Négatif, à raison — le texte
+exprime une vraie déception) reste un exemple isolé, pas un pattern.
 
 ---
 
