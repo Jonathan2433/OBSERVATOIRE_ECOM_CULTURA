@@ -239,7 +239,10 @@ Ordre d'application (important) :
 
 1. **Regex** : e-mails → `[EMAIL]`, téléphones → `[TEL]`, numéros de commande → `[COMMANDE]`.
 2. **NER spaCy** (`fr_core_news_sm`, entités `PER`) → `[NOM]`, avec **stoplist** pour éviter de
-   masquer des mots courants ou des noms de marque détectés à tort.
+   masquer des mots courants ou des noms de marque détectés à tort, et un garde-fou dédié aux
+   **élisions françaises** (`n'`, `qu'`, `m'`, `jusqu'`...) que spaCy scinde en token à part et
+   étiquette parfois `PER` — bug confirmé le 21/09/2026 sur des verbatims réels (apostrophe
+   typographique `’`), corrigé par `_is_elision_fragment` (cf. R-14).
 
 Mode dégradé : si spaCy est absent, le module **continue avec les regex seules** et émet un
 avertissement — les noms propres ne sont alors **pas** masqués. Comportement à connaître : il

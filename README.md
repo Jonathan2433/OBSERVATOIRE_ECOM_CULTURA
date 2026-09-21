@@ -243,7 +243,7 @@ Voir [`docs/TRANSMISSION.md`](docs/TRANSMISSION.md).
 **Recettes applicatives** — torch-free (SQLite, classifieur stub), hors ligne :
 
 ```bash
-python app/tests/recette_v1.py   # conformité applicative + KPI répondant      -> 115 OK
+python app/tests/recette_v1.py   # conformité applicative + KPI répondant      -> 119 OK
 python app/tests/recette_v3.py   # V3 : annulation, reprise, ops, mot de passe -> 13 OK
 python app/tests/recette_v4.py   # V4 : moteur LM Studio + contrat Cultura     -> 67 OK
 python app/tests/recette_v5.py   # V5 : cascade, comparaison, juge Claude      -> 115 OK

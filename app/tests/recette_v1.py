@@ -122,6 +122,63 @@ def test_anonymization() -> None:
 
 
 # --------------------------------------------------------------------------- #
+#  2 bis. Anonymisation NER — élisions vs. noms propres (remontée métier
+#         21/09/2026, cf. docs/SPEC_V4_LMSTUDIO.md, R-14 de
+#         CADRAGE_NOUVEAU_MODELE.md). Nécessite spaCy : SKIP si absent.
+# --------------------------------------------------------------------------- #
+def test_anonymization_per_elisions() -> None:
+    section("Anonymisation NER : élisions et majuscules de tête de phrase (remontée métier 21/09)")
+    try:
+        from src.utils import load_config
+        from src.preprocessing import Anonymizer
+    except Exception as exc:
+        skip("Élisions/majuscules non confondues avec des noms propres",
+             f"moteur src/ indisponible ici ({type(exc).__name__}) — validé en image worker")
+        return
+
+    cfg = load_config(str(_CONFIG))
+    anon = Anonymizer(cfg)
+    if not anon._ner_available:
+        skip("Élisions/majuscules non confondues avec des noms propres",
+             "modèle spaCy indisponible dans cet environnement — validé en image worker")
+        return
+
+    # Cas réels remontés par le métier (captures du 21/09/2026) : "Le n' qui
+    # passe pas ?". Reproduction fidèle à l'apostrophe typographique ’ que
+    # tapent les claviers mobiles / Word (l'apostrophe droite ' ne déclenche
+    # pas le même comportement chez spaCy — c'est le déclencheur exact).
+    masked, _ = anon.anonymize(
+        "Une erreur s’est glissée sur le numéro de téléphone pour la commande et "
+        "du coup, cela n’est pas rattrapable. Il faudrait pouvoir modifier cette "
+        "information même après paiement."
+    )
+    check("Élision \"n’\" non masquée en [NOM]", "n’est" in masked and "[NOM]" not in masked, masked)
+
+    masked, _ = anon.anonymize(
+        "J’ai été assez surpris lors du retrait de ma commande en magasin. Au "
+        "moment de la commande, il ne m’a pas été indiqué qu’une pièce d’identité "
+        "serait nécessaire pour récupérer le livre. Je trouve dommage que cette "
+        "information ne soit pas indiquée, car cela aurait évité un déplacement "
+        "inutile jusqu’à la voiture."
+    )
+    check("Élisions \"m’\", \"qu’\" et \"jusqu’\" non masquées en [NOM]",
+          "m’a" in masked and "qu’une" in masked and "jusqu’à" in masked
+          and "[NOM]" not in masked, masked)
+
+    # Mot métier capitalisé en tête de phrase (faux positif R-14).
+    masked, _ = anon.anonymize("Délai long pour un article présent en magasin.")
+    check("\"Délai\" en tête de phrase non masqué en [NOM]", "[NOM]" not in masked, masked)
+
+    # Non-régression : un vrai nom propre reste masqué (le garde-fou élisions
+    # ne doit pas désactiver la NER dans son ensemble).
+    masked, counts = anon.anonymize(
+        "Bonjour, merci de contacter Jean Dupont pour le suivi de mon dossier."
+    )
+    check("Un vrai nom propre reste masqué en [NOM]",
+          "Jean Dupont" not in masked and "[NOM]" in masked and counts["PER"] >= 1, masked)
+
+
+# --------------------------------------------------------------------------- #
 #  3. Validité de la taxonomie — §10 #3 (torch-free)
 # --------------------------------------------------------------------------- #
 def test_taxonomy() -> None:
@@ -768,6 +825,7 @@ def test_pipeline_e2e(SessionLocal) -> None:
 def main() -> int:
     test_static_guards()
     test_anonymization()
+    test_anonymization_per_elisions()
     test_taxonomy()
     admin, SessionLocal = test_api()
     if admin is not None:

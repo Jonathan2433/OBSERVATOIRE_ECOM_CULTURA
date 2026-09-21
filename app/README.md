@@ -96,7 +96,7 @@ Recettes automatisées :
 
 | Applicatives (torch-free) | Modèle (environnement ML) |
 |---|---|
-| `recette_v1.py` → 115 OK · `recette_v3.py` → 13 OK | `recette_l1a_chargeur.py` → dépend de spaCy et des fichiers réels |
+| `recette_v1.py` → 119 OK · `recette_v3.py` → 13 OK | `recette_l1a_chargeur.py` → dépend de spaCy et des fichiers réels |
 | `recette_v4.py` → 67 OK · `recette_v5.py` → 115 OK | `recette_l2_protocole.py` → 15 OK |
 | `recette_v6.py` → 42 OK · `test_satisfaction_respondents.py` → 10 OK | `recette_couche_decision.py` → 46 OK |
 
@@ -121,7 +121,8 @@ find app -name '*.py' | xargs python3 -m py_compile   # syntaxe Python
 ```bash
 python3 -m venv .venv_validate && .venv_validate/bin/python -m pip install --upgrade pip
 .venv_validate/bin/python -m pip install --prefer-binary fastapi httpx sqlalchemy \
-  "pydantic>=2" pydantic-settings argon2-cffi PyJWT python-multipart pandas numpy openpyxl pyyaml redis rq
-.venv_validate/bin/python app/tests/recette_v1.py     # -> 115 OK · 0 ÉCHEC
+  "pydantic>=2" pydantic-settings argon2-cffi PyJWT python-multipart pandas numpy openpyxl pyyaml redis rq spacy
+.venv_validate/bin/python -m spacy download fr_core_news_sm
+.venv_validate/bin/python app/tests/recette_v1.py     # -> 119 OK · 0 ÉCHEC
 ```
 Détail de la couverture (garde-fous §10 + DoD §11) : [../docs/RECETTE_V1.md](../docs/RECETTE_V1.md).
