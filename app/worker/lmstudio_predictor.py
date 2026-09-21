@@ -49,6 +49,7 @@ from .llm_common import (  # noqa: F401  (ré-exports volontaires)
     OUTPUT_COLUMNS,
     PROMPT_VERSION_DEFAULT,
     PROMPT_VERSION_CULTURA_2026,
+    build_label_normalizer,
     build_llm_prompt,
     build_refiner_prompt,
     empty_output,
@@ -199,6 +200,8 @@ class LMStudioPredictor:
         engine = cfg.get("lmstudio", {}) or {}
         taxonomy_path = engine.get("taxonomy") or cfg["paths"]["taxonomy"]
         self.taxonomy = Taxonomy.from_json(resolve_path(cfg, taxonomy_path))
+        # Construit une seule fois (pas par verbatim) : cf. build_label_normalizer.
+        self.label_normalizer = build_label_normalizer(self.taxonomy, cfg, engine_name="lmstudio")
         self.anonymizer = Anonymizer(cfg)
         self.cleaner = TextCleaner(cfg)
         self.batch_size = cfg["model"]["batch_size_inference"]
@@ -334,7 +337,8 @@ class LMStudioPredictor:
         raw = self._call_raw_with_retries(prompt["system"], prompt["user"], purpose="classification")
         return map_llm_response(
             raw, cleaned_text, satisfaction, self.taxonomy, self.cfg,
-            self.sentiment_labels, engine_name="lmstudio")
+            self.sentiment_labels, engine_name="lmstudio",
+            label_normalizer=self.label_normalizer)
 
     def _predict_one(self, cleaned_text: str, satisfaction: Optional[float]) -> Dict[str, Any]:
         """Prédit un verbatim (mode proposeur), avec retries sur erreur transitoire."""

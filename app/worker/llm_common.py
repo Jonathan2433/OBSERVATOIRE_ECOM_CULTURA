@@ -1,13 +1,18 @@
 """Logique de décision PARTAGÉE par les moteurs LLM (LM Studio, Claude) — V5.
 
-Ce module regroupe les fonctions **pures** (sans I/O, sans torch, sans spaCy)
+Ce module regroupe les fonctions **pures** (sans accès disque/réseau/DB, sans
+torch, sans spaCy — hormis un log d'observabilité sur repli, cf. `map_llm_response`)
 mutualisées entre les backends LLM :
 
   - construction du prompt en mode **proposeur** (``build_llm_prompt``) et en mode
     **raffineur** (``build_refiner_prompt``, cascade V5) ;
   - revalidation taxonomie + repli + garde-fous (``map_llm_response``) ;
   - gabarit de sortie (``empty_output``, ``OUTPUT_COLUMNS``) et helpers de
-    normalisation (casse/accents).
+    normalisation (casse/accents) ;
+  - résolution des coquilles connues du référentiel (``build_label_normalizer``),
+    en réutilisant ``label_normalization`` (déjà utilisé par le chargeur
+    d'entraînement, cf. src/preprocessing/label_norm.py) plutôt que de dupliquer
+    une seconde table de synonymes.
 
 Extrait de ``lmstudio_predictor`` (V4), puis étendu avec un contrat versionné
 ``v2-cultura-2026`` propre à LM Studio. Le chemin historique ``v1`` reste
@@ -18,10 +23,14 @@ décision est ici. cf. docs/SPEC_V5_MULTI_MOTEUR §4.2.
 """
 from __future__ import annotations
 
+import logging
 import unicodedata
 from typing import Any, Dict, List, Optional, Tuple
 
+from src.preprocessing.label_norm import LabelNormalizer, TaxonomySynonymError
 from src.utils import Taxonomy
+
+logger = logging.getLogger("worker.llm_common")
 
 # Gabarit de sortie — MIROIR de src.inference.predictor.OUTPUT_COLUMNS.
 # Répliqué ici volontairement pour rester torch-free (predictor.py importe torch).
@@ -98,10 +107,20 @@ PROMPT_VERSION_CULTURA_2026 = "v2-cultura-2026"
 
 
 def _taxonomy_block(taxonomy: Taxonomy) -> str:
+    """Rend la taxonomie en puces, un sous-thème par ligne.
+
+    Un format ``"- niv1 : a, b, c"`` est ambigu dès qu'un libellé niv2 contient
+    lui-même une virgule (ex. ``"Stock, disponibilité"``, ``"Prix, promotions"``) :
+    un modèle 7B tend alors à tronquer au premier séparateur rencontré et à
+    répondre ``niv2="Stock"``, rejeté par la validation taxonomique en aval
+    (cf. incident du 20/09/2026, SPEC_V4_LMSTUDIO.md §7.3). Une puce par
+    sous-thème lève l'ambiguïté sans changer le contenu transmis.
+    """
     lines = []
     for niv1 in taxonomy.niv1_labels:
-        children = ", ".join(taxonomy.children.get(niv1, []))
-        lines.append(f"- {niv1} : {children}")
+        lines.append(f"- {niv1} :")
+        for niv2 in taxonomy.children.get(niv1, []):
+            lines.append(f"    * {niv2}")
     return "\n".join(lines)
 
 
@@ -365,6 +384,36 @@ def _canon_map(labels: List[str]) -> Dict[str, str]:
     return {_norm(l): l for l in labels}
 
 
+def build_label_normalizer(
+    taxonomy: Taxonomy, cfg: Dict[str, Any], *, engine_name: str = "lmstudio",
+) -> Optional[LabelNormalizer]:
+    """Construit le normaliseur partagé avec le chargeur d'entraînement (§8 SPEC_CHARGEUR).
+
+    Réutilise ``config.yaml → label_normalization`` (groupes de synonymes déjà
+    déclarés pour les coquilles connues du référentiel Cultura, ex.
+    ``["Attente commande", "Attente commmande"]``) au lieu de dupliquer une
+    seconde table de correspondance côté LLM — une seule source de vérité.
+
+    Appelé UNE FOIS à la construction du prédicteur (pas par verbatim) :
+    ``LabelNormalizer.__init__`` parcourt toute la taxonomie. Défensif : si le
+    référentiel chargé n'a pas exactement un membre de chaque groupe déclaré
+    (``TaxonomySynonymError`` — cas du référentiel V1/POC, sur lequel ces
+    groupes n'ont pas été calés), retourne ``None`` : le matching tolérant de
+    base (casse/accents/espaces) reste seul actif, sans faire échouer le moteur.
+    """
+    label_cfg = cfg.get("label_normalization") or {}
+    if not label_cfg:
+        return None
+    try:
+        return LabelNormalizer(taxonomy, label_cfg)
+    except TaxonomySynonymError as exc:
+        logger.warning(
+            "%s : label_normalization incompatible avec le référentiel chargé, "
+            "ignoré (seul le matching casse/accents reste actif) : %s",
+            engine_name, exc)
+        return None
+
+
 def map_llm_response(
     raw: Dict[str, Any],
     cleaned_text: str,
@@ -373,6 +422,7 @@ def map_llm_response(
     cfg: Dict[str, Any],
     sentiment_labels: List[str],
     engine_name: str = "lmstudio",
+    label_normalizer: Optional[LabelNormalizer] = None,
 ) -> Dict[str, Any]:
     """Transforme la réponse JSON du LLM en dict de sortie validé. Fonction pure.
 
@@ -425,15 +475,36 @@ def map_llm_response(
             forced_review = True
 
         # Couple niv1/niv2 : appariement tolérant contre la taxonomie.
-        canon_niv1 = niv1_canon.get(_norm(t.get("niv1", "")))
+        raw_niv1, raw_niv2 = t.get("niv1", ""), t.get("niv2", "")
+        canon_niv1 = niv1_canon.get(_norm(raw_niv1))
         canon_niv2 = None
         if canon_niv1 is not None:
-            canon_niv2 = _canon_map(taxonomy.children.get(canon_niv1, [])).get(_norm(t.get("niv2", "")))
+            canon_niv2 = _canon_map(taxonomy.children.get(canon_niv1, [])).get(_norm(raw_niv2))
+
+        if (canon_niv1 is None or canon_niv2 is None) and label_normalizer is not None:
+            # 3e recours : groupes de synonymes déclarés (label_normalization), pour
+            # les coquilles du référentiel qu'un appariement casse/accents/espaces ne
+            # couvre pas (ex. le LLM répond "Attente commande", orthographe standard,
+            # quand le référentiel Cultura porte "Attente commmande" — cf. incident du
+            # 20/09/2026, SPEC_V4_LMSTUDIO.md §7.3). Même ordre de résolution que le
+            # chargeur d'entraînement (src/preprocessing/label_norm.py §8.2).
+            syn_niv1, _ = label_normalizer.resolve_theme(raw_niv1)
+            syn_niv2, _ = label_normalizer.resolve_sous_theme(raw_niv2)
+            if (syn_niv1 is not None and syn_niv2 is not None
+                    and taxonomy.is_valid_pair(syn_niv1, syn_niv2)):
+                canon_niv1, canon_niv2 = syn_niv1, syn_niv2
 
         if canon_niv1 is not None and canon_niv2 is not None:
             mapped.append({"niv1": canon_niv1, "niv2": canon_niv2, "sentiment": cs, "conf": conf})
         else:
-            # Hors référentiel -> repli configuré + revue forcée.
+            # Hors référentiel -> repli configuré + revue forcée. Le couple brut est
+            # tracé (jamais le verbatim) : sans cela, savoir si le LLM avait presque
+            # juste ou complètement halluciné exigeait de rejouer le texte à la main
+            # (incident du 20/09/2026) — un simple log suffit à fermer cet écart.
+            logger.warning(
+                "%s : couple hors référentiel après normalisation -> repli %s/%s "
+                "(brut LLM : niv1=%r niv2=%r)",
+                engine_name, fallback_theme, fallback_niv2, raw_niv1, raw_niv2)
             fb = _fallback_theme(fallback_theme, fallback_niv2, min(conf, repli_cap))
             fb["sentiment"] = cs
             mapped.append(fb)

@@ -2,7 +2,7 @@
 """Recette V4 — moteur LM Studio (LLM local).
 
 Vérifie le moteur LM Studio de bout en bout SANS service réel (HTTP mocké) et SANS
-torch (fonctions pures de mapping/validation). Couvre les lots O1 à O5.
+torch (fonctions pures de mapping/validation). Couvre les lots O1 à O6.
 
 - O1 : gabarit de sortie (OUTPUT_COLUMNS), prompt (taxo injectée), mapping
   couple valide / repli, signaux, verbatim vide, client HTTP (parse/erreur).
@@ -11,6 +11,9 @@ torch (fonctions pures de mapping/validation). Couvre les lots O1 à O5.
 - O3 : détection LM Studio (`/v1/models`), `available` dynamique, synchro registre.
 - O4 : pool borné (ordre préservé), retries, fail-fast (échec propre si down).
 - O5 : taxonomie Cultura 2026, prompts proposeur/raffineur V2 et contrat D-26.
+- O6 : incident du 20-21/09/2026 — format du bloc taxonomie (niv2 composés non
+  tronqués), réutilisation de `label_normalization` pour les coquilles du
+  référentiel, observabilité du couple brut avant repli.
 
 Usage :  python app/tests/recette_v4.py   (code de sortie 0 si aucun ÉCHEC)
 """
@@ -32,7 +35,7 @@ for p in (str(ROOT), str(APP_DIR)):
 # Base SQLite éphémère AVANT tout import de common.db (lit DATABASE_URL à l'import).
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{Path(tempfile.mkdtemp(prefix='recette_v4_'))/'r4.db'}")
 
-from src.utils import Taxonomy  # noqa: E402
+from src.utils import Taxonomy, load_config  # noqa: E402
 from worker import lmstudio_predictor as op  # noqa: E402
 
 _RESULTS: list[tuple[str, str, str]] = []
@@ -44,6 +47,10 @@ def check(label: str, ok: bool, detail: str = "") -> None:
 
 TAXO = Taxonomy.from_json(ROOT / "data/raw/taxonomy_cultura_poc.json")
 TAXO_2026 = Taxonomy.from_json(ROOT / "data/models/cultura_2026/taxonomy.json")
+# Config RÉELLE du projet (config/config.yaml) — sert uniquement à tester
+# build_label_normalizer contre le vrai bloc `label_normalization`, pas à
+# dupliquer ses groupes de synonymes dans une config de test qui divergerait.
+CFG_FULL = load_config()
 N1 = TAXO.niv1_labels[0]                       # "Suivi de commande et livraison"
 N2 = TAXO.children[N1][0]                       # premier sous-thème valide
 SENT_LABELS = ["Négatif", "Neutre", "Positif"]
@@ -263,6 +270,75 @@ def run() -> None:
           and r_invalid_26["theme1_niv2"] == "Autre"
           and TAXO_2026.is_valid_pair(r_invalid_26["theme1_niv1"], r_invalid_26["theme1_niv2"]))
 
+    # ============ O6 : incident du 20-21/09/2026 (lots 22/23) ================
+    # Diagnostic sur le vrai LM Studio (Qwen2.5-VL-7B) : ~84% des replis en
+    # Général/Autre étaient plafonnés à confidence=0.40 -> pas un choix du
+    # modèle, un REJET du garde-fou taxonomique. Deux causes prouvées par rejeu
+    # direct : (a) les libellés niv2 composés ("Stock, disponibilité") tronqués
+    # par le séparateur virgule du bloc taxonomie ; (b) la coquille du
+    # référentiel "Attente commmande" (3 m) que le LLM ne reproduit jamais,
+    # répondant l'orthographe standard "Attente commande" (2 m).
+
+    # --- O6.1 Bloc taxonomie : un niv2 composé par ligne, jamais tronqué -----
+    bloc = op.build_llm_prompt(TAXO_2026, "x", None, "Général", "v2-cultura-2026", "Autre")["user"]
+    check("O6 : bloc taxonomie — niv2 composé intact sur sa propre ligne",
+          "* Stock, disponibilité" in bloc and "* Prix, promotions" in bloc)
+    check("O6 : bloc taxonomie — plus de liste virgule ambiguë après niv1",
+          "- Choix produit :\n" in bloc and "- Choix produit : Informations produit" not in bloc)
+
+    # --- O6.2 build_label_normalizer : réutilise label_normalization existant -
+    ln_2026 = op.build_label_normalizer(TAXO_2026, CFG_FULL, engine_name="lmstudio")
+    check("O6 : label_normalizer construit sur le référentiel Cultura 2026", ln_2026 is not None)
+    if ln_2026:
+        check("O6 : résout la coquille référentiel (Attente commande -> Attente commmande)",
+              ln_2026.resolve_theme("Attente commande") == ("Attente commmande", None))
+        check("O6 : résout un synonyme de sous-thème (Suivi commande -> Suivi de commande)",
+              ln_2026.resolve_sous_theme("Suivi commande") == ("Suivi de commande", None))
+
+    ln_poc = op.build_label_normalizer(TAXO, CFG_FULL, engine_name="lmstudio")
+    check("O6 : label_normalizer absent (None) sur un référentiel incompatible, sans exception",
+          ln_poc is None)
+
+    # --- O6.3 map_llm_response : la coquille est récupérée SI label_normalizer fourni
+    raw_typo = {"themes": [{"niv1": "Attente commande", "niv2": "Commande annulée",
+                            "sentiment": "Négatif", "confidence": 0.9}], "signaux": {}}
+    r_sans_ln = op.map_llm_response(raw_typo, "texte", None, TAXO_2026, CFG_2026, SENT_LABELS,
+                                    label_normalizer=None)
+    check("O6 : sans label_normalizer, la coquille référentiel tombe en repli (comportement V4 inchangé)",
+          r_sans_ln["theme1_niv1"] == "Général", r_sans_ln["theme1_niv1"])
+
+    r_avec_ln = op.map_llm_response(raw_typo, "texte", None, TAXO_2026, CFG_2026, SENT_LABELS,
+                                    label_normalizer=ln_2026)
+    check("O6 : avec label_normalizer, la coquille référentiel est récupérée (pas de repli)",
+          r_avec_ln["theme1_niv1"] == "Attente commmande"
+          and r_avec_ln["theme1_niv2"] == "Commande annulée"
+          and r_avec_ln["revue_humaine_requise"] is False,
+          (r_avec_ln["theme1_niv1"], r_avec_ln["theme1_niv2"]))
+
+    # --- O6.4 Observabilité : le couple brut halluciné est tracé avant repli -
+    import logging as _logging
+
+    class _CaptureHandler(_logging.Handler):
+        def __init__(self):
+            super().__init__()
+            self.records = []
+        def emit(self, record):
+            self.records.append(record.getMessage())
+
+    handler = _CaptureHandler()
+    llm_logger = _logging.getLogger("worker.llm_common")
+    llm_logger.addHandler(handler)
+    try:
+        op.map_llm_response(
+            {"themes": [{"niv1": "Marketing lunaire", "niv2": "x",
+                        "sentiment": "Neutre", "confidence": 0.8}], "signaux": {}},
+            "texte", None, TAXO_2026, CFG_2026, SENT_LABELS, label_normalizer=ln_2026)
+    finally:
+        llm_logger.removeHandler(handler)
+    check("O6 : le couple brut halluciné est loggé avant repli (observabilité)",
+          any("Marketing lunaire" in msg and "niv2='x'" in msg for msg in handler.records),
+          handler.records)
+
     # --- 10. Client HTTP : parse OK (urlopen mocké) --------------------------
     import io
     import json as _json
@@ -439,6 +515,7 @@ def run() -> None:
         p.response_format_mode, p.response_format_fallback = "json_schema", "none"
         p.warmup_enabled, p._warmup_done = warmup, False
         p._warmup_lock = op.threading.Lock()
+        p.label_normalizer = None
         return p
 
     VALID = {"themes": [{"niv1": N1, "niv2": N2, "sentiment": "Neutre", "confidence": 0.8}],
@@ -518,5 +595,5 @@ if __name__ == "__main__":
         if status == "ÉCHEC" and detail:
             line += f"  -> {detail}"
         print(line)
-    print(f"\nRecette V4 (O1→O5) : {len(_RESULTS) - len(fails)}/{len(_RESULTS)} OK")
+    print(f"\nRecette V4 (O1→O6) : {len(_RESULTS) - len(fails)}/{len(_RESULTS)} OK")
     sys.exit(1 if fails else 0)

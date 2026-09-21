@@ -105,6 +105,7 @@ def make_predictor(max_parallel=4, retries=0):
     p.response_format_mode, p.response_format_fallback = "json_schema", "none"
     p.warmup_enabled, p._warmup_done = False, False
     p._warmup_lock = op.threading.Lock()
+    p.label_normalizer = None
     return p
 
 
@@ -117,6 +118,7 @@ def make_claude_predictor(max_parallel=4, retries=0, api_key="sk-test"):
     p.fallback_theme, p.prompt_version = "Autre / Non classé", "v1"
     p.max_parallel, p.retries = max_parallel, retries
     p.api_key = api_key
+    p.label_normalizer = None
     return p
 
 

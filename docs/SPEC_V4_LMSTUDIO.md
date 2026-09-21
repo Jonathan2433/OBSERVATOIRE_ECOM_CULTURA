@@ -1,9 +1,10 @@
 # Spec V4 — Second moteur de classification « LM Studio » (LLM local)
 
-> **Statut** : **implémentée et alignée Cultura 2026** (lots O1→O5, recette V4
-> 79/79 ; contrat V2 livré le 18/09/2026, après le tag historique `v4.0`. Incident de
+> **Statut** : **implémentée et alignée Cultura 2026** (lots O1→O6, recette V4
+> 88/88 ; contrat V2 livré le 18/09/2026, après le tag historique `v4.0`. Incident de
 > concurrence/chargement JIT du 19/09/2026 corrigé, cf. §7.1 ; biais de sur-classement
-> Général/sentiment négatif du 19-20/09/2026 corrigé, cf. §7.2).
+> Général/sentiment négatif du 19-20/09/2026 corrigé, cf. §7.2 ; format du bloc
+> taxonomie et coquilles du référentiel du 20-21/09/2026 corrigés, cf. §7.3).
 > **Principe directeur** : **strictement additive**, aucun impact sur l'app existante
 > (analyste, contrats API, schéma DB, moteur CamemBERT) — gardée derrière `lmstudio.enabled`.
 
@@ -143,11 +144,18 @@ pour Claude, dont le contrat n'est pas modifié par cette évolution LM Studio.
 `themes` : 1 à 2 ; `confidence_globale` = confiance du thème principal.
 
 ### 5.4 Validation & repli (jamais hors taxonomie)
-- **Appariement tolérant** : libellés LLM normalisés (casse + accents + espaces) et
-  appariés aux libellés **canoniques** de la taxonomie — un thème correct mais mal
-  capitalisé/accentué est **récupéré** (réécrit au canonique), sans jamais « deviner ».
-- `niv1` introuvable **ou** `niv2` non-enfant de `niv1` → couple canonique de repli
-  **`Général / Autre`** + **revue forcée**. *Pas de remap deviné.*
+- **Appariement exact**, puis **tolérant** : libellés LLM normalisés (casse + accents +
+  espaces) et appariés aux libellés **canoniques** de la taxonomie — un thème correct
+  mais mal capitalisé/accentué est **récupéré** (réécrit au canonique), sans jamais
+  « deviner ».
+- **3ᵉ recours — coquilles du référentiel** (`build_label_normalizer`, §7.3) : les
+  groupes de synonymes de `config.yaml → label_normalization` (déjà utilisés par le
+  chargeur d'entraînement) sont retentés avant le repli, pour les graphies qu'un
+  matching casse/accents ne couvre pas (ex. « Attente commande » vs « Attente
+  commmande » au référentiel).
+- `niv1` introuvable **ou** `niv2` non-enfant de `niv1` (même après les trois recours)
+  → couple canonique de repli **`Général / Autre`** + **revue forcée** + le couple brut
+  halluciné est **loggué** (jamais le verbatim). *Pas de remap deviné.*
 - JSON hors-forme → repli + revue, au plafond de confiance le plus bas (§6).
 - **Dé-doublonnage** : couples identiques fusionnés.
 
@@ -259,6 +267,59 @@ du prompt a changé. Le résiduel de `Général` (38,3 %) reste à comparer à l
 distribution de CamemBERT sur le même échantillon (page **Comparaison**, non
 encore fait à ce stade) avant de considérer le sujet clos.
 
+### 7.3 Incident du 20-21/09/2026 — le « Général » résiduel était un rejet du garde-fou, pas un choix du modèle (résolu)
+
+Le lot suivant (Lot 23, 199 verbatims, une fois §7.2 corrigé) restait à **56,8 %**
+de `Général / Autre`. Diagnostic affiné en inspectant, verbatim par verbatim, le
+JSON **brut** renvoyé par le LLM avant mapping (jusque-là invisible : il fallait
+rejouer le texte à la main pour le voir) : **95 des 113 lignes `Général / Autre`
+étaient à confidence exactement 0,40**, le plafond du garde-fou de repli — ce
+n'est pas le modèle qui choisit `Général`, c'est `map_llm_response` qui **rejette**
+sa proposition. Deux causes prouvées, distinctes du biais de sentiment de §7.2 :
+
+1. **Troncation des libellés niv2 composés.** Le bloc taxonomie listait les
+   sous-thèmes séparés par des virgules (`"- Choix produit : Informations
+   produit, Stock, disponibilité, Prix, promotions..."`), ambigu dès qu'un
+   libellé contient lui-même une virgule (`Stock, disponibilité`, `Prix,
+   promotions`) : le LLM répondait `niv2="Stock"` ou `niv2="Prix"`, rejetés.
+2. **Une coquille du référentiel non couverte par le matching tolérant.** Le
+   référentiel porte `"Attente commmande"` (3 « m », déjà connue et déclarée
+   dans `label_normalization.groupes_themes`, cf. `config.yaml`) ; le LLM
+   répond naturellement `"Attente commande"` (orthographe standard) — deviné
+   juste, rejeté quand même. Le matching de `map_llm_response` ne couvrait que
+   casse/accents/espaces, pas les groupes de synonymes déjà utilisés par le
+   chargeur d'entraînement pour cette même coquille.
+
+**Correctifs** (`llm_common.py`) :
+- `_taxonomy_block` rend désormais un sous-thème par ligne, à puce, sans
+  séparateur ambigu ;
+- `build_label_normalizer` construit, **une fois par prédicteur**, le même
+  `LabelNormalizer` que le chargeur d'entraînement (`src/preprocessing/
+  label_norm.py`), à partir de `config.yaml → label_normalization` — une seule
+  source de vérité pour les coquilles du référentiel, pas une table dupliquée
+  côté LLM. Défensif : si le référentiel chargé n'est pas compatible avec les
+  groupes déclarés (cas du profil V1/POC), retourne `None` sans faire échouer
+  le moteur — le matching casse/accents reste seul actif ;
+- `map_llm_response` tente ce normaliseur en **3ᵉ recours**, après
+  l'appariement exact puis tolérant, avant de tomber en repli ;
+- **observabilité** : tout repli forcé logue désormais le couple brut halluciné
+  par le LLM (jamais le verbatim). Sans ça, ce diagnostic n'était possible qu'en
+  rejouant les textes un par un.
+
+**Mesuré sur un échantillon de 100 verbatims du Lot 23, rejoués à l'identique** :
+
+| Indicateur | Avant | Après |
+|---|---|---|
+| `Général / Autre` | 62,0 % | **19,0 %** |
+| dont repli forcé (confidence = 0,40) | 55,0 % | **13,0 %** |
+| Revue humaine requise | 58,0 % | **13,0 %** (dans la cible métier D-9, 10-15 %) |
+| Sentiment (Positif/Négatif/Neutre) | 44/48/8 | 44/47/9 (stable — ce correctif ne touche pas le sentiment) |
+
+54 % des lignes de l'échantillon ont changé de sortie. Le thème `Attente
+commmande` (délais, suivi, annulation — des motifs fréquents) passe de 1 à 39
+occurrences sur les 100 : c'est le signe le plus net que la coquille référentiel
+bloquait un thème à fort volume, pas un cas marginal.
+
 ---
 
 ## 8. Offline / RGPD / sécurité
@@ -317,7 +378,7 @@ de `docker-compose.yml` pour atteindre le conteneur — cf. incident §7.1).
 | **O4** | Concurrence bornée + retries + fail-fast | ✅ |
 | **O5** | Alignement Cultura 2026, registre/référentiel API, doc et recette V4 | ✅ |
 
-**Validation** : `app/tests/recette_v4.py` **79/79** et `recette_v5.py` **115/115**
+**Validation** : `app/tests/recette_v4.py` **88/88** et `recette_v5.py` **115/115**
 (LM Studio mocké, torch-free). La recette couvre prompts proposeur/raffineur, taxonomie
 11/59, repli canonique, D-26 et référentiel servi à la revue.
 
