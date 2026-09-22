@@ -2,24 +2,25 @@ import type {
   ClassificationEvolution, ClassificationEvolutionItem, ClassificationSourceEvolution,
 } from "../api";
 import { DASHBOARD_SOURCE_GROUPS } from "../dashboardSources";
+import { formatEvolutionPercent, relativeEvolution } from "../evolutionDisplay";
 import { SOURCE_LABELS, SOURCE_SHORT_LABELS } from "../satisfactionDisplay";
 import { Badge, Card, InfoTip } from "../ui";
-
-function formatSigned(value: number, decimals = 1): string {
-  const sign = value > 0 ? "+" : "";
-  return `${sign}${value.toFixed(decimals)}`;
-}
 
 function EvolutionBadge({ item, comparable }: {
   item: ClassificationEvolutionItem;
   comparable: boolean;
 }) {
-  if (!comparable || item.share_delta == null) {
+  const outcome = relativeEvolution(item.current_share, item.reference_share, comparable);
+  if (outcome.kind === "not-comparable") {
     return <Badge tone="neutral">non comparable</Badge>;
   }
-  const points = item.share_delta * 100;
-  const tone = points > 0 ? "warning" : points < 0 ? "success" : "neutral";
-  return <Badge tone={tone}>{formatSigned(points)} pt</Badge>;
+  if (outcome.kind === "new") {
+    return <Badge tone="warning">nouveau</Badge>;
+  }
+  const tone = outcome.kind === "value"
+    ? (outcome.percent > 0 ? "warning" : outcome.percent < 0 ? "success" : "neutral")
+    : "neutral";
+  return <Badge tone={tone}>{formatEvolutionPercent(outcome)}</Badge>;
 }
 
 function SourceRanking({ source, showComparison }: {

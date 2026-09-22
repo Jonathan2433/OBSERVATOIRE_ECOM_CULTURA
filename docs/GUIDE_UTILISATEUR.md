@@ -243,7 +243,10 @@ La synthèse affiche ensuite les cinq sous-thèmes les plus présents dans les
 **réponses textuelles ouvertes** pour Mopinion mobile/ordinateur, MDTC
 post-achat et MDTC post-réception. Pour chaque classification, elle montre le
 **nombre de verbatims**, sa **part dans les verbatims de la source**, son rang
-et l'évolution de cette part en points par rapport au lot de référence.
+et l'évolution RELATIVE (%) de cette part par rapport au lot de référence :
+une part qui passe de 2 % à 3 % s'affiche `+50 %`, pas `+1 pt`. Une
+classification absente du lot de référence est marquée « nouveau » plutôt que
+d'afficher un pourcentage indéfini.
 
 Cette vue porte sur tous les verbatims, et non sur le seul signal ML
 `insatisfaction forte`. Elle compte le thème principal et le second thème. Un
@@ -277,11 +280,11 @@ métier précède la période courante sans la chevaucher. La date de traitement
 lot n'est jamais utilisée : un export d'août déposé en septembre reste une
 donnée d'août.
 
-Le badge d'évolution se lit en **points sur 10** : `+0,10 pt` signifie que la
-moyenne est passée, par exemple, de `8,10/10` à `8,20/10`. Il ne s'agit pas d'une
-hausse de 10 %. Les deux périodes et les deux effectifs notés restent affichés
-pour ne pas interpréter de la même façon une évolution sur 20 réponses et une
-évolution sur 10 000 réponses.
+Le badge d'évolution se lit en **% relatif** de la moyenne sur 10 : `+1,2 %`
+signifie que la moyenne est passée, par exemple, de `8,10/10` à `8,20/10`
+(`(8,20 − 8,10) / 8,10`). Les deux périodes et les deux effectifs notés
+restent affichés pour ne pas interpréter de la même façon une évolution sur
+20 réponses et une évolution sur 10 000 réponses.
 
 Précautions portées par l'écran lui-même :
 

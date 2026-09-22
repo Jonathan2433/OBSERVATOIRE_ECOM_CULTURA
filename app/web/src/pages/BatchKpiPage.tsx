@@ -8,6 +8,7 @@ import ClassificationEvolutionPanel from "../components/ClassificationEvolutionP
 import SatisfactionPanel from "../components/SatisfactionPanel";
 import StackedSentimentBar from "../components/StackedSentimentBar";
 import ThemeDistributionPanel from "../components/ThemeDistributionPanel";
+import { formatEvolutionPercent, relativeEvolution } from "../evolutionDisplay";
 import { Card, EmptyState, InfoTip, Select, Spinner, StatCard } from "../ui";
 import { useAnalysisFilters } from "../analysisFilters";
 import AnalysisFiltersBar from "../components/AnalysisFiltersBar";
@@ -40,13 +41,17 @@ export default function BatchKpiPage() {
   const comparison = kpi.comparison;
   const referenceCandidates = batches.filter((batch) => batch.status === "done" && batch.id !== batchId);
 
-  /** Les taux sont affichés en points de pourcentage, les volumes en unités. */
-  const comparisonHint = (metric?: MetricComparison, suffix = "") => {
+  /** Les taux sont affichés en évolution relative (%), les volumes en delta absolu. */
+  const comparisonHint = (metric?: MetricComparison) => {
     if (!metric) return undefined;
     if (metric.comparable === false) return metric.reason ?? "Non comparable";
-    const value = metric.unit === "ratio" ? metric.delta * 100 : metric.delta;
-    const sign = value > 0 ? "+" : "";
-    return `${sign}${value.toFixed(metric.unit === "ratio" ? 1 : 0)}${suffix} vs ${comparison?.reference_batch.label}`;
+    const refLabel = comparison?.reference_batch.label;
+    if (metric.unit === "count") {
+      const sign = metric.delta > 0 ? "+" : "";
+      return `${sign}${metric.delta.toFixed(0)} vs ${refLabel}`;
+    }
+    const outcome = relativeEvolution(metric.current, metric.reference, true);
+    return `${formatEvolutionPercent(outcome)} vs ${refLabel}`;
   };
 
   return (
@@ -98,18 +103,18 @@ export default function BatchKpiPage() {
             <StatCard label="Verbatims" value={kpi.n_total}
                       hint={comparisonHint(comparison?.lot_metrics.volume)} />
             <StatCard label="Taux de revue" value={`${(kpi.review_rate * 100).toFixed(1)} %`}
-                      hint={comparisonHint(comparison?.lot_metrics.review_rate, " pt")} />
+                      hint={comparisonHint(comparison?.lot_metrics.review_rate)} />
             <StatCard label={<span className="ui-row" style={{ gap: 4 }}>Bi-thèmes<InfoTip text="Verbatims auxquels le modèle a retenu un second thème. Le taux est rapporté aux verbatims classés, pas au lot entier." /></span>}
                       value={kpi.n_bi_themes}
-                      hint={comparisonHint(comparison?.lot_metrics.bi_theme_rate, " pt")
+                      hint={comparisonHint(comparison?.lot_metrics.bi_theme_rate)
                         ?? `${(kpi.taux_bi_themes * 100).toFixed(1)} % des classés`} />
             <StatCard label="Rupture client" value={kpi.signals.rupture}
-                      hint={comparisonHint(comparison?.lot_metrics.signal_rates.rupture, " pt")} />
+                      hint={comparisonHint(comparison?.lot_metrics.signal_rates.rupture)} />
             <StatCard label="Churn" value={kpi.signals.churn}
-                      hint={comparisonHint(comparison?.lot_metrics.signal_rates.churn, " pt")} />
+                      hint={comparisonHint(comparison?.lot_metrics.signal_rates.churn)} />
             <StatCard label={<span className="ui-row" style={{ gap: 4 }}>Insatisfaction forte<InfoTip text="Signal DÉDUIT par le modèle du texte du verbatim. À ne pas confondre avec la note déposée par le client." /></span>}
                       value={kpi.signals.insatisfaction}
-                      hint={comparisonHint(comparison?.lot_metrics.signal_rates.insatisfaction, " pt")} />
+                      hint={comparisonHint(comparison?.lot_metrics.signal_rates.insatisfaction)} />
             <StatCard label="Erreurs" value={kpi.n_errors} />
           </div>
         </Card>

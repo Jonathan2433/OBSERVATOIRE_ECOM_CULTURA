@@ -4,18 +4,20 @@ import type {
 } from "../api";
 import { DASHBOARD_SOURCE_GROUPS } from "../dashboardSources";
 import {
-  CLIENT_STATUS_LABELS, formatCompactOnTen, formatDeltaOnTen, formatPeriod,
-  SOURCE_LABELS, SOURCE_SHORT_LABELS,
+  CLIENT_STATUS_LABELS, formatCompactOnTen, formatPeriod, formatSatisfactionEvolution,
+  satisfactionEvolution, SOURCE_LABELS, SOURCE_SHORT_LABELS,
 } from "../satisfactionDisplay";
 import { Badge, Card, InfoTip } from "../ui";
 
 function DeltaBadge({ item }: { item?: SatisfactionSourceComparison }) {
-  if (!item?.comparable || item.delta_on_10 == null) {
-    return <Badge tone="neutral">non comparable</Badge>;
+  const outcome = satisfactionEvolution(
+    item?.current_mean_on_10 ?? null, item?.reference_mean_on_10 ?? null, Boolean(item?.comparable),
+  );
+  if (outcome.kind !== "value") {
+    return <Badge tone={outcome.kind === "new" ? "info" : "neutral"}>{formatSatisfactionEvolution(outcome)}</Badge>;
   }
-  const tone = item.delta_on_10 > 0
-    ? "success" : item.delta_on_10 < 0 ? "danger" : "neutral";
-  return <Badge tone={tone}>{formatDeltaOnTen(item.delta_on_10)}</Badge>;
+  const tone = outcome.percent > 0 ? "success" : outcome.percent < 0 ? "danger" : "neutral";
+  return <Badge tone={tone}>{formatSatisfactionEvolution(outcome)}</Badge>;
 }
 
 function ScoreGauge({ value }: { value: number | null }) {
@@ -95,7 +97,11 @@ function SourceSummary({ source, compared }: {
                           : formatCompactOnTen(segment.mean_on_10)}
                     </span>
                     {compared && (
-                      <small>{formatDeltaOnTen(previous?.delta_on_10 ?? null)}</small>
+                      <small>{formatSatisfactionEvolution(satisfactionEvolution(
+                        previous?.current_mean_on_10 ?? null,
+                        previous?.reference_mean_on_10 ?? null,
+                        previous != null,
+                      ))}</small>
                     )}
                   </div>
                 );
