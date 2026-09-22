@@ -66,3 +66,27 @@
   background: var(--cu-surface-alt); border: 1px solid var(--cu-border);
   border-radius: var(--r-md); padding: var(--sp-3) var(--sp-4); line-height: var(--lh-base);
 }
+
+/* --- Bandeau "Périmètre d'analyse" (AnalysisFiltersBar) ---
+   Namespace dédié plutôt que .ui-toolbar : ce dernier reste utilisé tel quel
+   par d'autres barres de filtres (ex. carte "Filtres" de ResultsPage), qu'on
+   ne veut pas affecter par ce layout à deux groupes. */
+.analysis-filters {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--sp-6); flex-wrap: wrap;
+}
+.analysis-filters__group { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.analysis-filters__group--sources { flex: 1 1 380px; }
+.analysis-filters__group--period { flex: 0 0 auto; width: min(100%, 360px); }
+.analysis-filters__label { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--cu-text-muted); }
+.analysis-filters__chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.analysis-filters__dates { display: flex; gap: var(--sp-3); }
+.analysis-filters__dates > .ui-field { flex: 1 1 0; min-width: 0; }
+.analysis-filters__divider { align-self: stretch; width: 1px; margin: 0 var(--sp-1); background: var(--cu-border); }
+.analysis-filters__count { font-size: var(--fs-sm); color: var(--cu-text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+@media (max-width: 720px) {
+  .analysis-filters { flex-direction: column; align-items: stretch; }
+  .analysis-filters__group--period { width: 100%; }
+  .analysis-filters__divider { width: auto; height: 1px; margin: var(--sp-1) 0; }
+}

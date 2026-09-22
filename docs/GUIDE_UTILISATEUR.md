@@ -179,10 +179,12 @@ référence pseudonymisée et date du retour lorsqu'elle est disponible.
 
 Menu **Tableaux de bord** (global) et **Lots → (un lot) → Tableau de bord**.
 
-Le bandeau **Sources et dates de publication** pilote toutes les cartes et tous
-les graphiques. Plusieurs sources peuvent être combinées. Une plage de dates
-exclut les anciens verbatims sans date métier ; l'application ne leur invente
-jamais la date de dépôt. Réinitialiser le bandeau rétablit le périmètre complet.
+Le bandeau **Périmètre d'analyse** pilote toutes les cartes et tous les
+graphiques, regroupé en deux blocs : **Sources** (plusieurs sources peuvent
+être combinées) et **Période** (une plage de dates exclut les anciens
+verbatims sans date métier ; l'application ne leur invente jamais la date de
+dépôt). L'en-tête du bandeau indique le nombre de filtres actifs ;
+Réinitialiser rétablit le périmètre complet.
 
 - **KPI modèle** (version active) : F1 niv.1/niv.2, sentiment, signaux, avec
   **alerte visuelle** si un indicateur passe sous son seuil cible.
