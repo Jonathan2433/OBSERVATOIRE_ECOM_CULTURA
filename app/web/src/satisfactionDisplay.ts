@@ -1,3 +1,5 @@
+import { formatEvolutionPercent, relativeEvolution, type EvolutionOutcome } from "./evolutionDisplay";
+
 export const SATISFACTION_DISPLAY_MAX = 10;
 
 /**
@@ -40,10 +42,20 @@ export function formatCompactOnTen(value: number | null): string {
   return value == null ? "—" : `${value.toFixed(1).replace(".", ",")} / 10`;
 }
 
-export function formatDeltaOnTen(value: number | null): string {
-  if (value == null) return "non comparable";
-  const sign = value > 0 ? "+" : "";
-  return `${sign}${value.toFixed(2).replace(".", ",")} pt`;
+/** Évolution RELATIVE (%) d'une note /10, pas un delta en points. */
+export function satisfactionEvolution(
+  currentOnTen: number | null,
+  referenceOnTen: number | null,
+  comparable: boolean,
+): EvolutionOutcome {
+  if (currentOnTen == null) return { kind: "not-comparable" };
+  return relativeEvolution(currentOnTen, referenceOnTen, comparable);
+}
+
+export function formatSatisfactionEvolution(outcome: EvolutionOutcome): string {
+  if (outcome.kind !== "value") return formatEvolutionPercent(outcome);
+  const sign = outcome.percent > 0 ? "+" : "";
+  return `${sign}${outcome.percent.toFixed(1).replace(".", ",")} %`;
 }
 
 export function formatPeriod(start: string | null, end: string | null): string {
