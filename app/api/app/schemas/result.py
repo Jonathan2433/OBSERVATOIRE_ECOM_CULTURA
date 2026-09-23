@@ -1,6 +1,7 @@
 """Schémas des résultats de classification et du test à la volée."""
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -13,6 +14,16 @@ class ResultOut(BaseModel):
     source: Optional[str] = None
     verbatim_analyse: str = ""
     nb_themes: int = 0
+    #: Valeur historique normalisée 1-4, réservée au modèle ML.
+    satisfaction: Optional[int] = None
+    #: Note métier native et son échelle. Absentes sur les anciens lots.
+    satisfaction_native: Optional[int] = None
+    satisfaction_scale_max: Optional[int] = None
+    client_status: Optional[str] = None
+    source_file: Optional[str] = None
+    response_reference: Optional[str] = None
+    response_date: Optional[date] = None
+    batch_processed_at: Optional[datetime] = None
     theme1_niv1: Optional[str] = None
     theme1_niv2: Optional[str] = None
     theme1_sentiment: Optional[str] = None
@@ -42,6 +53,9 @@ class CorrectionRequest(BaseModel):
     theme1_niv1: Optional[str] = None
     theme1_niv2: Optional[str] = None
     theme1_sentiment: Optional[str] = None
+    theme2_niv1: Optional[str] = None
+    theme2_niv2: Optional[str] = None
+    theme2_sentiment: Optional[str] = None
     signal_rupture: Optional[bool] = None
     signal_churn: Optional[bool] = None
     signal_insatisfaction: Optional[bool] = None

@@ -5,11 +5,11 @@ qu'un couple (niv.1, niv.2) appartient bien au référentiel. Stdlib uniquement
 (pas de numpy) : l'API reste légère.
 
 Deux sources fusionnées :
-  * le référentiel « officiel » du **modèle actif** ;
+  * le référentiel « officiel » du **moteur actif** (CamemBERT ou LM Studio) ;
   * les thèmes/sous-thèmes ajoutés à la volée en revue humaine, stockés en base
     (table ``taxonomy_entries``) et réutilisables ensuite.
 
-Le référentiel suit le modèle actif
+Le référentiel suit le moteur actif
 -----------------------------------
 Depuis que plusieurs moteurs CamemBERT coexistent (arbitrage PO du 11/09), le
 référentiel n'est plus une constante de déploiement. Les deux modèles ne
@@ -18,9 +18,10 @@ revue le référentiel du POC pendant que le modèle 2026 produit ses propres
 libellés offrirait au relecteur une liste sans rapport avec ce qu'il relit, et
 enregistrerait en base un couple « inconnu » à chaque correction.
 
-Chaque modèle embarque donc son référentiel à sa racine (``taxonomy.json``), et
-c'est celui du modèle actif qui est servi. Le fichier de ``settings`` reste le
-repli — déploiement mono-modèle, ou modèle sans référentiel embarqué.
+Chaque CamemBERT embarque son référentiel à sa racine (``taxonomy.json``). Le
+moteur LM Studio publie, dans le registre, le chemin du référentiel injecté dans
+son prompt. Le fichier de ``settings`` reste le repli — déploiement mono-modèle,
+stub, ou moteur sans référentiel déclaré.
 """
 from __future__ import annotations
 
@@ -80,16 +81,19 @@ def chemin_referentiel(db: Optional[Session] = None,
     if db is None:
         return settings.taxonomy_path
     try:
-        from common.models import MODEL_KIND_REAL, ModelVersion
+        from common.models import MODEL_KIND_LMSTUDIO, MODEL_KIND_REAL, ModelVersion
 
         modele = None
         if model_label:
-            modele = db.query(ModelVersion).filter_by(
-                label=model_label, kind=MODEL_KIND_REAL).first()
+            # En cascade, la sortie du raffineur fait foi. `Batch.model_label`
+            # contient « proposeur ▶ raffineur » : le dernier moteur détermine
+            # donc le référentiel proposé en revue humaine.
+            final_label = str(model_label).split(" ▶ ")[-1].strip()
+            modele = db.query(ModelVersion).filter_by(label=final_label).first()
         if modele is None:
             modele = db.query(ModelVersion).filter_by(
-                is_active=True, available=True, kind=MODEL_KIND_REAL).first()
-        if modele and modele.path:
+                is_active=True, available=True).first()
+        if modele and modele.kind == MODEL_KIND_REAL and modele.path:
             candidat = Path(modele.path) / TAXONOMY_EMBARQUEE
             if candidat.is_file():
                 return str(candidat)
@@ -98,6 +102,15 @@ def chemin_referentiel(db: Optional[Session] = None,
                 "de déploiement sera servi à la revue — il peut ne pas "
                 "correspondre aux libellés que ce modèle produit.",
                 modele.label, TAXONOMY_EMBARQUEE, modele.path)
+        if modele and modele.kind == MODEL_KIND_LMSTUDIO:
+            metrics = modele.metrics if isinstance(modele.metrics, dict) else {}
+            candidat = Path(str(metrics.get("taxonomy_path") or ""))
+            if candidat.is_file():
+                return str(candidat)
+            logger.warning(
+                "Moteur LM Studio « %s » : référentiel enregistré introuvable (%s). "
+                "Le référentiel de déploiement sera servi à la revue.",
+                modele.label, candidat)
     except Exception as exc:  # pragma: no cover - l'API ne doit pas tomber pour ça
         logger.warning("Référentiel du modèle indéterminable (%s).", exc)
     return settings.taxonomy_path

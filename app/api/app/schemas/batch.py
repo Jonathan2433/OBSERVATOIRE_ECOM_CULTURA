@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BatchOut(BaseModel):
@@ -26,6 +26,7 @@ class BatchOut(BaseModel):
     n_errors: int
     duration_s: Optional[float] = None
     error_message: Optional[str] = None
+    source_file_names: list[str] = Field(default_factory=list)
 
     # Champ calculé (0..1)
     @property

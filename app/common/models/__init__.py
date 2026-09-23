@@ -3,6 +3,7 @@
 from .user import ROLE_ADMIN, ROLE_ANALYSTE, ROLES, User
 from .batch import Batch, BATCH_STATUSES
 from .result import Result
+from .survey_response import CLIENT_STATUSES, SurveyResponse
 from .engine_prediction import (
     EnginePrediction, ENGINE_ROLE_COMPARE, ENGINE_ROLE_PROPOSER, ENGINE_ROLE_REFINER, ENGINE_ROLES,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "User", "ROLE_ADMIN", "ROLE_ANALYSTE", "ROLES",
     "Batch", "BATCH_STATUSES",
     "Result",
+    "SurveyResponse", "CLIENT_STATUSES",
     "EnginePrediction", "ENGINE_ROLE_COMPARE", "ENGINE_ROLE_PROPOSER", "ENGINE_ROLE_REFINER", "ENGINE_ROLES",
     "ComparisonRun", "COMPARISON_STATUSES",
     "JudgeVerdict", "JUDGE_WINNERS",

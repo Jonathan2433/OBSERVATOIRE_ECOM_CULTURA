@@ -55,7 +55,7 @@ def resolve_refiner(db: Session, refiner_label: str) -> ModelVersion:
     return m
 
 
-async def _save_upload(upload: UploadFile, dest_dir: Path, base: str) -> str:
+async def _save_upload(upload: UploadFile, dest_dir: Path, base: str) -> dict[str, str]:
     """Enregistre un fichier déposé sous ``<base><extension d'origine>``.
 
     L'extension est **conservée** : le chargeur choisit son mode de lecture
@@ -75,7 +75,14 @@ async def _save_upload(upload: UploadFile, dest_dir: Path, base: str) -> str:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                             detail=f"Fichier trop volumineux (> {settings.max_upload_mb} Mo)")
     dest.write_bytes(content)
-    return str(dest)
+    # Le chemin technique reste interne. Le nom original est conservé séparément
+    # pour la traçabilité métier, sans jamais accepter un chemin fourni par le
+    # navigateur (basename uniquement, caractères de contrôle retirés).
+    original_name = Path(upload.filename or dest.name).name
+    original_name = "".join(c for c in original_name if c >= " " and c != "\x7f").strip()
+    if not original_name:
+        original_name = dest.name
+    return {"path": str(dest), "original_name": original_name[:255]}
 
 
 @router.post("", response_model=BatchOut, status_code=status.HTTP_201_CREATED)

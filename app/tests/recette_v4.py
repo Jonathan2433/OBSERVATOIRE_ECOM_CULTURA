@@ -2,7 +2,7 @@
 """Recette V4 — moteur LM Studio (LLM local).
 
 Vérifie le moteur LM Studio de bout en bout SANS service réel (HTTP mocké) et SANS
-torch (fonctions pures de mapping/validation). Couvre les lots O1 à O4.
+torch (fonctions pures de mapping/validation). Couvre les lots O1 à O6.
 
 - O1 : gabarit de sortie (OUTPUT_COLUMNS), prompt (taxo injectée), mapping
   couple valide / repli, signaux, verbatim vide, client HTTP (parse/erreur).
@@ -10,6 +10,10 @@ torch (fonctions pures de mapping/validation). Couvre les lots O1 à O4.
   conflit de sentiment, prompt versionné.
 - O3 : détection LM Studio (`/v1/models`), `available` dynamique, synchro registre.
 - O4 : pool borné (ordre préservé), retries, fail-fast (échec propre si down).
+- O5 : taxonomie Cultura 2026, prompts proposeur/raffineur V2 et contrat D-26.
+- O6 : incident du 20-21/09/2026 — format du bloc taxonomie (niv2 composés non
+  tronqués), réutilisation de `label_normalization` pour les coquilles du
+  référentiel, observabilité du couple brut avant repli.
 
 Usage :  python app/tests/recette_v4.py   (code de sortie 0 si aucun ÉCHEC)
 """
@@ -31,7 +35,7 @@ for p in (str(ROOT), str(APP_DIR)):
 # Base SQLite éphémère AVANT tout import de common.db (lit DATABASE_URL à l'import).
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{Path(tempfile.mkdtemp(prefix='recette_v4_'))/'r4.db'}")
 
-from src.utils import Taxonomy  # noqa: E402
+from src.utils import Taxonomy, load_config  # noqa: E402
 from worker import lmstudio_predictor as op  # noqa: E402
 
 _RESULTS: list[tuple[str, str, str]] = []
@@ -42,6 +46,11 @@ def check(label: str, ok: bool, detail: str = "") -> None:
 
 
 TAXO = Taxonomy.from_json(ROOT / "data/raw/taxonomy_cultura_poc.json")
+TAXO_2026 = Taxonomy.from_json(ROOT / "data/models/cultura_2026/taxonomy.json")
+# Config RÉELLE du projet (config/config.yaml) — sert uniquement à tester
+# build_label_normalizer contre le vrai bloc `label_normalization`, pas à
+# dupliquer ses groupes de synonymes dans une config de test qui divergerait.
+CFG_FULL = load_config()
 N1 = TAXO.niv1_labels[0]                       # "Suivi de commande et livraison"
 N2 = TAXO.children[N1][0]                       # premier sous-thème valide
 SENT_LABELS = ["Négatif", "Neutre", "Positif"]
@@ -54,6 +63,22 @@ CFG = {
         "invalid_json_confidence_max": 0.30,
         "review_on_sentiment_conflict": True,
     }},
+}
+
+CFG_2026 = {
+    "thresholds": {"revue_humaine": 0.70, "max_themes": 2},
+    "signals": {"insatisfaction_score_max": 3},
+    "lmstudio": {
+        "contract_version": "cultura_2026",
+        "prompt_version": "v2-cultura-2026",
+        "fallback_theme": "Général",
+        "fallback_niv2": "Autre",
+        "guardrails": {
+            "repli_confidence_max": 0.40,
+            "invalid_json_confidence_max": 0.30,
+            "review_on_sentiment_conflict": True,
+        },
+    },
 }
 
 
@@ -168,7 +193,154 @@ def run() -> None:
     pv = op.build_llm_prompt(TAXO, "x", None, "Autre / Non classé", version="v9")
     check("O2 : version de prompt tracée", "[prompt v9]" in pv["system"], pv["system"][:20])
 
+    # ================= O5 : contrat Cultura 2026 ============================
+    p26 = op.build_llm_prompt(
+        TAXO_2026, "paiement impossible mais recherche facile", 2,
+        "Général", "v2-cultura-2026", "Autre")
+    check("O5 : prompt V2 tracé", "[prompt v2-cultura-2026]" in p26["system"])
+    check("O5 : prompt V2 porte la règle bi-thème",
+          "deux sujets distincts" in p26["system"] and "hésitation" in p26["system"])
+    check("O5 : prompt V2 porte le sentiment unique et la priorité au négatif",
+          "sentiment est unique" in p26["system"] and "aspect négatif" in p26["system"])
+    check("O5 : note Cultura injectée sur l'échelle 1-4", "(1-4) : 2" in p26["user"])
+    check("O5 : nouveau référentiel 11/59 injecté",
+          "Réception commande" in p26["user"] and "Etat colis, produit" in p26["user"]
+          and "Tunnel de vente - Paiement" not in p26["user"])
+    check("O5 : repli canonique présent dans le prompt",
+          'niv1="Général", niv2="Autre"' in p26["user"])
+
+    # --- Incident du 19-20/09/2026 (lot 22, biais "tout en Général/Négatif") ---
+    # Garde-fous anti-régression sur le prompt lui-même, distincts des garde-fous
+    # de mapping (map_llm_response, inchangés). Sans eux, une réintroduction du
+    # déséquilibre lexical d'origine ("Négatif" répété, aucun exemple, aucune
+    # dissuasion du repli) ne serait détectée qu'en observant un vrai lot.
+    check("O5 : prompt V2 dissuade explicitement le repli Général/Autre par défaut",
+          "DERNIER RECOURS" in p26["system"])
+    check("O5 : prompt V2 traite les trois sentiments à égalité (pas de biais négatif)",
+          "également probables" in p26["system"]
+          and "ne présume jamais" in p26["system"])
+    check("O5 : prompt V2 fournit des exemples calibrés couvrant Positif/Négatif/Neutre",
+          p26["system"].count("sentiment=Positif") >= 1
+          and p26["system"].count("sentiment=Négatif") >= 1
+          and p26["system"].count("sentiment=Neutre") >= 1)
+
+    r26_prompt = op.build_refiner_prompt(
+        TAXO_2026, "bug mais accueil magasin agréable", {}, 1,
+        "Général", "v2-cultura-2026", "Autre")
+    check("O5 : prompt raffineur V2 tracé",
+          "[prompt v2-cultura-2026 · raffineur]" in r26_prompt["system"])
+    check("O5 : raffineur applique D-26 et l'échelle 1-4",
+          "uniquement le ou les thèmes négatifs" in r26_prompt["system"]
+          and "(1-4) : 1" in r26_prompt["user"])
+    check("O5 : raffineur dissuade aussi le repli Général/Autre par défaut",
+          "DERNIER RECOURS" in r26_prompt["system"])
+    check("O5 : raffineur ne corrige jamais un sentiment vers Négatif par défaut",
+          "par défaut" in r26_prompt["system"] and "Négatif" in r26_prompt["system"])
+
+    bug_n2 = TAXO_2026.children["Bug"][0]
+    espace_n2 = TAXO_2026.children["Espace client"][0]
+    raw_two = {"themes": [
+        {"niv1": "Bug", "niv2": bug_n2, "sentiment": "Négatif", "confidence": 0.91},
+        {"niv1": "Espace client", "niv2": espace_n2, "sentiment": "Négatif", "confidence": 0.82},
+    ], "signaux": {}}
+    r_two = op.map_llm_response(raw_two, "deux problèmes", 2, TAXO_2026, CFG_2026, SENT_LABELS)
+    check("O5 : deux sujets distincts de même sentiment sont conservés",
+          r_two["nb_themes"] == 2)
+    check("O5 : sentiment unique recopié sur les deux thèmes",
+          r_two["theme1_sentiment"] == r_two["theme2_sentiment"] == "Négatif")
+
+    raw_mixed = {"themes": [
+        {"niv1": "Bug", "niv2": bug_n2, "sentiment": "Négatif", "confidence": 0.91},
+        {"niv1": "Espace client", "niv2": espace_n2, "sentiment": "Positif", "confidence": 0.82},
+    ], "signaux": {}}
+    r_mixed = op.map_llm_response(
+        raw_mixed, "bug mais espace client pratique", 2, TAXO_2026, CFG_2026, SENT_LABELS)
+    check("O5 : cas mixte conserve uniquement le thème négatif (D-26)",
+          r_mixed["nb_themes"] == 1 and r_mixed["theme1_niv1"] == "Bug")
+    check("O5 : cas mixte force la revue", r_mixed["revue_humaine_requise"] is True)
+
+    raw_invalid_26 = {"themes": [{
+        "niv1": "Ancien thème", "niv2": "Ancien sous-thème",
+        "sentiment": "Neutre", "confidence": 0.95,
+    }], "signaux": {}}
+    r_invalid_26 = op.map_llm_response(
+        raw_invalid_26, "texte ambigu", None, TAXO_2026, CFG_2026, SENT_LABELS)
+    check("O5 : repli V2 reste dans le référentiel 11/59",
+          r_invalid_26["theme1_niv1"] == "Général"
+          and r_invalid_26["theme1_niv2"] == "Autre"
+          and TAXO_2026.is_valid_pair(r_invalid_26["theme1_niv1"], r_invalid_26["theme1_niv2"]))
+
+    # ============ O6 : incident du 20-21/09/2026 (lots 22/23) ================
+    # Diagnostic sur le vrai LM Studio (Qwen2.5-VL-7B) : ~84% des replis en
+    # Général/Autre étaient plafonnés à confidence=0.40 -> pas un choix du
+    # modèle, un REJET du garde-fou taxonomique. Deux causes prouvées par rejeu
+    # direct : (a) les libellés niv2 composés ("Stock, disponibilité") tronqués
+    # par le séparateur virgule du bloc taxonomie ; (b) la coquille du
+    # référentiel "Attente commmande" (3 m) que le LLM ne reproduit jamais,
+    # répondant l'orthographe standard "Attente commande" (2 m).
+
+    # --- O6.1 Bloc taxonomie : un niv2 composé par ligne, jamais tronqué -----
+    bloc = op.build_llm_prompt(TAXO_2026, "x", None, "Général", "v2-cultura-2026", "Autre")["user"]
+    check("O6 : bloc taxonomie — niv2 composé intact sur sa propre ligne",
+          "* Stock, disponibilité" in bloc and "* Prix, promotions" in bloc)
+    check("O6 : bloc taxonomie — plus de liste virgule ambiguë après niv1",
+          "- Choix produit :\n" in bloc and "- Choix produit : Informations produit" not in bloc)
+
+    # --- O6.2 build_label_normalizer : réutilise label_normalization existant -
+    ln_2026 = op.build_label_normalizer(TAXO_2026, CFG_FULL, engine_name="lmstudio")
+    check("O6 : label_normalizer construit sur le référentiel Cultura 2026", ln_2026 is not None)
+    if ln_2026:
+        check("O6 : résout la coquille référentiel (Attente commande -> Attente commmande)",
+              ln_2026.resolve_theme("Attente commande") == ("Attente commmande", None))
+        check("O6 : résout un synonyme de sous-thème (Suivi commande -> Suivi de commande)",
+              ln_2026.resolve_sous_theme("Suivi commande") == ("Suivi de commande", None))
+
+    ln_poc = op.build_label_normalizer(TAXO, CFG_FULL, engine_name="lmstudio")
+    check("O6 : label_normalizer absent (None) sur un référentiel incompatible, sans exception",
+          ln_poc is None)
+
+    # --- O6.3 map_llm_response : la coquille est récupérée SI label_normalizer fourni
+    raw_typo = {"themes": [{"niv1": "Attente commande", "niv2": "Commande annulée",
+                            "sentiment": "Négatif", "confidence": 0.9}], "signaux": {}}
+    r_sans_ln = op.map_llm_response(raw_typo, "texte", None, TAXO_2026, CFG_2026, SENT_LABELS,
+                                    label_normalizer=None)
+    check("O6 : sans label_normalizer, la coquille référentiel tombe en repli (comportement V4 inchangé)",
+          r_sans_ln["theme1_niv1"] == "Général", r_sans_ln["theme1_niv1"])
+
+    r_avec_ln = op.map_llm_response(raw_typo, "texte", None, TAXO_2026, CFG_2026, SENT_LABELS,
+                                    label_normalizer=ln_2026)
+    check("O6 : avec label_normalizer, la coquille référentiel est récupérée (pas de repli)",
+          r_avec_ln["theme1_niv1"] == "Attente commmande"
+          and r_avec_ln["theme1_niv2"] == "Commande annulée"
+          and r_avec_ln["revue_humaine_requise"] is False,
+          (r_avec_ln["theme1_niv1"], r_avec_ln["theme1_niv2"]))
+
+    # --- O6.4 Observabilité : le couple brut halluciné est tracé avant repli -
+    import logging as _logging
+
+    class _CaptureHandler(_logging.Handler):
+        def __init__(self):
+            super().__init__()
+            self.records = []
+        def emit(self, record):
+            self.records.append(record.getMessage())
+
+    handler = _CaptureHandler()
+    llm_logger = _logging.getLogger("worker.llm_common")
+    llm_logger.addHandler(handler)
+    try:
+        op.map_llm_response(
+            {"themes": [{"niv1": "Marketing lunaire", "niv2": "x",
+                        "sentiment": "Neutre", "confidence": 0.8}], "signaux": {}},
+            "texte", None, TAXO_2026, CFG_2026, SENT_LABELS, label_normalizer=ln_2026)
+    finally:
+        llm_logger.removeHandler(handler)
+    check("O6 : le couple brut halluciné est loggé avant repli (observabilité)",
+          any("Marketing lunaire" in msg and "niv2='x'" in msg for msg in handler.records),
+          handler.records)
+
     # --- 10. Client HTTP : parse OK (urlopen mocké) --------------------------
+    import io
     import json as _json
 
     class _FakeResp:
@@ -181,9 +353,23 @@ def run() -> None:
                            "signaux": {"rupture": False, "churn": False, "insatisfaction_forte": False}})
     orig_urlopen = op.urllib.request.urlopen
     try:
-        op.urllib.request.urlopen = lambda req, timeout=None: _FakeResp({"choices": [{"message": {"content": content}}]})
+        captured_payloads = []
+        def _ok(req, timeout=None):
+            captured_payloads.append(_json.loads(req.data.decode("utf-8")))
+            return _FakeResp({"choices": [{"message": {"content": content}}]})
+        op.urllib.request.urlopen = _ok
         parsed = op.call_llm_chat("http://x:1234/v1", "m", "sys", "usr", 0.1, 5)
         check("client : parse JSON OK (choices OpenAI)", isinstance(parsed, dict) and parsed.get("themes"), parsed)
+        check("client : schéma JSON et max_tokens transmis",
+              captured_payloads[-1]["response_format"]["type"] == "json_schema"
+              and "max_tokens" not in captured_payloads[-1])
+
+        op.call_llm_chat(
+            "http://x:1234/v1", "m", "sys", "usr", 0.1, 5,
+            response_format_mode="json_object", max_tokens=123)
+        check("client : mode json_object de compatibilité + borne de sortie",
+              captured_payloads[-1]["response_format"] == {"type": "json_object"}
+              and captured_payloads[-1]["max_tokens"] == 123)
 
         # JSON malformé dans content -> {} (repli géré par le mapping)
         op.urllib.request.urlopen = lambda req, timeout=None: _FakeResp({"choices": [{"message": {"content": "pas du json"}}]})
@@ -200,6 +386,18 @@ def run() -> None:
         except op.LMStudioError:
             raised = True
         check("client : LM Studio down -> LMStudioError", raised)
+
+        def _http_500(req, timeout=None):
+            raise urllib.error.HTTPError(
+                req.full_url, 500, "Internal Server Error", {},
+                io.BytesIO(b"<html> Internal Server Error </html>"))
+        op.urllib.request.urlopen = _http_500
+        try:
+            op.call_llm_chat("http://x:1234/v1", "m", "s", "u", 0.1, 5)
+            status_500_ok = False
+        except op.LMStudioError as exc:
+            status_500_ok = exc.status_code == 500 and exc.retryable and "format=json_schema" in str(exc)
+        check("client : HTTP 500 est marqué transitoire et diagnostiqué", status_500_ok)
     finally:
         op.urllib.request.urlopen = orig_urlopen
 
@@ -220,6 +418,55 @@ def run() -> None:
         d = mr._detect_lmstudio(cfg_lms)
         check("O3 : modèle présent -> available", d and d["available"] is True, d)
         check("O3 : label = lmstudio:<model>", d["label"] == "lmstudio:mon-modele", d["label"])
+
+        cfg_lms_26 = {"lmstudio": {
+            "enabled": True, "model": "mon-modele", "base_url": "http://x:1234/v1",
+            "taxonomy": str(ROOT / "data/models/cultura_2026/taxonomy.json"),
+            "prompt_version": "v2-cultura-2026", "contract_version": "cultura_2026",
+        }}
+        d26 = mr._detect_lmstudio(cfg_lms_26)
+        check("O3/O5 : registre publie le référentiel LM Studio",
+              d26["metrics"]["taxonomy_present"] is True
+              and d26["metrics"]["taxonomy_path"].endswith("cultura_2026/taxonomy.json"))
+        check("O3/O5 : registre publie les versions de prompt et contrat",
+              d26["metrics"]["prompt_version"] == "v2-cultura-2026"
+              and d26["metrics"]["contract_version"] == "cultura_2026")
+
+        cfg_lms_missing_taxo = {"lmstudio": {
+            "enabled": True, "model": "mon-modele", "base_url": "http://x:1234/v1",
+            "taxonomy": str(ROOT / "data/models/introuvable/taxonomy.json"),
+        }}
+        d_missing_taxo = mr._detect_lmstudio(cfg_lms_missing_taxo)
+        check("O3/O5 : référentiel absent -> LM Studio indisponible",
+              d_missing_taxo["available"] is False
+              and d_missing_taxo["metrics"]["taxonomy_present"] is False)
+
+        from worker.config_worker import build_worker_cfg
+
+        previous_parallel = os.environ.get("LMSTUDIO_MAX_PARALLEL")
+        os.environ["LMSTUDIO_MAX_PARALLEL"] = "1"
+        try:
+            container_cfg = build_worker_cfg()
+        finally:
+            if previous_parallel is None:
+                os.environ.pop("LMSTUDIO_MAX_PARALLEL", None)
+            else:
+                os.environ["LMSTUDIO_MAX_PARALLEL"] = previous_parallel
+        check("O5 : chemin taxonomie LM réécrit vers le volume modèles",
+              str(container_cfg["lmstudio"]["taxonomy"]).endswith(
+                  "/cultura_2026/taxonomy.json")
+              and not str(container_cfg["lmstudio"]["taxonomy"]).startswith("data/models/"),
+              container_cfg["lmstudio"]["taxonomy"])
+        check("O5 : concurrence LM Studio lue depuis l'environnement Docker",
+              container_cfg["lmstudio"]["max_parallel"] == 1,
+              container_cfg["lmstudio"]["max_parallel"])
+        # Incident du 19/09/2026 (Lot 21, HTTP 500) : le repli de schéma déclaré en
+        # configuration doit rester "none" — "json_object" est refusé (HTTP 400) par
+        # LM Studio sur ce poste. Un retour à "json_object" romprait silencieusement
+        # le repli en production.
+        check("O5 : repli de schéma configuré = 'none' (pas 'json_object', refusé par LM Studio)",
+              container_cfg["lmstudio"].get("response_format_fallback") == "none",
+              container_cfg["lmstudio"].get("response_format_fallback"))
 
         # 3. Joignable mais modèle absent -> available False + motif.
         op.list_llm_models = lambda *a, **k: ["autre-modele"]
@@ -256,13 +503,19 @@ def run() -> None:
         op.list_llm_models = orig_list
 
     # ====================== O4 : concurrence & robustesse ===================
-    def make_predictor(max_parallel=4, retries=0):
+    def make_predictor(max_parallel=1, retries=0, warmup=False):
         p = object.__new__(op.LMStudioPredictor)
         p.cfg, p.taxonomy, p.sentiment_labels = CFG, TAXO, SENT_LABELS
         p.base_url, p.model = "http://x:1234/v1", "m"
         p.temperature, p.timeout_s = 0.1, 5
         p.fallback_theme, p.prompt_version = "Autre / Non classé", "v1"
         p.max_parallel, p.retries = max_parallel, retries
+        p.max_tokens = 128
+        p.retry_backoff_s, p.retry_backoff_max_s = 0.0, 0.0
+        p.response_format_mode, p.response_format_fallback = "json_schema", "none"
+        p.warmup_enabled, p._warmup_done = warmup, False
+        p._warmup_lock = op.threading.Lock()
+        p.label_normalizer = None
         return p
 
     VALID = {"themes": [{"niv1": N1, "niv2": N2, "sentiment": "Neutre", "confidence": 0.8}],
@@ -279,7 +532,19 @@ def run() -> None:
               [r["nb_themes"] for r in out])
         check("O4 : tous les verbatims traités", len(out) == 4)
 
-        # 2. Retries : échoue 2 fois puis réussit (retries=2).
+        # 2. Échauffement : un appel technique unique précède la rafale métier.
+        warmup_calls = []
+        def _warmup_call(*args, **kwargs):
+            warmup_calls.append((args[3], kwargs.get("response_format_mode")))
+            return dict(VALID)
+        op.call_llm_chat = _warmup_call
+        out_warmup = make_predictor(warmup=True).predict_cleaned_batch(["texte"], [None])
+        check("O4 : échauffement séquentiel unique avant classification",
+              len(warmup_calls) == 2 and warmup_calls[0][0] == op._WARMUP_USER
+              and out_warmup[0]["nb_themes"] == 1, warmup_calls)
+
+        # 3. Retries : échoue 2 fois puis réussit (retries=2), sans rafale immédiate
+        # dans la recette grâce à un backoff à zéro.
         calls = {"n": 0}
         def _flaky(*a, **k):
             calls["n"] += 1
@@ -290,7 +555,26 @@ def run() -> None:
         r = make_predictor(max_parallel=1, retries=2).predict_cleaned_batch(["texte"], [None])
         check("O4 : retry réussit après 2 échecs", r[0]["nb_themes"] >= 1 and calls["n"] == 3, calls["n"])
 
-        # 3. Fail-fast : LM Studio down -> LMStudioError propagée (lot 'failed').
+        # 4. Repli de compatibilité : après un refus durable du schéma (500),
+        # "none" est tenté puis repasse dans le mapper taxonomique. "none" (et non
+        # "json_object") est le repli configuré par défaut : testé en direct le
+        # 19/09/2026, ce LM Studio (Qwen2.5-VL-7B-Instruct) refuse "json_object"
+        # en HTTP 400 ("must be 'json_schema' or 'text'") mais accepte "none".
+        modes = []
+        def _schema_refused(*args, **kwargs):
+            mode = kwargs.get("response_format_mode")
+            modes.append(mode)
+            if mode == "json_schema":
+                raise op.LMStudioError("grammar refused", status_code=500, retryable=True,
+                                      response_format_mode=mode)
+            return dict(VALID)
+        op.call_llm_chat = _schema_refused
+        fallback_out = make_predictor(retries=0).predict_cleaned_batch(["texte"], [None])
+        check("O4 : HTTP 500 schéma -> repli 'none' contrôlé",
+              modes == ["json_schema", "none"] and fallback_out[0]["theme1_niv1"] == N1,
+              modes)
+
+        # 5. Fail-fast : LM Studio down -> LMStudioError propagée (lot 'failed').
         op.call_llm_chat = lambda *a, **k: (_ for _ in ()).throw(op.LMStudioError("down"))
         raised = False
         try:
@@ -311,5 +595,5 @@ if __name__ == "__main__":
         if status == "ÉCHEC" and detail:
             line += f"  -> {detail}"
         print(line)
-    print(f"\nRecette V4 (O1→O4) : {len(_RESULTS) - len(fails)}/{len(_RESULTS)} OK")
+    print(f"\nRecette V4 (O1→O6) : {len(_RESULTS) - len(fails)}/{len(_RESULTS)} OK")
     sys.exit(1 if fails else 0)

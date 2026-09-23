@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from common.db import SessionLocal
 from common.models import (
     Batch, ComparisonRun, ENGINE_ROLE_COMPARE, ENGINE_ROLE_PROPOSER, ENGINE_ROLE_REFINER,
-    EnginePrediction, JudgeVerdict, MODEL_KIND_LMSTUDIO, ModelVersion, Result,
+    EnginePrediction, JudgeVerdict, MODEL_KIND_LMSTUDIO, ModelVersion, Result, SurveyResponse,
 )
 
 from . import comparison as comparison_lib
@@ -127,15 +127,74 @@ def _jsonable(value):
     return str(value)
 
 
-def _to_result(batch_id: int, gidx: int, source, pred: dict, original: dict) -> Result:
+def _colonnes_origine(colonnes, cfg) -> list:
+    """Colonnes du fichier source à recopier dans ``original_columns``.
+
+    Deux exclusions, et elles n'ont pas le même statut.
+
+    * Les colonnes techniques ``__*__`` sont internes au pipeline.
+    * Les colonnes de **texte libre** sont exclues parce qu'elles portent le
+      verbatim BRUT, c'est-à-dire non anonymisé. Les recopier telles quelles
+      remettait en base les adresses, téléphones et numéros de commande que
+      l'anonymiseur venait de masquer, et les renvoyait dans l'export enrichi à
+      côté de leur version masquée — le masquage n'y survivait pas. Le contrat
+      du modèle est explicite : seul le texte anonymisé est persisté.
+
+    Les colonnes de texte sont lues dans la configuration, jamais écrites ici :
+    si Cultura renomme « Verbatim justification », c'est `config.yaml` qui
+    change, pas ce fichier.
+
+    ⚠️ Cette exclusion est une LISTE NOIRE, et ne vaut donc que pour les colonnes
+    déclarées. Le chemin Cultura 2026 est, lui, protégé par une liste blanche
+    (D-18) : c'est la forme robuste, et la cible pour ce chemin historique.
+    """
+    exclues = set()
+    for conf in (cfg.get("sources") or {}).values():
+        if not isinstance(conf, dict):
+            continue
+        for cle in ("text_col_primary", "text_col_secondary"):
+            if conf.get(cle):
+                exclues.add(str(conf[cle]))
+        for nom in conf.get("text_cols_primary") or []:
+            exclues.add(str(nom))
+    exclues.add("verbatim_original")   # chargeur historique (jeu d'entraînement)
+    return [c for c in colonnes
+            if not str(c).startswith("__") and str(c) not in exclues]
+
+
+def _note_satisfaction(valeur) -> "int | None":
+    """Note normalisée ML 1-4 prête à persister, ou ``None`` si elle est absente.
+
+    Le chargeur produit déjà cette valeur historique destinée au modèle ; il reste à
+    absorber les formes que pandas fait circuler pour une case vide (``NaN``,
+    ``NA``, chaîne vide). Les moyennes métier utilisent la note native portée
+    par ``SurveyResponse``.
+    """
+    if valeur is None:
+        return None
+    try:
+        if isinstance(valeur, float) and math.isnan(valeur):
+            return None
+    except (TypeError, ValueError):
+        pass
+    try:
+        return int(round(float(valeur)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_result(batch_id: int, gidx: int, source, pred: dict, original: dict,
+               satisfaction=None, survey_response_id=None) -> Result:
     def _s(key):
         v = pred.get(key)
         return v if v not in ("", None) else None
 
     return Result(
-        batch_id=batch_id, row_index=int(gidx), source=source,
+        batch_id=batch_id, survey_response_id=survey_response_id,
+        row_index=int(gidx), source=source,
         verbatim_analyse=pred.get("verbatim_analysé", ""),
         nb_themes=int(pred.get("nb_themes", 0)),
+        satisfaction=_note_satisfaction(satisfaction),
         theme1_niv1=_s("theme1_niv1"), theme1_niv2=_s("theme1_niv2"),
         theme1_sentiment=_s("theme1_sentiment"),
         theme1_score=pred.get("theme1_score_confiance") or None,
@@ -149,6 +208,143 @@ def _to_result(batch_id: int, gidx: int, source, pred: dict, original: dict) -> 
         revue_requise=bool(pred.get("revue_humaine_requise", False)),
         original_columns=original,
     )
+
+
+def _bool_value(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    try:
+        if isinstance(value, float) and math.isnan(value):
+            return False
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip().lower() in {"1", "true", "vrai", "yes", "oui"}
+
+
+def _response_date(value):
+    """Convertit la date ISO du chargeur en jour métier, sans valeur de repli.
+
+    Une date absente doit rester absente : utiliser ``Batch.created_at`` ferait
+    comparer les jours d'upload et non les périodes réellement observées.
+    """
+    from datetime import date, datetime
+
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    raw = str(_jsonable(value) or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw).date()
+    except ValueError:
+        logger.warning("Date métier non interprétable ignorée : %r", raw)
+        return None
+
+
+def _persist_survey_responses(db, batch_id: int, df) -> dict[int, int]:
+    """Crée une réponse unique et renvoie ``index DataFrame -> id réponse``.
+
+    Le DataFrame reste à la maille verbatim. Les lignes issues d'un même
+    répondant partagent la clé opaque fournie par le chargeur et sont regroupées
+    ici avant toute persistance de ``Result``. Les anciens chargeurs et certains
+    imports techniques ne portent pas encore le contrat répondant : ils restent
+    traitables, mais ne produisent volontairement aucun KPI de satisfaction.
+    """
+    from src.preprocessing.loader import (
+        COL_CLIENT_STATUS, COL_DATE, COL_FICHIER, COL_RESPONDENT, COL_SATISFACTION,
+        COL_SATISFACTION_INVALID, COL_SATISFACTION_NATIVE,
+        COL_SATISFACTION_SCALE_MAX, COL_SOURCE,
+    )
+    from src.preprocessing.cultura_loader import opaque_respondent_key
+
+    # Compatibilité des lots historiques/génériques. La présence de cette
+    # colonne distingue un export enrichi (qui doit être validé strictement)
+    # d'un ancien DataFrame pour lequel l'unité « répondant » est inconnue.
+    if COL_SATISFACTION_SCALE_MAX not in df.columns:
+        logger.info(
+            "Lot %s : contrat répondant absent, satisfaction détaillée non persistée.",
+            batch_id,
+        )
+        return {}
+
+    grouped: dict[tuple[str, str, str], dict] = {}
+    row_keys: dict[int, tuple[str, str, str]] = {}
+    for idx, row in df.iterrows():
+        source = str(_jsonable(row.get(COL_SOURCE)) or "source-inconnue")
+        fichier = str(_jsonable(row.get(COL_FICHIER)) or "fichier-inconnu")
+        respondent_source = str(_jsonable(row.get(COL_RESPONDENT)) or f"row:{idx}")
+        respondent = (
+            respondent_source
+            if len(respondent_source) == 64
+            and all(char in "0123456789abcdef" for char in respondent_source.lower())
+            else opaque_respondent_key(source, fichier, respondent_source)
+        )
+        key = (source, fichier, respondent)
+        row_keys[int(idx)] = key
+        native = _note_satisfaction(row.get(COL_SATISFACTION_NATIVE))
+        normalized = _note_satisfaction(row.get(COL_SATISFACTION))
+        scale = _note_satisfaction(row.get(COL_SATISFACTION_SCALE_MAX))
+        if scale not in (4, 5):
+            # Un schéma reconnu doit toujours déclarer son échelle. Une réponse
+            # sans échelle ne peut pas être publiée sans inventer une conversion.
+            raise ValueError(f"Échelle native absente/invalide pour {source} ({fichier}).")
+        current = {
+            "native": native,
+            "normalized": normalized,
+            "scale": scale,
+            "invalid": _bool_value(row.get(COL_SATISFACTION_INVALID)),
+            "client_status": str(_jsonable(row.get(COL_CLIENT_STATUS)) or "non_renseigne"),
+            "response_date": _response_date(row.get(COL_DATE)),
+        }
+        previous = grouped.get(key)
+        if previous is None:
+            grouped[key] = current
+            continue
+        comparable = ("native", "normalized", "scale")
+        if any(previous[name] != current[name] for name in comparable):
+            logger.warning(
+                "Notes contradictoires pour une réponse (lot=%s source=%s fichier=%s clé=%s). "
+                "Réponse exclue des moyennes.", batch_id, source, fichier, respondent[:12])
+            previous.update(native=None, normalized=None, invalid=True)
+        previous["invalid"] = previous["invalid"] or current["invalid"]
+        if previous["client_status"] != current["client_status"]:
+            logger.warning(
+                "Statuts client contradictoires pour une réponse (lot=%s source=%s fichier=%s clé=%s).",
+                batch_id, source, fichier, respondent[:12])
+            previous["client_status"] = "non_renseigne"
+        if previous["response_date"] != current["response_date"]:
+            logger.warning(
+                "Dates contradictoires pour une réponse (lot=%s source=%s fichier=%s clé=%s). "
+                "Période rendue indisponible pour cette réponse.",
+                batch_id, source, fichier, respondent[:12])
+            previous["response_date"] = None
+
+    objects: dict[tuple[str, str, str], SurveyResponse] = {}
+    for (source, fichier, respondent), values in grouped.items():
+        status = values["client_status"]
+        if status not in {"ancien", "nouveau", "non_renseigne"}:
+            status = "non_renseigne"
+        obj = SurveyResponse(
+            batch_id=batch_id, source_type=source, source_file=fichier,
+            respondent_key=respondent, satisfaction_native=values["native"],
+            satisfaction_scale_max=values["scale"],
+            satisfaction_normalized=values["normalized"],
+            rating_invalid=values["invalid"], client_status=status,
+            response_date=values["response_date"],
+        )
+        db.add(obj)
+        objects[(source, fichier, respondent)] = obj
+    invalid_count = sum(bool(values["invalid"]) for values in grouped.values())
+    if invalid_count:
+        logger.warning(
+            "Lot %s : %d réponse(s) avec note invalide exclue(s) des KPI.",
+            batch_id, invalid_count)
+    db.flush()
+    return {idx: objects[key].id for idx, key in row_keys.items()}
 
 
 def merge_cascade(proposal: dict, refined: dict) -> tuple[dict, bool]:
@@ -239,11 +435,12 @@ def process_batch_job(batch_id: int) -> dict:
                   else load_for_batch(files.get("mdtc"), files.get("mopinion"), cfg))
             total = len(df)
             batch.n_total = total
+            survey_response_ids = _persist_survey_responses(db, batch_id, df)
             db.commit()
 
             texts = df[COL_TEXT].tolist() if COL_TEXT in df.columns else [""] * total
             sats = df[COL_SATISFACTION].tolist() if COL_SATISFACTION in df.columns else [None] * total
-            orig_cols = [c for c in df.columns if not str(c).startswith("__")]
+            orig_cols = _colonnes_origine(df.columns, cfg)
 
             pii = Counter()
             n_review = 0
@@ -284,7 +481,9 @@ def process_batch_job(batch_id: int) -> dict:
                         gidx = start + i
                         row = rows.iloc[i]
                         original = {c: _jsonable(row[c]) for c in orig_cols}
-                        db.add(_to_result(batch_id, gidx, _jsonable(row.get(COL_SOURCE)), pred, original))
+                        db.add(_to_result(batch_id, gidx, _jsonable(row.get(COL_SOURCE)),
+                                          pred, original, sat_chunk[i],
+                                          survey_response_ids.get(gidx)))
                         if pred.get("revue_humaine_requise"):
                             n_review += 1
                 else:
@@ -305,7 +504,9 @@ def process_batch_job(batch_id: int) -> dict:
                         final, disagree = merge_cascade(prop, refined[i])
                         if disagree:
                             batch.chain_disagreements = (batch.chain_disagreements or 0) + 1
-                        result = _to_result(batch_id, gidx, _jsonable(row.get(COL_SOURCE)), final, original)
+                        result = _to_result(batch_id, gidx, _jsonable(row.get(COL_SOURCE)),
+                                            final, original, sat_chunk[i],
+                                            survey_response_ids.get(gidx))
                         db.add(result)
                         if final.get("revue_humaine_requise"):
                             n_review += 1
@@ -346,12 +547,22 @@ def process_batch_job(batch_id: int) -> dict:
 # --------------------------------------------------------------------------- #
 #  Comparaison de moteurs (V5, lot C4) — replay objectif d'un échantillon
 # --------------------------------------------------------------------------- #
-def _satisfaction_from_original(original) -> "float | None":
-    """Best-effort : récupère la satisfaction depuis original_columns (clé ~ 'satisf').
+def _satisfaction_du_resultat(result) -> "float | None":
+    """Note de satisfaction d'un résultat déjà en base, pour un replay de comparaison.
 
-    La satisfaction n'est pas stockée en colonne dédiée (SPEC_V5 §14) : on tente une
-    clé d'origine contenant « satisf », sinon None (n'affecte pas la prod).
+    Depuis la migration 0010 la note est persistée en colonne dédiée : c'est la
+    source de vérité, et la seule disponible pour les lots au format Cultura
+    2026 (leur liste blanche ne laisse passer aucune colonne d'origine).
+
+    Repli best-effort sur ``original_columns`` pour les lots ANTÉRIEURS à la
+    migration, dont la colonne est restée NULL : on y cherche une clé contenant
+    « satisf ». Sans repli, comparer deux moteurs sur un ancien lot priverait
+    le modèle de sentiment de son préfixe et fausserait la comparaison.
     """
+    note = getattr(result, "satisfaction", None)
+    if note is not None:
+        return note
+    original = getattr(result, "original_columns", None)
     if not isinstance(original, dict):
         return None
     for k, v in original.items():
@@ -470,7 +681,7 @@ def run_comparison_job(run_id: int) -> dict:
             idx = comparison_lib.sample_indices(len(results), run.sample_size, run.seed)
             sample = [results[i] for i in idx]
             texts = [r.verbatim_analyse or "" for r in sample]
-            sats = [_satisfaction_from_original(r.original_columns) for r in sample]
+            sats = [_satisfaction_du_resultat(r) for r in sample]
 
             theme_by, niv2_by, conf_by, sent_by, lat_by = {}, {}, {}, {}, {}
             for label in engines:

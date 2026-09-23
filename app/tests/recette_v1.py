@@ -23,7 +23,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 # --------------------------------------------------------------------------- #
@@ -119,6 +119,63 @@ def test_anonymization() -> None:
     check("Marqueurs d'anonymisation présents",
           any(tok in masked for tok in ("[EMAIL]", "[TEL]", "[COMMANDE]")), masked)
     check("Comptage PII renseigné", sum(counts.values()) >= 3, str(dict(counts)))
+
+
+# --------------------------------------------------------------------------- #
+#  2 bis. Anonymisation NER — élisions vs. noms propres (remontée métier
+#         21/09/2026, cf. docs/SPEC_V4_LMSTUDIO.md, R-14 de
+#         CADRAGE_NOUVEAU_MODELE.md). Nécessite spaCy : SKIP si absent.
+# --------------------------------------------------------------------------- #
+def test_anonymization_per_elisions() -> None:
+    section("Anonymisation NER : élisions et majuscules de tête de phrase (remontée métier 21/09)")
+    try:
+        from src.utils import load_config
+        from src.preprocessing import Anonymizer
+    except Exception as exc:
+        skip("Élisions/majuscules non confondues avec des noms propres",
+             f"moteur src/ indisponible ici ({type(exc).__name__}) — validé en image worker")
+        return
+
+    cfg = load_config(str(_CONFIG))
+    anon = Anonymizer(cfg)
+    if not anon._ner_available:
+        skip("Élisions/majuscules non confondues avec des noms propres",
+             "modèle spaCy indisponible dans cet environnement — validé en image worker")
+        return
+
+    # Cas réels remontés par le métier (captures du 21/09/2026) : "Le n' qui
+    # passe pas ?". Reproduction fidèle à l'apostrophe typographique ’ que
+    # tapent les claviers mobiles / Word (l'apostrophe droite ' ne déclenche
+    # pas le même comportement chez spaCy — c'est le déclencheur exact).
+    masked, _ = anon.anonymize(
+        "Une erreur s’est glissée sur le numéro de téléphone pour la commande et "
+        "du coup, cela n’est pas rattrapable. Il faudrait pouvoir modifier cette "
+        "information même après paiement."
+    )
+    check("Élision \"n’\" non masquée en [NOM]", "n’est" in masked and "[NOM]" not in masked, masked)
+
+    masked, _ = anon.anonymize(
+        "J’ai été assez surpris lors du retrait de ma commande en magasin. Au "
+        "moment de la commande, il ne m’a pas été indiqué qu’une pièce d’identité "
+        "serait nécessaire pour récupérer le livre. Je trouve dommage que cette "
+        "information ne soit pas indiquée, car cela aurait évité un déplacement "
+        "inutile jusqu’à la voiture."
+    )
+    check("Élisions \"m’\", \"qu’\" et \"jusqu’\" non masquées en [NOM]",
+          "m’a" in masked and "qu’une" in masked and "jusqu’à" in masked
+          and "[NOM]" not in masked, masked)
+
+    # Mot métier capitalisé en tête de phrase (faux positif R-14).
+    masked, _ = anon.anonymize("Délai long pour un article présent en magasin.")
+    check("\"Délai\" en tête de phrase non masqué en [NOM]", "[NOM]" not in masked, masked)
+
+    # Non-régression : un vrai nom propre reste masqué (le garde-fou élisions
+    # ne doit pas désactiver la NER dans son ensemble).
+    masked, counts = anon.anonymize(
+        "Bonjour, merci de contacter Jean Dupont pour le suivi de mon dossier."
+    )
+    check("Un vrai nom propre reste masqué en [NOM]",
+          "Jean Dupont" not in masked and "[NOM]" in masked and counts["PER"] >= 1, masked)
 
 
 # --------------------------------------------------------------------------- #
@@ -275,12 +332,16 @@ def test_results_export(admin, SessionLocal) -> None:
     check("Dépôt MULTIPLE (3 fichiers) accepté", r.status_code in ACCEPTE,
           f"HTTP {r.status_code} · {r.text[:120]}")
     lot = _dernier_lot()
-    deposes = [str(c) for c in ((lot.source_files or {}).get("fichiers") or [])] if lot else []
+    deposes = list(((lot.source_files or {}).get("fichiers") or [])) if lot else []
     check("Les 3 fichiers sont enregistrés pour le lot", len(deposes) == 3,
           f"{len(deposes)} chemin(s)")
     check("L'extension d'origine est conservée",
-          any(c.endswith(".csv") for c in deposes) and any(c.endswith(".xlsx") for c in deposes),
-          str([c.split("/")[-1] for c in deposes]))
+          any(c["path"].endswith(".csv") for c in deposes)
+          and any(c["path"].endswith(".xlsx") for c in deposes),
+          str(deposes))
+    check("Les noms originaux des fichiers sont conservés",
+          [c.get("original_name") for c in deposes] == ["a.xlsx", "b.xlsx", "c.csv"],
+          str(deposes))
 
     # Un CSV seul doit passer : les exports MDTC arrivent désormais dans ce format.
     r = admin.post("/api/batches", data={"seuil_revue": "0.7"},
@@ -289,7 +350,12 @@ def test_results_export(admin, SessionLocal) -> None:
           f"HTTP {r.status_code} · {r.text[:120]}")
     lot = _dernier_lot()
     check("Le CSV est enregistré avec son extension",
-          str((lot.source_files or {}).get("mdtc", "")).endswith(".csv") if lot else False,
+          str(((lot.source_files or {}).get("mdtc") or {}).get("path", "")).endswith(".csv")
+          if lot else False,
+          str((lot.source_files or {}) if lot else {}))
+    check("Le nom original du CSV est conservé",
+          ((lot.source_files or {}).get("mdtc") or {}).get("original_name") == "export.csv"
+          if lot else False,
           str((lot.source_files or {}) if lot else {}))
 
     # Une extension non supportée reste refusée, avec un message explicite.
@@ -309,6 +375,9 @@ def test_results_export(admin, SessionLocal) -> None:
     item = (r.json().get("items") or [{}])[0]
     check("Score de confiance exposé (#6)", item.get("confidence_globale") is not None)
     check("Statut de revue exposé (#6)", "revue_requise" in item)
+    check("Lot historique sans répondant : référence explicitement indisponible",
+          "response_reference" in item and item.get("response_reference") is None,
+          str(item.get("response_reference")))
 
     # Correctif L5 : filtre Thème en « contient » sur niv.1 OU niv.2
     f = admin.get(f"/api/batches/{bid}/results?niv1=Délai")
@@ -328,6 +397,294 @@ def test_results_export(admin, SessionLocal) -> None:
     check("BOM UTF-8 présent (Excel FR)", ex.content[:3] == b"\xef\xbb\xbf")
     check("Aucune PII brute dans l'export (texte anonymisé)",
           "@" not in body.split("verbatim")[0] or "[EMAIL]" in body)
+
+
+# --------------------------------------------------------------------------- #
+#  5 bis. Second thème & satisfaction déclarée — restitution du lot
+# --------------------------------------------------------------------------- #
+def test_second_theme_et_satisfaction(admin, SessionLocal) -> None:
+    """Le second thème et la note du client doivent EXISTER à l'écran.
+
+    Ces contrôles existent parce que la restitution est longtemps restée
+    accrochée au seul ``theme1`` : le modèle retenait deux thèmes, l'export les
+    contenait, et les répartitions n'en comptaient qu'un — un thème qui sort
+    surtout en second était donc structurellement invisible. Même écueil côté
+    satisfaction : seul le signal d'insatisfaction forte était publié, ce qui ne
+    dit rien des clients satisfaits.
+
+    Le piège inverse est tout aussi grave et vérifié ici : une note ABSENTE ne
+    doit jamais être comptée 0, sans quoi chaque non-réponse ferait baisser la
+    moyenne.
+    """
+    section("Second thème & satisfaction déclarée (restitution)")
+    from common.models import Batch, Result, SurveyResponse
+
+    with SessionLocal() as db:
+        b = Batch(label="recette-2e-theme", status="done", seuil_revue=0.70,
+                  n_total=4, n_processed=4, n_review=0,
+                  finished_at=datetime(2026, 9, 21, 14, 30, tzinfo=timezone.utc))
+        db.add(b)
+        db.flush()
+        responses = [
+            SurveyResponse(batch_id=b.id, source_type=source, source_file=f"{source}.csv",
+                           respondent_key=f"r{i}", satisfaction_native=native,
+                           satisfaction_scale_max=scale, satisfaction_normalized=normalisee,
+                           client_status=status, rating_invalid=False,
+                           response_date=response_date)
+            for i, (source, native, scale, normalisee, status, response_date) in enumerate([
+                ("MDTC-postrecep", 4, 4, 4, "ancien", date(2026, 9, 10)),
+                ("MDTC-postrecep", 1, 4, 1, "nouveau", date(2026, 9, 15)),
+                ("Mopinion-desktop", 3, 5, 2, "non_renseigne", date(2026, 9, 15)),
+                ("Mopinion-desktop", None, 5, None, "non_renseigne", date(2026, 9, 20)),
+            ])
+        ]
+        db.add_all(responses)
+        db.flush()
+        commun = dict(batch_id=b.id, signal_rupture=False, signal_churn=False,
+                      signal_insatisfaction=False, confidence_globale=0.90,
+                      revue_requise=False)
+        db.add_all([
+            # Bi-thème, sentiments DIVERGENTS entre les deux thèmes.
+            Result(row_index=0, source="MDTC-postrecep", nb_themes=2, satisfaction=4,
+                   survey_response_id=responses[0].id,
+                   verbatim_analyse="Livraison rapide mais article décevant",
+                   theme1_niv1="Livraison", theme1_niv2="Délai",
+                   theme1_sentiment="Positif", theme1_score=0.91,
+                   theme2_niv1="Produit", theme2_niv2="Qualité",
+                   theme2_sentiment="Négatif", theme2_score=0.72, **commun),
+            # Mono-thème sur le thème qui n'apparaît qu'en second ailleurs.
+            Result(row_index=1, source="MDTC-postrecep", nb_themes=1, satisfaction=1,
+                   survey_response_id=responses[1].id,
+                   verbatim_analyse="Article cassé",
+                   theme1_niv1="Produit", theme1_niv2="Qualité",
+                   theme1_sentiment="Négatif", theme1_score=0.88, **commun),
+            Result(row_index=2, source="Mopinion-desktop", nb_themes=1, satisfaction=2,
+                   survey_response_id=responses[2].id,
+                   verbatim_analyse="Site agréable",
+                   theme1_niv1="Site", theme1_niv2="Navigation",
+                   theme1_sentiment="Positif", theme1_score=0.80, **commun),
+            # Client qui n'a pas noté : ne doit peser sur AUCUNE moyenne.
+            Result(row_index=3, source="Mopinion-desktop", nb_themes=1, satisfaction=None,
+                   survey_response_id=responses[3].id,
+                   verbatim_analyse="Sans avis",
+                   theme1_niv1="Site", theme1_niv2="Navigation",
+                   theme1_sentiment="Neutre", theme1_score=0.61, **commun),
+        ])
+        db.commit()
+        bid = b.id
+
+    k = admin.get(f"/api/batches/{bid}/kpi")
+    check("KPI du lot -> 200", k.status_code == 200, k.text[:160])
+    kpi = k.json() if k.status_code == 200 else {}
+
+    # ---- Second thème dans les répartitions ------------------------------- #
+    check("Le second thème est compté dans les mentions",
+          (kpi.get("themes_mentions") or {}).get("Produit") == 2,
+          str(kpi.get("themes_mentions")))
+    check("La vue « thème principal » reste le comptage d'origine",
+          (kpi.get("themes") or {}).get("Produit") == 1,
+          str(kpi.get("themes")))
+    check("Le second thème est publié seul",
+          (kpi.get("themes_secondaires") or {}) == {"Produit": 1},
+          str(kpi.get("themes_secondaires")))
+    check("Les sous-thèmes suivent la même logique de mentions",
+          (kpi.get("subthemes_mentions") or {}).get("Qualité") == 2,
+          str(kpi.get("subthemes_mentions")))
+    hierarchy = kpi.get("theme_hierarchy") or {}
+    check("La hiérarchie principale rattache chaque sous-thème à son niveau 1",
+          (hierarchy.get("principal") or {}).get("Livraison") == {"Délai": 1}
+          and (hierarchy.get("principal") or {}).get("Produit") == {"Qualité": 1},
+          str(hierarchy.get("principal")))
+    check("La hiérarchie toutes mentions additionne les deux rangs par couple",
+          (hierarchy.get("mentions") or {}).get("Produit") == {"Qualité": 2},
+          str(hierarchy.get("mentions")))
+    check("La hiérarchie du second thème reste isolée du thème principal",
+          hierarchy.get("secondaire") == {"Produit": {"Qualité": 1}},
+          str(hierarchy.get("secondaire")))
+    check("Bi-thèmes comptés", kpi.get("n_bi_themes") == 1, str(kpi.get("n_bi_themes")))
+    check("Taux de bi-thèmes rapporté aux verbatims CLASSÉS",
+          abs((kpi.get("taux_bi_themes") or 0) - 0.25) < 1e-9, str(kpi.get("taux_bi_themes")))
+
+    # Le sentiment du second thème lui est propre : il ne doit pas être recopié
+    # de celui du premier dans le croisement thème × sentiment.
+    ts = kpi.get("theme_sentiment") or {}
+    check("Le croisement thème × sentiment empile le sentiment DU second thème",
+          (ts.get("Produit") or {}).get("Négatif") == 2,
+          str(ts.get("Produit")))
+    check("Le sentiment du thème principal n'est pas recopié sur le second",
+          (ts.get("Livraison") or {}) == {"Positif": 1}, str(ts.get("Livraison")))
+    sentiment_hierarchy = kpi.get("theme_sentiment_hierarchy") or {}
+    check("Le croisement hiérarchique rattache les sentiments au bon sous-thème",
+          (sentiment_hierarchy.get("Livraison") or {}).get("Délai") == {"Positif": 1}
+          and (sentiment_hierarchy.get("Produit") or {}).get("Qualité") == {"Négatif": 2},
+          str(sentiment_hierarchy))
+    check("Le croisement hiérarchique additionne thème principal et second thème",
+          sum((sentiment_hierarchy.get("Produit") or {}).get("Qualité", {}).values()) == 2,
+          str(sentiment_hierarchy.get("Produit")))
+    sentiment_views = kpi.get("theme_sentiment_views") or {}
+    principal_sentiments = sentiment_views.get("principal") or {}
+    mentions_sentiments = sentiment_views.get("mentions") or {}
+    secondary_sentiments = sentiment_views.get("secondaire") or {}
+    check("Le tri de répartition peut isoler les sentiments du thème principal",
+          (principal_sentiments.get("themes") or {}).get("Produit") == {"Négatif": 1}
+          and (principal_sentiments.get("themes") or {}).get("Site")
+              == {"Neutre": 1, "Positif": 1},
+          str(principal_sentiments.get("themes")))
+    check("Le tri de répartition toutes mentions additionne les deux rangs",
+          (mentions_sentiments.get("themes") or {}).get("Produit") == {"Négatif": 2}
+          and (mentions_sentiments.get("subthemes") or {}).get("Qualité")
+              == {"Négatif": 2},
+          str(mentions_sentiments))
+    check("Le tri de répartition du second thème reste strictement isolé",
+          secondary_sentiments.get("themes") == {"Produit": {"Négatif": 1}}
+          and secondary_sentiments.get("subthemes") == {"Qualité": {"Négatif": 1}}
+          and secondary_sentiments.get("hierarchy")
+              == {"Produit": {"Qualité": {"Négatif": 1}}},
+          str(secondary_sentiments))
+
+    # ---- Satisfaction déclarée -------------------------------------------- #
+    sat = kpi.get("satisfaction") or {}
+    check("Bloc satisfaction présent", bool(sat), str(kpi.keys()))
+    check("L'unité de satisfaction est le répondant", sat.get("unit") == "respondent",
+          str(sat.get("unit")))
+    par_source = {s["source_type"]: s for s in sat.get("by_source") or []}
+    check("Les quatre sources attendues restent visibles",
+          set(par_source) == {"MDTC-postachat", "MDTC-postrecep",
+                              "Mopinion-desktop", "Mopinion-mobile"},
+          str(par_source.keys()))
+    check("Une source non reçue n'est pas présentée comme une mesure à zéro",
+          par_source.get("Mopinion-mobile", {}).get("availability_status") == "source_not_provided"
+          and par_source.get("Mopinion-mobile", {}).get("mean_on_10") is None,
+          str(par_source.get("Mopinion-mobile")))
+    check("Mopinion 3/5 est affiché 6/10",
+          par_source.get("Mopinion-desktop", {}).get("mean_on_10") == 6.0,
+          str(par_source.get("Mopinion-desktop")))
+    check("MDTC conserve son échelle native 1-4",
+          par_source.get("MDTC-postrecep", {}).get("native_scale_max") == 4,
+          str(par_source.get("MDTC-postrecep")))
+    check("Une note absente est exclue sans devenir zéro",
+          par_source.get("Mopinion-desktop", {}).get("unrated_respondent_count") == 1,
+          str(par_source.get("Mopinion-desktop")))
+    check("Les trois statuts reconstituent le total",
+          all(sum(x["respondent_count"] for x in s["by_client_status"]) == s["respondent_count"]
+              for s in par_source.values()), str(par_source))
+    check("Les trois statuts MDTC restent visibles même à zéro",
+          {x["client_status"]
+           for x in par_source.get("MDTC-postrecep", {}).get("by_client_status", [])}
+          == {"ancien", "nouveau", "non_renseigne"},
+          str(par_source.get("MDTC-postrecep")))
+
+    # ---- Filtres : le second thème doit être atteignable ------------------ #
+    f = admin.get(f"/api/batches/{bid}/results?niv1=Produit")
+    check("Filtrer un thème ramène aussi ses mentions EN SECOND",
+          (f.json().get("total") or 0) == 2, f.text[:160])
+    f = admin.get(f"/api/batches/{bid}/results?bi_theme=true")
+    check("Filtre « bi-thème »", (f.json().get("total") or 0) == 1, f.text[:160])
+    f = admin.get(f"/api/batches/{bid}/results?satisfaction=1")
+    check("Filtre par note client", (f.json().get("total") or 0) == 1, f.text[:160])
+    f = admin.get(f"/api/batches/{bid}/results?sentiment=Négatif")
+    check("Filtre sentiment inclut le sentiment du second thème",
+          (f.json().get("total") or 0) == 2, f.text[:160])
+    f = admin.get(f"/api/batches/{bid}/results?source=Mopinion-desktop")
+    check("Filtre source appliqué aux résultats", (f.json().get("total") or 0) == 2,
+          f.text[:160])
+    f = admin.get(
+        f"/api/batches/{bid}/results?source=MDTC-postrecep&source=Mopinion-desktop")
+    check("Filtre multi-sources appliqué aux résultats",
+          (f.json().get("total") or 0) == 4, f.text[:160])
+    f = admin.get(
+        f"/api/batches/{bid}/results?date_from=2026-09-15&date_to=2026-09-15")
+    check("Filtre de publication inclusif appliqué aux résultats",
+          (f.json().get("total") or 0) == 2, f.text[:160])
+    f = admin.get(f"/api/batches/{bid}/results?date_from=2026-09-20&date_to=2026-09-10")
+    check("Plage de dates inversée refusée", f.status_code == 422, f.text[:160])
+
+    filtered_kpi = admin.get(
+        f"/api/batches/{bid}/kpi?source=MDTC-postrecep&date_from=2026-09-15&date_to=2026-09-15")
+    filtered_payload = filtered_kpi.json() if filtered_kpi.status_code == 200 else {}
+    check("Tous les KPI respectent source et date",
+          filtered_payload.get("n_total") == 1
+          and filtered_payload.get("themes") == {"Produit": 1}
+          and filtered_payload.get("sources") == {"MDTC-postrecep": 1}
+          and (filtered_payload.get("theme_hierarchy") or {}).get("mentions")
+              == {"Produit": {"Qualité": 1}}
+          and filtered_payload.get("theme_sentiment_hierarchy")
+              == {"Produit": {"Qualité": {"Négatif": 1}}}
+          and ((filtered_payload.get("theme_sentiment_views") or {}).get("principal") or {})
+              .get("themes") == {"Produit": {"Négatif": 1}},
+          str(filtered_payload))
+
+    filtered_global = admin.get(
+        "/api/kpi/volumetry?source=MDTC-postrecep&date_from=2026-09-15&date_to=2026-09-15")
+    global_payload = filtered_global.json() if filtered_global.status_code == 200 else {}
+    check("Les graphiques globaux respectent source et date",
+          global_payload.get("total_verbatims") == 1
+          and global_payload.get("global_themes") == {"Produit": 1}
+          and global_payload.get("global_sources") == {"MDTC-postrecep": 1},
+          str(global_payload))
+    check("Les sous-thèmes globaux respectent le même périmètre",
+          global_payload.get("global_subthemes") == {"Qualité": 1}
+          and global_payload.get("global_subthemes_mentions") == {"Qualité": 1},
+          str({
+              "principal": global_payload.get("global_subthemes"),
+              "mentions": global_payload.get("global_subthemes_mentions"),
+          }))
+    global_hierarchy = global_payload.get("global_theme_hierarchy") or {}
+    check("La hiérarchie globale rattache le niveau 2 à son parent réel",
+          global_hierarchy.get("principal") == {"Produit": {"Qualité": 1}}
+          and global_hierarchy.get("mentions") == {"Produit": {"Qualité": 1}},
+          str(global_hierarchy))
+    check("Le croisement sentiment global conserve la hiérarchie et le périmètre",
+          global_payload.get("theme_sentiment_hierarchy")
+              == {"Produit": {"Qualité": {"Négatif": 1}}},
+          str(global_payload.get("theme_sentiment_hierarchy")))
+    global_sentiment_views = global_payload.get("theme_sentiment_views") or {}
+    check("Les tris sentiment globaux conservent l'angle et le périmètre",
+          (global_sentiment_views.get("principal") or {}).get("themes")
+              == {"Produit": {"Négatif": 1}}
+          and (global_sentiment_views.get("secondaire") or {}).get("themes") == {},
+          str(global_sentiment_views))
+    check("Le second thème global reste isolé dans le périmètre filtré",
+          global_payload.get("global_themes_secondaires") == {}
+          and global_payload.get("global_subthemes_secondaires") == {}
+          and global_hierarchy.get("secondaire") == {},
+          str(global_payload))
+
+    r = admin.get(f"/api/batches/{bid}/results?limit=10")
+    item = (r.json().get("items") or [{}])[0]
+    check("La note native du client est exposée avec son échelle",
+          item.get("satisfaction_native") == 4 and item.get("satisfaction_scale_max") == 4,
+          str((item.get("satisfaction_native"), item.get("satisfaction_scale_max"))))
+    check("Le score du second thème est exposé",
+          item.get("theme2_score") is not None, str(item.get("theme2_score")))
+    check("Publication, fichier et traitement sont exposés par verbatim",
+          item.get("response_date") == "2026-09-10"
+          and item.get("source_file") == "MDTC-postrecep.csv"
+          and item.get("batch_processed_at") is not None,
+          str({k: item.get(k) for k in ("response_date", "source_file", "batch_processed_at")}))
+
+    # ---- Export : la note survit, le contrat modèle ne bouge pas ---------- #
+    ex = admin.get(f"/api/batches/{bid}/export?format=csv")
+    entete = ex.content.decode("utf-8-sig").splitlines()[0].split(",")
+    check("La note native et son échelle figurent à l'export",
+          "satisfaction_native" in entete and "satisfaction_scale_max" in entete, str(entete))
+    check("Les dates de publication et de traitement figurent à l'export",
+          "date_publication_verbatim" in entete and "date_traitement_lot" in entete,
+          str(entete))
+    filtered_export = admin.get(
+        f"/api/batches/{bid}/export?format=csv&source=MDTC-postrecep&date_from=2026-09-15&date_to=2026-09-15")
+    check("L'export respecte source et date comme la liste",
+          len(filtered_export.content.decode("utf-8-sig").splitlines()) - 1 == 1,
+          filtered_export.text[:200])
+    check("Les colonnes modèle du contrat POC sont inchangées et dans l'ordre",
+          [c for c in entete if c.startswith(("theme", "signal", "nb_themes",
+                                              "verbatim_analysé", "confidence", "revue"))]
+          == ["verbatim_analysé", "nb_themes", "theme1_niv1", "theme1_niv2",
+              "theme1_sentiment", "theme1_score_confiance", "theme2_niv1", "theme2_niv2",
+              "theme2_sentiment", "theme2_score_confiance", "signal_rupture_client",
+              "signal_churn", "signal_insatisfaction_forte", "confidence_globale",
+              "revue_humaine_requise"],
+          str(entete))
 
 
 # --------------------------------------------------------------------------- #
@@ -384,7 +741,7 @@ def test_pipeline_e2e(SessionLocal) -> None:
              f"dépendances worker indisponibles ici ({type(exc).__name__}) — validé en image worker")
         return
 
-    from common.models import Batch, Result
+    from common.models import Batch, Result, SurveyResponse
     from src.utils import Taxonomy
 
     # Fixture MDTC minimal avec PII
@@ -403,7 +760,10 @@ def test_pipeline_e2e(SessionLocal) -> None:
 
     with SessionLocal() as db:
         b = Batch(label="e2e", status="pending", seuil_revue=0.70,
-                  source_files={"mdtc": str(xlsx)})
+                  source_files={"mdtc": {
+                      "path": str(xlsx),
+                      "original_name": "retours_clients_septembre.xlsx",
+                  }})
         db.add(b)
         db.commit()
         bid = b.id
@@ -419,6 +779,40 @@ def test_pipeline_e2e(SessionLocal) -> None:
         pii_leak = any(("CMD998877" in (r.verbatim_analyse or "")) or
                        ("06 11 22 33 44" in (r.verbatim_analyse or "")) for r in rows)
         check("Aucune PII brute persistée en base (#2)", not pii_leak)
+        # ... et pas davantage dans les colonnes d'origine recopiées à côté.
+        # Ce contrôle a été élargi après constat : le chargeur historique
+        # recopiait TOUTES les colonnes du fichier, y compris celles du verbatim
+        # BRUT, ce qui remettait en base les PII que l'anonymiseur venait de
+        # masquer. Ne regarder que `verbatim_analyse` laissait la fuite passer.
+        empreinte = " ".join(str((r.original_columns or {})) for r in rows)
+        check("Aucune PII brute dans les colonnes d'origine persistées (#2)",
+              "CMD998877" not in empreinte and "06 11 22 33 44" not in empreinte,
+              empreinte[:200])
+        check("Le verbatim BRUT n'est pas recopié à côté du verbatim anonymisé (#2)",
+              all("Verbatim justification" not in (r.original_columns or {}) for r in rows),
+              str(sorted((rows[0].original_columns or {}).keys()) if rows else []))
+        # La note du client, elle, doit bien survivre au traitement : sans elle,
+        # aucun indicateur de satisfaction n'est calculable.
+        notes = sorted(r.satisfaction for r in rows if r.satisfaction is not None)
+        check("La note de satisfaction est persistée par le worker",
+              2 in notes, str([r.satisfaction for r in rows]))
+        responses = db.query(SurveyResponse).filter(SurveyResponse.batch_id == bid).all()
+        check("Une réponse est persistée par répondant source", len(responses) == 2,
+              str(len(responses)))
+        check("Le nom original du fichier est conservé jusqu'aux verbatims",
+              {r.source_file for r in responses} == {"retours_clients_septembre.xlsx"},
+              str({r.source_file for r in responses}))
+        check("La note native valide est conservée",
+              any(r.satisfaction_native == 2 and r.satisfaction_scale_max == 4
+                  for r in responses), str([(r.satisfaction_native, r.satisfaction_scale_max)
+                                             for r in responses]))
+        check("La note hors plage est exclue et signalée invalide",
+              sum(r.rating_invalid for r in responses) == 1,
+              str([(r.satisfaction_native, r.rating_invalid) for r in responses]))
+        # Les colonnes de contexte non textuelles restent, elles, disponibles.
+        check("Les colonnes de contexte d'origine sont conservées",
+              any("Niveau de satisfaction général" in (r.original_columns or {}) for r in rows),
+              str(sorted((rows[0].original_columns or {}).keys()) if rows else []))
         # #3 : tout couple prédit est valide dans la taxonomie
         bad = [(r.theme1_niv1, r.theme1_niv2) for r in rows
                if r.theme1_niv1 and r.theme1_niv2 and not tax.is_valid_pair(r.theme1_niv1, r.theme1_niv2)]
@@ -431,10 +825,12 @@ def test_pipeline_e2e(SessionLocal) -> None:
 def main() -> int:
     test_static_guards()
     test_anonymization()
+    test_anonymization_per_elisions()
     test_taxonomy()
     admin, SessionLocal = test_api()
     if admin is not None:
         test_results_export(admin, SessionLocal)
+        test_second_theme_et_satisfaction(admin, SessionLocal)
         test_config_purge_audit(admin, SessionLocal)
     if SessionLocal is None:
         # SessionLocal n'a pas pu être créé (couche API absente) : on tente

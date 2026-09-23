@@ -112,12 +112,12 @@ export default function BatchesPage() {
               <thead>
                 <tr>
                   <th>#</th><th>Libellé</th><th>Statut</th><th>Progression</th>
-                  <th>Verbatims</th><th>En revue</th><th>Modèle</th>
+                  <th>Verbatims</th><th>En revue</th><th>Traité le</th><th>Modèle</th>
                 </tr>
               </thead>
               <tbody>
                 {batches.length === 0 && (
-                  <tr><td colSpan={7} className="ui-table__empty">Aucun lot pour l'instant.</td></tr>
+                  <tr><td colSpan={8} className="ui-table__empty">Aucun lot pour l'instant.</td></tr>
                 )}
                 {batches.map((b) => {
                   const pct = b.n_total ? Math.round((b.n_processed / b.n_total) * 100) : 0;
@@ -132,6 +132,9 @@ export default function BatchesPage() {
                       </td>
                       <td className="ui-table__num">{b.n_total || "—"}</td>
                       <td className="ui-table__num">{b.status === "done" ? b.n_review : "—"}</td>
+                      <td className="ui-muted">{b.finished_at
+                        ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(b.finished_at))
+                        : "—"}</td>
                       <td className="ui-muted">{b.model_label ?? "—"}</td>
                     </tr>
                   );

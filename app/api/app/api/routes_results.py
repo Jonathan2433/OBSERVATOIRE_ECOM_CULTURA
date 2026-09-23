@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import io
+from datetime import date, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -14,8 +15,25 @@ from ..core.db import get_db
 from ..core.security import get_current_user
 from ..schemas.result import ResultOut, ResultsResponse
 from common.models import Batch, Result
+from .analysis_filters import AnalysisScope, apply_result_scope, build_analysis_scope
 
 router = APIRouter(prefix="/api/batches", tags=["results"], dependencies=[Depends(get_current_user)])
+
+#: Colonnes de CONTEXTE exportées avant les colonnes modèle. Ce ne sont pas des
+#: sorties du modèle — le bloc `_MODEL_COLUMNS` reste identique au contrat POC.
+#: La valeur normalisée reste exportée pour la reproductibilité ML ; les champs
+#: natifs portent la mesure métier et sa provenance.
+_CONTEXT_COLUMNS = [
+    ("source", "source"),
+    ("source_file", "source_file"),
+    ("reference_reponse", "response_reference"),
+    ("date_publication_verbatim", "response_date"),
+    ("date_traitement_lot", "batch_processed_at"),
+    ("client_status", "client_status"),
+    ("satisfaction_native", "satisfaction_native"),
+    ("satisfaction_scale_max", "satisfaction_scale_max"),
+    ("satisfaction_normalized_ml", "satisfaction"),
+]
 
 # Colonnes modèle exportées (noms EXACTS du format POC) -> attribut ORM.
 _MODEL_COLUMNS = [
@@ -50,15 +68,29 @@ def _like_escape(s: str) -> str:
     return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def _apply_filters(query, niv1, sentiment, revue, rupture, churn, insatisfaction, q):
+def _apply_filters(query, niv1, sentiment, revue, rupture, churn, insatisfaction, q,
+                   bi_theme=False, satisfaction=None, scope=AnalysisScope()):
+    query = apply_result_scope(query, scope)
     if niv1:
         # Recherche « contient » sur le thème (niv.1 OU niv.2), pas une égalité
         # exacte : taper « Programme » doit matcher « Programme de fidélité ».
+        # Le SECOND thème est inclus : filtrer « Livraison » doit ramener les
+        # verbatims qui en parlent en second, sinon le filtre contredit la
+        # répartition affichée juste au-dessus, qui compte les mentions.
         like = f"%{_like_escape(niv1)}%"
         query = query.filter(or_(Result.theme1_niv1.ilike(like, escape="\\"),
-                                 Result.theme1_niv2.ilike(like, escape="\\")))
+                                 Result.theme1_niv2.ilike(like, escape="\\"),
+                                 Result.theme2_niv1.ilike(like, escape="\\"),
+                                 Result.theme2_niv2.ilike(like, escape="\\")))
     if sentiment:
-        query = query.filter(Result.theme1_sentiment == sentiment)
+        # Même logique : le sentiment du second thème peut différer de celui du
+        # premier (une passe de sentiment par thème depuis la V4).
+        query = query.filter(or_(Result.theme1_sentiment == sentiment,
+                                 Result.theme2_sentiment == sentiment))
+    if bi_theme:
+        query = query.filter(Result.theme2_niv1.isnot(None), Result.theme2_niv1 != "")
+    if satisfaction is not None:
+        query = query.filter(Result.satisfaction == satisfaction)
     if revue is not None:
         query = query.filter(Result.revue_requise == revue)
     if rupture:
@@ -83,12 +115,19 @@ def list_results(
     churn: bool = False,
     insatisfaction: bool = False,
     q: Optional[str] = None,
+    bi_theme: bool = False,
+    satisfaction: Optional[int] = None,
+    source: Optional[list[str]] = Query(None),
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
     limit: int = Query(50, le=500),
     offset: int = 0,
 ):
     _get_batch_or_404(db, batch_id)
     base = db.query(Result).filter(Result.batch_id == batch_id)
-    base = _apply_filters(base, niv1, sentiment, revue, rupture, churn, insatisfaction, q)
+    scope = build_analysis_scope(source, date_from, date_to)
+    base = _apply_filters(base, niv1, sentiment, revue, rupture, churn, insatisfaction, q,
+                          bi_theme, satisfaction, scope)
     total = base.with_entities(func.count(Result.id)).scalar() or 0
     items = base.order_by(Result.row_index).offset(offset).limit(limit).all()
     return ResultsResponse(total=total, limit=limit, offset=offset,
@@ -105,11 +144,18 @@ def _enriched_rows(results: list[Result]):
                 seen.add(k)
                 orig_keys.append(k)
 
-    headers = ["source"] + orig_keys + [name for name, _ in _MODEL_COLUMNS]
+    headers = ([name for name, _ in _CONTEXT_COLUMNS] + orig_keys
+               + [name for name, _ in _MODEL_COLUMNS])
     rows = []
     for r in results:
         oc = r.original_columns or {}
-        row = [r.source or ""] + [oc.get(k, "") for k in orig_keys]
+        row = []
+        for _, attr in _CONTEXT_COLUMNS:
+            value = getattr(r, attr)
+            if isinstance(value, (date, datetime)):
+                value = value.isoformat()
+            row.append("" if value is None else value)
+        row += [oc.get(k, "") for k in orig_keys]
         for _, attr in _MODEL_COLUMNS:
             val = getattr(r, attr)
             row.append("" if val is None else val)
@@ -129,12 +175,19 @@ def export_results(
     churn: bool = False,
     insatisfaction: bool = False,
     q: Optional[str] = None,
+    bi_theme: bool = False,
+    satisfaction: Optional[int] = None,
+    source: Optional[list[str]] = Query(None),
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
 ):
     """Export enrichi. Les mêmes filtres que la liste sont honorés : si des
     filtres sont passés, l'export ne contient QUE les lignes correspondantes."""
     batch = _get_batch_or_404(db, batch_id)
     query = db.query(Result).filter(Result.batch_id == batch_id)
-    query = _apply_filters(query, niv1, sentiment, revue, rupture, churn, insatisfaction, q)
+    scope = build_analysis_scope(source, date_from, date_to)
+    query = _apply_filters(query, niv1, sentiment, revue, rupture, churn, insatisfaction, q,
+                           bi_theme, satisfaction, scope)
     results = query.order_by(Result.row_index).all()
     headers, rows = _enriched_rows(results)
     stem = f"classifications_{batch.label}".replace(" ", "_")

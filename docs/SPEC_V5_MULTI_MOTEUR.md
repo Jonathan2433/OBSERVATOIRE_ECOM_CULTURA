@@ -150,8 +150,8 @@ production ; supprimer l'offline strict (il reste vrai pour tout run réel).
    (modes *proposeur* et *raffineur*), `map_llm_response` (validation taxo + repli +
    garde-fous), helpers de normalisation. Le **transport HTTP reste propre à chaque
    moteur** (OpenAI-compatible pour LM Studio, Messages API pour Claude) ; seule la
-   **logique de décision** est mutualisée. **Contrainte : `lmstudio_predictor` doit
-   conserver un comportement identique (recette V4 50/50 inchangée).**
+   **logique de décision** est mutualisée. Les contrats sont sélectionnés par moteur :
+   LM Studio utilise désormais `v2-cultura-2026`, Claude conserve le chemin V1.
 2. **`app/worker/claude_predictor.py`** — `ClaudePredictor` (interface compatible),
    client HTTP Anthropic (`/v1/messages`), modes proposeur + raffineur, **et** les
    fonctions de **juge** (`judge_pairwise`, aveuglement + permutation).
@@ -209,7 +209,8 @@ production ; supprimer l'offline strict (il reste vrai pour tout run réel).
   imposé + `tool_choice` forcé) : mécanisme distinct du `response_format` de LM Studio,
   mais **la forme de sortie et la revalidation taxonomie sont identiques** (mutualisées
   via `llm_common`). `temperature` basse.
-- **Modes** : *proposeur* (même prompt que LM Studio, taxonomie injectée) et *raffineur*
+- **Modes** : *proposeur* et *raffineur* avec taxonomie injectée. Claude conserve le
+  prompt V1 historique ; LM Studio sélectionne son prompt V2 Cultura 2026
   (prompt « voici une proposition {…}, valide ou corrige strictement dans la taxonomie »).
 - **Validation** : sortie revalidée par `map_llm_response` (taxo + repli + garde-fous V4).
 - **Robustesse** : timeouts + retries, **échec propre** (pas de repli silencieux),
@@ -242,7 +243,7 @@ production ; supprimer l'offline strict (il reste vrai pour tout run réel).
 ### 7.1 Run de comparaison (`run_comparison_job`)
 1. Tire `sample_size` résultats du lot (`seed` pour reproductibilité).
 2. Pour chaque moteur sélectionné : `predict_cleaned_batch(verbatim_analyse, satisfaction)`
-   — `satisfaction` récupérée depuis `results.original_columns` si disponible.
+   — `satisfaction` lue dans la colonne dédiée `results.satisfaction` (migration `0010`) ; repli sur `original_columns` pour les lots antérieurs.
 3. Stocke les prédictions dans `engine_predictions` (rôle `compare`) + latences.
 4. Calcule les **métriques objectives** : matrice d'accord `theme1_niv1`, distributions de
    confiance, latence/coût par moteur.
@@ -316,7 +317,7 @@ Surcharge env : `ANTHROPIC_API_KEY`, `CLAUDE_ENABLED`, `CLAUDE_MODEL`.
 - Moteurs `real`/`stub`/`lmstudio` et front analyste : **inchangés** hors options opt-in.
 - `refiner_label = NULL` ⇒ pipeline V4 strictement identique.
 - Claude **jamais** dans un run de prod (refus serveur).
-- Recettes **V1 48/48, V3 13/13, V4 50/50** restent vertes à chaque lot.
+- Recettes applicatives **V1 115/115, V3 13/13, V4 88/88, V5 115/115** restent vertes.
 
 ---
 
@@ -346,8 +347,8 @@ Chemin critique : **C1 → C2 → C3 → C4 → C5 → C6** (C2 ∥ C3 possibles
 - [ ] Juge **aveuglé + permuté** ; appels limités aux divergences ; échantillon plafonné.
 - [ ] Garde-fous : offline strict **en production** intact ; anonymisation amont ; jamais
       hors taxonomie ; clé hors base/dépôt ; égress documenté + tracé audit.
-- [ ] **Aucune régression** : `recette_v1` 48/48, `recette_v3` 13/13, `recette_v4` 50/50,
-      `recette_v5` vert ; `tsc`/build front OK ; `docker compose config` OK.
+- [x] **Aucune régression** : `recette_v1` 115/115, `recette_v3` 13/13,
+      `recette_v4` 88/88 et `recette_v5` 115/115 ; campagne locale au vert.
 
 ---
 
@@ -358,8 +359,8 @@ Chemin critique : **C1 → C2 → C3 → C4 → C5 → C6** (C2 ∥ C3 possibles
 | **Fuite de la posture offline** par un usage Claude en prod | Conformité RGPD | Refus serveur (Claude non activable, exclu des jobs de lot) + tests de recette dédiés. |
 | **Biais d'auto-évaluation** du juge (Claude juge Claude) | Comparaison faussée | Aveuglement + permutation (V5-D11) ; afficher clairement « juge = Claude » ; ne pas survendre le verdict. |
 | **Coût API** non maîtrisé | Budget | Échantillon plafonné, juge sur divergences seules, run admin-only, traçé. |
-| **Régression du moteur LM Studio** lors du refactor `llm_common` | Casse V4 | Extraction iso-comportement + `recette_v4` 50/50 obligatoire au lot C1. |
-| **Satisfaction absente** au replay (non stockée en colonne) | Sentiment dégradé en comparaison | Récupérer depuis `original_columns` ; sinon documenter l'écart (n'affecte pas la prod). |
+| **Régression du moteur LM Studio** lors d'une évolution de `llm_common` | Casse V4/V5 | Contrats sélectionnés par moteur + recettes V4 88/88 et V5 115/115. |
+| **Satisfaction absente** au replay | Sentiment dégradé en comparaison | **Levé le 15/09/2026** : la note est persistée en colonne dédiée (`results.satisfaction`, migration `0010`). Repli `original_columns` conservé pour les lots antérieurs, qui restent sans note. |
 | **Égress worker** bloqué chez le client | Comparaison/juge KO | Documenter le domaine `api.anthropic.com` à autoriser ; mode dégradé sinon. |
 
 ---

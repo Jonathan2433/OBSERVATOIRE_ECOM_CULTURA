@@ -22,8 +22,8 @@ L'écran d'accueil résume l'activité (derniers lots, KPI modèle).
 
 1. Menu **Lots → Nouveau lot**.
 2. Glisser-déposer **tous les exports du mois d'un coup** — `.xlsx` ou `.csv`,
-   autant de fichiers que nécessaire : post-achat et post-réception, ancien et
-   nouveau format, Mopinion desktop et mobile.
+   jusqu'à **20 fichiers** : post-achat et post-réception, ancien et nouveau
+   format, Mopinion desktop et mobile.
    > **Vous n'avez rien à déclarer.** L'application reconnaît chaque export à son
    > jeu de colonnes, pas à son nom ni à son extension : elle distingue seule un
    > post-achat d'un post-réception, un desktop d'un mobile, l'ancien format du
@@ -49,8 +49,9 @@ L'écran d'accueil résume l'activité (derniers lots, KPI modèle).
    (anonymisation → nettoyage → classification), l'interface reste libre.
 5. À la fin : nombre de verbatims traités, **% en revue**, durée. 
 
-> ⏱️ Un lot de ~11 000 verbatims se traite en **moins d'une heure** (modèle réel
-> CamemBERT). Le mode *démonstration* (stub, sans modèle déposé) est quasi instantané.
+> ⏱️ La cible d'exploitation est un lot de ~11 000 verbatims en **moins d'une
+> heure**. Cette mesure reste à confirmer sur le poste cible avec le modèle réel
+> CamemBERT. Le mode *démonstration* (stub) est quasi instantané.
 
 ---
 
@@ -58,15 +59,70 @@ L'écran d'accueil résume l'activité (derniers lots, KPI modèle).
 
 Menu **Lots → (un lot) → Résultats**.
 
-- **Tableau paginé** : verbatim anonymisé, thème niv.1/niv.2 + scores, sentiment,
-  signaux (rupture / churn / insatisfaction), confiance, statut.
-- **Filtres** : thème (recherche « contient » sur niv.1 **ou** niv.2), sentiment,
-  signaux, statut de revue, texte libre. *(< 2 s même sur 11k.)*
+- **Tableau paginé** : verbatim anonymisé, **thèmes** (principal *et* second),
+  sentiment de chaque thème, **note du client**, signaux, confiance, statut.
+- **Filtres** : thème (recherche « contient » sur les **quatre** champs de thème :
+  niv.1 et niv.2, du thème principal comme du second), sentiment, note du client,
+  bi-thème, signaux, statut de revue, texte libre, **une ou plusieurs sources** et
+  **plage inclusive de date de publication client**. Les filtres source/date sont
+  conservés dans l'URL et partagés avec les analyses. *(< 2 s même sur 11k.)*
 - **Exports** :
   - **CSV** (UTF-8 BOM, ré-ouvrable dans Excel FR sans casser les accents) ;
   - **XLSX**.
-  Les exports contiennent **les colonnes d'origine + les colonnes du modèle**
-  (format identique au POC).
+  Les exports respectent les filtres actifs et contiennent **la source, le nom
+  original du fichier, la référence pseudonymisée de la réponse, la date de
+  publication du verbatim, la date de traitement du lot, la note du client, les
+  colonnes d'origine et celles du modèle** (bloc
+  modèle identique au POC, colonne pour colonne).
+
+Le panneau de détail d'une ligne affiche aussi ces éléments de traçabilité.
+Pour les lots historiques, une information non reconstructible reste vide : elle
+n'est jamais remplacée par une date ou un nom supposé.
+
+### Corriger un verbatim directement depuis les Résultats
+
+Le bouton **« Corriger »** du panneau de détail permet de modifier la
+classification de **n'importe quel** verbatim — pas seulement ceux que le moteur
+a lui-même mis en doute (statut **en revue**). Un verbatim classé **auto** avec
+confiance peut donc, lui aussi, être corrigé si l'analyse s'avère erronée.
+
+Le formulaire est identique à celui de la Revue (thème niv.1/niv.2 contraint par
+la taxonomie du moteur qui a produit ce lot, saisie libre possible, sentiment,
+second thème, signaux — voir §4 pour le détail de ces règles). La correction est
+enregistrée et tracée de la même façon, et le statut affiché passe immédiatement
+à **corrigé**. Il n'y a en revanche pas de bouton « Valider tel quel » ici : ce
+geste n'a de sens que dans la file de revue, qu'un verbatim « auto » n'a jamais
+rejointe.
+
+La référence prend la forme `REP-XXXXXXXXXXXXXXXX`. Elle permet de reconnaître
+plusieurs verbatims issus de la même réponse sans révéler l'identifiant du
+formulaire ni un numéro de commande. Ce n'est pas une donnée permettant de
+retrouver directement un client dans l'outil source.
+
+### Deux thèmes par verbatim, et ils comptent tous les deux
+
+Le modèle retient **jusqu'à deux thèmes** par verbatim. Le second est marqué
+**« 2e »** dans le tableau, avec son propre sous-thème et son propre sentiment —
+un client peut être satisfait de la livraison et mécontent du produit dans la
+même phrase, et la V4 calcule bien un sentiment par thème retenu.
+
+Le filtre « Thème » ramène aussi les verbatims qui n'évoquent le sujet **qu'en
+second**. Sans cela, un thème presque toujours cité en appui resterait
+introuvable à l'écran alors qu'il figure dans l'export.
+
+### La note du client n'est pas le signal d'insatisfaction
+
+Deux colonnes voisines, deux natures différentes :
+
+| | Origine | Ce que ça dit |
+|---|---|---|
+| **Note client** | déposée par le client dans le formulaire | ce qu'il a coché |
+| **Insatisf.** (signal) | déduit par le modèle du **texte** | ce qu'il a écrit |
+
+Les deux divergent régulièrement, et c'est précisément l'écart qui est
+intéressant. Le tableau affiche la **note native** (`3/4` pour MDTC, `3/5` pour
+Mopinion) et son équivalent sur 10. Une note absente ou un ancien lot sans détail
+natif s'affiche comme indisponible, jamais comme 0.
 
 > 🔒 Le tableau n'affiche **jamais** le texte brut : seul le **texte anonymisé**
 > (e-mails, téléphones, n° de commande, noms remplacés par `[EMAIL]`, `[TEL]`,
@@ -90,8 +146,19 @@ la vérité — survolez l'info-bulle pour le détail.
 
 Menu **Lots → (un lot) → Revue**.
 
+Le bandeau source/date est identique à celui des Résultats. Il limite la file de
+revue sans changer les corrections déjà validées.
+
+Chaque carte de revue commence par le contexte du retour : source détaillée
+(Mopinion ordinateur/mobile ou MDTC post-achat/post-réception), fichier d'origine,
+référence pseudonymisée et date du retour lorsqu'elle est disponible.
+
 1. Les verbatims **sous le seuil** sont présentés, **du moins confiant au plus confiant**.
-2. Pour chacun : corriger le **thème niv.1/niv.2**, le **sentiment**, les **signaux**.
+2. Pour chacun : corriger le **thème principal niv.1/niv.2**, son **sentiment**,
+   le **second thème** éventuel et les **signaux**.
+   - Le second thème est présenté séparément avec son propre sous-thème et son
+     propre sentiment. Il peut être corrigé, ajouté à un verbatim mono-thème ou
+     supprimé. Le nombre de thèmes est recalculé automatiquement.
    - Le sous-thème (niv.2) proposé est **contraint par le niv.1 choisi** : impossible
      de sélectionner un couple invalide.
    - **Les thèmes proposés sont ceux du moteur qui a produit CE lot**, pas ceux du
@@ -112,6 +179,13 @@ Menu **Lots → (un lot) → Revue**.
 
 Menu **Tableaux de bord** (global) et **Lots → (un lot) → Tableau de bord**.
 
+Le bandeau **Périmètre d'analyse** pilote toutes les cartes et tous les
+graphiques, regroupé en deux blocs : **Sources** (plusieurs sources peuvent
+être combinées) et **Période** (une plage de dates exclut les anciens
+verbatims sans date métier ; l'application ne leur invente jamais la date de
+dépôt). L'en-tête du bandeau indique le nombre de filtres actifs ;
+Réinitialiser rétablit le périmètre complet.
+
 - **KPI modèle** (version active) : F1 niv.1/niv.2, sentiment, signaux, avec
   **alerte visuelle** si un indicateur passe sous son seuil cible.
   > **Une case absente veut dire « non mesuré », jamais zéro.** Chaque moteur ne
@@ -119,11 +193,112 @@ Menu **Tableaux de bord** (global) et **Lots → (un lot) → Tableau de bord**.
   > le sentiment, faute d'évaluation thématique fiable (la sienne portait sur un
   > découpage où 99,6 % des textes de test se retrouvaient à l'entraînement).
   > Comparer les deux moteurs sur les cases communes, pas sur les cases vides.
-- **KPI résultats** : volume, % en revue, distribution des thèmes/sentiments,
-  comptage des signaux, taux de correction.
+- **KPI résultats** : volume, % en revue, **bi-thèmes**, distribution des
+  thèmes/sentiments, comptage des signaux, taux de correction.
 - **Volumétrie & tendances** : évolution mensuelle, top thèmes vs mois précédent.
 - **Thèmes × sentiment (volumétrie)** : barres empilées croisant le **volume** de
-  chaque thème et la **répartition de sentiment** (Négatif / Neutre / Positif).
+  chaque thème et la **répartition de sentiment** (Négatif / Neutre / Positif),
+  **toutes mentions confondues** — chaque thème y apparaît avec *son* sentiment.
+  Les thèmes sont classés par **nombre de verbatims négatifs décroissant** afin de
+  faire remonter les irritants à traiter en priorité. À nombre négatif égal, le
+  volume total puis le libellé déterminent l'ordre. Il s'agit d'un volume absolu,
+  et non d'un taux de négativité. Cliquez sur un thème pour faire apparaître
+  juste dessous ses sous-thèmes, chacun avec sa propre barre Négatif / Neutre /
+  Positif et son volume. Cliquez de nouveau pour les replier. Un seul thème est
+  développé à la fois pour conserver une lecture compacte.
+
+### « Thème principal » ou « toutes mentions » : deux questions différentes
+
+La carte *Répartition des thèmes* propose deux angles, qui ne se remplacent pas :
+
+- **Thème principal** — un verbatim, une voix : son thème de tête. La somme fait
+  le nombre de verbatims classés.
+- **Toutes mentions** — thème principal **et** second thème. La somme dépasse le
+  nombre de verbatims, et c'est normal : un verbatim bi-thème compte deux fois.
+
+Le second angle n'est pas un raffinement cosmétique. Sur un lot de 561 verbatims
+de septembre, le thème **Académie** n'apparaît **jamais** en thème principal et
+quatre fois en second : la vue « thème principal » seule le rendait invisible.
+La carte *Second thème seul* isole exactement ces sujets-là.
+
+Le contrôle **Classer par** permet de passer de la volumétrie totale au nombre
+absolu de mentions **négatives**, **neutres** ou **positives**. Le choix modifie
+à la fois l'ordre, la longueur des barres et la valeur affichée pour les niveaux
+1 et 2, y compris dans *Second thème seul*. Les thèmes sans mention du sentiment
+choisi restent visibles avec la valeur `0`, en bas de liste. À égalité, le volume
+total puis le libellé alphabétique stabilisent l'ordre. Il ne s'agit jamais d'un
+taux de négativité ou de positivité.
+
+Dans la vue d'un lot comme dans le tableau de bord global, cliquez sur une ligne
+du tableau **Niveau 1** pour n'afficher à droite que les sous-thèmes **Niveau 2**
+qui lui appartiennent. Le thème choisi est mis en évidence. Cliquez de nouveau
+sur la même ligne, ou sur **Afficher tous**, pour revenir à la distribution
+complète. La même navigation est disponible dans *Second thème seul*. Le
+filtrage suit l'angle actif et les filtres source/date déjà appliqués ; il ne
+modifie pas les autres graphiques.
+
+### Analyse automatique des verbatims
+
+La synthèse affiche ensuite les cinq sous-thèmes les plus présents dans les
+**réponses textuelles ouvertes** pour Mopinion mobile/ordinateur, MDTC
+post-achat et MDTC post-réception. Pour chaque classification, elle montre le
+**nombre de verbatims**, sa **part dans les verbatims de la source**, son rang
+et l'évolution RELATIVE (%) de cette part par rapport au lot de référence :
+une part qui passe de 2 % à 3 % s'affiche `+50 %`, pas `+1 pt`. Une
+classification absente du lot de référence est marquée « nouveau » plutôt que
+d'afficher un pourcentage indéfini.
+
+Cette vue porte sur tous les verbatims, et non sur le seul signal ML
+`insatisfaction forte`. Elle compte le thème principal et le second thème. Un
+verbatim peut donc alimenter deux classifications différentes, mais il ne peut
+jamais être compté deux fois dans la même. Si le modèle ou le référentiel a
+changé, les volumes courants restent lisibles mais les deltas sont marqués
+« non comparable ». Les réponses aux **questions fermées** du formulaire ne
+sont pas incluses dans ces thèmes : leur restitution nécessite un indicateur
+distinct et une correspondance métier validée avec les choix du formulaire.
+
+Les quatre emplacements de source restent présents. La mention « Aucune donnée
+reçue pour cette source » signifie que l'export correspondant n'était pas dans
+le lot ; elle ne doit pas être interprétée comme une mesure à zéro.
+
+### Satisfaction client déclarée
+
+Le panneau *Satisfaction* restitue ce que les clients ont **coché**, avec une
+carte par source. La moyenne est affichée sur 10 mais calculée depuis l'échelle
+native (`moyenne native / maximum natif × 10`). L'unité est le **répondant** :
+plusieurs champs Mopinion remplis par la même personne ne lui donnent pas plus
+de poids. Pour MDTC, chaque carte conserve les lignes `Ancien`, `Nouveau` et
+`Statut client non disponible`, même lorsque leur effectif est nul. Dans les
+exports Mopinion actuels, aucun champ ne permet de déterminer si le répondant
+est ancien ou nouveau : toutes les réponses Mopinion sont donc regroupées sous
+`Statut client non disponible`. Ce libellé ne signifie pas que la note de
+satisfaction est manquante.
+
+Le bloc **Comparaison inter-lots** permet de choisir un lot de référence. Sans
+choix manuel, l'application retient le dernier lot terminé dont la période
+métier précède la période courante sans la chevaucher. La date de traitement du
+lot n'est jamais utilisée : un export d'août déposé en septembre reste une
+donnée d'août.
+
+Le badge d'évolution se lit en **% relatif** de la moyenne sur 10 : `+1,2 %`
+signifie que la moyenne est passée, par exemple, de `8,10/10` à `8,20/10`
+(`(8,20 − 8,10) / 8,10`). Les deux périodes et les deux effectifs notés
+restent affichés pour ne pas interpréter de la même façon une évolution sur
+20 réponses et une évolution sur 10 000 réponses.
+
+Précautions portées par l'écran lui-même :
+
+- une **note absente** n'est pas un zéro : elle est comptée à part et ne pèse sur
+  aucune moyenne ;
+- une **source absente du lot courant** reste affichée comme non reçue, sans
+  fabriquer une moyenne ni transformer son absence en zéro ;
+- une valeur hors plage est signalée comme invalide et exclue du calcul ;
+- les lots antérieurs à cette évolution affichent « détail natif indisponible ».
+  Leur valeur Mopinion normalisée ne permet pas de retrouver la note native : il
+  faut retraiter leurs fichiers source de manière explicite ;
+- une source sans date métier, absente du lot de référence ou dont l'échelle a
+  changé affiche « non comparable ». La date d'upload n'est jamais utilisée en
+  remplacement.
 
 ---
 
@@ -176,6 +351,9 @@ sur un échantillon du lot, pour décider lequel garder.
   l'**activer en un clic** (voir le guide d'exploitation). Un **second moteur optionnel**
   (*LM Studio (LLM)*) peut y être activé s'il est configuré : **rien ne change côté analyste**,
   seules les prédictions des **nouveaux** lots sont produites par le moteur choisi.
+  LM Studio applique alors le même référentiel Cultura 2026 (11 thèmes / 59 sous-thèmes)
+  que le nouveau CamemBERT. Il ne propose un second thème que pour deux sujets distincts
+  et conserve un sentiment unique par verbatim, avec priorité au négatif dans un avis mixte.
   **Plusieurs modèles CamemBERT peuvent coexister** — activer l'un n'efface pas
   l'autre, et revenir en arrière est une simple resélection. Les lots déjà traités
   ne sont **jamais** reclassés : ils gardent la classification du moteur qui les a

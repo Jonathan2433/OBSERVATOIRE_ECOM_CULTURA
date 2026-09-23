@@ -41,6 +41,7 @@ from .llm_common import (
     FALLBACK_THEME_DEFAULT,
     LLM_OUTPUT_SCHEMA,
     PROMPT_VERSION_DEFAULT,
+    build_label_normalizer,
     build_llm_prompt,
     build_refiner_prompt,
     empty_output,
@@ -164,6 +165,7 @@ class ClaudePredictor:
     def __init__(self, cfg: Dict[str, Any]):
         self.cfg = cfg
         self.taxonomy = Taxonomy.from_json(resolve_path(cfg, cfg["paths"]["taxonomy"]))
+        self.label_normalizer = build_label_normalizer(self.taxonomy, cfg, engine_name="claude")
         self.anonymizer = Anonymizer(cfg)
         self.cleaner = TextCleaner(cfg)
         self.batch_size = cfg["model"]["batch_size_inference"]
@@ -198,7 +200,9 @@ class ClaudePredictor:
                     self.base_url, self.api_key, self.model, prompt["system"], prompt["user"],
                     self.max_tokens, self.timeout_s)
                 return map_llm_response(
-                    raw, cleaned_text, satisfaction, self.taxonomy, self.cfg, self.sentiment_labels)
+                    raw, cleaned_text, satisfaction, self.taxonomy, self.cfg,
+                    self.sentiment_labels, engine_name="claude",
+                    label_normalizer=self.label_normalizer)
             except ClaudeError as exc:
                 last_exc = exc
                 if attempt < self.retries:

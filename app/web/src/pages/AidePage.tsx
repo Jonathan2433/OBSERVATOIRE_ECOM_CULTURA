@@ -130,7 +130,8 @@ export default function AidePage() {
           <ul style={{ lineHeight: 1.7, paddingLeft: "1.2rem" }}>
             <li><b>Taux de revue</b> = part des verbatims dont la confiance est sous le seuil (à relire).</li>
             <li><b>Distributions</b> (thèmes, sentiments) = simples comptages sur le lot.</li>
-            <li><b>Thèmes × sentiment</b> = pour chaque thème, la répartition Négatif / Neutre / Positif et le volume.</li>
+            <li><b>Répartition des thèmes</b> = classez les niveaux 1 et 2 par volume total ou par nombre de mentions négatives, neutres ou positives. Les thèmes à zéro restent visibles.</li>
+            <li><b>Thèmes × sentiment</b> = pour chaque thème, la répartition Négatif / Neutre / Positif et le volume. Les thèmes sont classés par nombre de verbatims négatifs décroissant afin de prioriser les irritants.</li>
             <li><b>KPI modèle</b> = qualité mesurée à l'entraînement ; une alerte s'affiche si un indicateur passe sous sa cible.</li>
           </ul>
         </Card>

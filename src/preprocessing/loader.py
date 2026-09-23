@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 import pandas as pd
 
@@ -30,11 +30,34 @@ import pandas as pd
 COL_SOURCE = "__source__"
 COL_TEXT = "__text_raw__"
 COL_SATISFACTION = "__satisfaction__"
+COL_SATISFACTION_NATIVE = "__satisfaction_native__"
+COL_SATISFACTION_SCALE_MAX = "__satisfaction_scale_max__"
+COL_SATISFACTION_INVALID = "__satisfaction_invalid__"
+COL_SATISFACTION_RAW = "__satisfaction_raw__"
+COL_RESPONDENT = "__respondent_id__"
+COL_FICHIER = "__fichier__"
+COL_CLIENT_STATUS = "__client_status__"
+COL_DATE = "__date__"
 
 logger = logging.getLogger(__name__)
 
 SOURCE_MDTC = "MDTC"
 SOURCE_MOPINION = "Mopinion"
+
+
+def _source_file_descriptor(value: str | Path | Mapping[str, Any]) -> tuple[Path, str]:
+    """Sépare le chemin interne du nom de fichier présenté au métier."""
+    if isinstance(value, Mapping):
+        raw_path = str(value.get("path") or "").strip()
+        if not raw_path:
+            raise ValueError("Chemin de fichier source absent.")
+        path = Path(raw_path)
+        original = Path(str(value.get("original_name") or path.name)).name
+    else:
+        path = Path(value)
+        original = path.name
+    original = "".join(char for char in original if ord(char) >= 32).strip()
+    return path, (original or path.name)[:255]
 
 
 def affiner_source(df: pd.DataFrame, source_grossiere: str,
@@ -142,7 +165,9 @@ def load_mdtc(path: str | Path, cfg: Dict[str, Any]) -> pd.DataFrame:
     out = df.copy()
     out[COL_SOURCE] = affiner_source(df, SOURCE_MDTC, cfg)
     out[COL_TEXT] = out.apply(_build_text, axis=1)
-    out[COL_SATISFACTION] = out[conf["satisfaction_col"]].apply(_coerce_int)
+    _ajouter_contexte_repondant(out, Path(path), cfg, conf["satisfaction_col"], 4,
+                               client_status_col=conf.get("client_status_col"),
+                               date_col=conf.get("date_col"))
     return out
 
 
@@ -171,8 +196,65 @@ def load_mopinion(path: str | Path, cfg: Dict[str, Any]) -> pd.DataFrame:
     out = df.copy()
     out[COL_SOURCE] = affiner_source(df, SOURCE_MOPINION, cfg)
     out[COL_TEXT] = out.apply(_build_text, axis=1)
-    out[COL_SATISFACTION] = out[conf["satisfaction_col"]].apply(_coerce_int)
+    _ajouter_contexte_repondant(out, Path(path), cfg, conf["satisfaction_col"], 5,
+                               conf.get("respondent_id_col"),
+                               date_col=conf.get("date_col"))
     return out
+
+
+def _ajouter_contexte_repondant(out: pd.DataFrame, path: Path, cfg: Dict[str, Any],
+                                satisfaction_col: str, scale_max: int,
+                                respondent_id_col: Optional[str] = None,
+                                client_status_col: Optional[str] = None,
+                                date_col: Optional[str] = None) -> None:
+    """Complète le chemin historique avec le contrat répondant du chemin 2026."""
+    from .cultura_loader import normaliser_date, normaliser_statut_client, opaque_respondent_key
+
+    source = str(out[COL_SOURCE].iloc[0]) if len(out) else "inconnue"
+    out[COL_FICHIER] = path.name
+
+    def parse_native(value):
+        if not _non_empty(value):
+            return float("nan"), False
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return float("nan"), True
+        if not number.is_integer() or not (1 <= int(number) <= scale_max):
+            return float("nan"), True
+        return int(number), False
+
+    parsed = out[satisfaction_col].apply(parse_native)
+    out[COL_SATISFACTION_NATIVE] = parsed.apply(lambda item: item[0])
+    out[COL_SATISFACTION_SCALE_MAX] = scale_max
+    out[COL_SATISFACTION_INVALID] = parsed.apply(lambda item: item[1])
+    if scale_max == 5:
+        conversion = {1: 1, 2: 2, 3: 2, 4: 3, 5: 4}
+        out[COL_SATISFACTION] = out[COL_SATISFACTION_NATIVE].map(conversion)
+    else:
+        out[COL_SATISFACTION] = out[COL_SATISFACTION_NATIVE]
+    out[COL_SATISFACTION_RAW] = out[satisfaction_col].fillna("").astype(str)
+    mappings = (cfg.get("cultura_sources") or {}).get("statuts_client") or {}
+    if client_status_col and client_status_col in out.columns:
+        out[COL_CLIENT_STATUS] = out[client_status_col].apply(
+            lambda value: normaliser_statut_client(value, mappings))
+    else:
+        out[COL_CLIENT_STATUS] = "non_renseigne"
+    # La date est conservée sous la même forme ISO que dans le chargeur 2026.
+    # Une colonne absente ou illisible reste vide : la couche KPI signalera que
+    # la période métier n'est pas disponible, sans utiliser la date d'upload.
+    if date_col and date_col in out.columns:
+        out[COL_DATE] = out[date_col].apply(normaliser_date)
+    else:
+        out[COL_DATE] = ""
+    out[COL_RESPONDENT] = [
+        opaque_respondent_key(
+            source, path.name,
+            (row.get(respondent_id_col) if respondent_id_col and _non_empty(row.get(respondent_id_col))
+             else f"row:{idx}"),
+        )
+        for idx, row in out.iterrows()
+    ]
 
 
 # --------------------------------------------------------------------------- #
@@ -218,7 +300,9 @@ def _to_bool(value: Any) -> bool:
 #: qui garantit qu'un numéro de commande ou un identifiant client ne descend pas
 #: dans la base ni dans l'export enrichi.
 COLONNES_CONSERVEES_2026 = (
-    "__source__", "__text_raw__", "__satisfaction__", "__satisfaction_raw__",
+    "__source__", "__text_raw__", "__satisfaction__", "__satisfaction_native__",
+    "__satisfaction_scale_max__", "__satisfaction_invalid__", "__satisfaction_raw__",
+    "__respondent_id__", "__client_status__",
     "__field__", "__fichier__", "__date__", "__page_type__", "__url__", "__device__",
 )
 
@@ -289,8 +373,8 @@ def load_cultura_2026(path: str | Path, cfg: Dict[str, Any]) -> pd.DataFrame:
 
 
 def load_for_batch(
-    mdtc_path: str | Path | None,
-    mopinion_path: str | Path | None,
+    mdtc_path: str | Path | Mapping[str, Any] | None,
+    mopinion_path: str | Path | Mapping[str, Any] | None,
     cfg: Dict[str, Any],
 ) -> pd.DataFrame:
     """Charge et concatène MDTC + Mopinion pour un traitement mensuel.
@@ -305,14 +389,17 @@ def load_for_batch(
                                     (mopinion_path, load_mopinion, "Mopinion")):
         if not chemin:
             continue
-        frames.append(_charger_une_source(chemin, charger_v1, nom, cfg))
+        path, original_name = _source_file_descriptor(chemin)
+        frame = _charger_une_source(path, charger_v1, nom, cfg)
+        frame[COL_FICHIER] = original_name
+        frames.append(frame)
     if not frames:
         raise ValueError("Aucun fichier source fourni (mdtc et mopinion absents).")
     combined = pd.concat(frames, ignore_index=True, sort=False)
     return combined
 
 
-def load_many(chemins: Sequence[str | Path], cfg: Dict[str, Any]) -> pd.DataFrame:
+def load_many(chemins: Sequence[str | Path | Mapping[str, Any]], cfg: Dict[str, Any]) -> pd.DataFrame:
     """Charge un nombre quelconque d'exports dans un seul lot.
 
     Chaque fichier est identifié **par son jeu de colonnes** : il n'y a plus à
@@ -331,12 +418,15 @@ def load_many(chemins: Sequence[str | Path], cfg: Dict[str, Any]) -> pd.DataFram
 
     frames, erreurs, resume = [], [], []
     for chemin in chemins:
-        nom = Path(chemin).name
+        path, nom = _source_file_descriptor(chemin)
         try:
-            df = _charger_un_fichier(chemin, cfg)
+            df = _charger_un_fichier(path, cfg)
         except Exception as exc:
             erreurs.append(f"{nom} : {exc}")
             continue
+        # Le hash répondant a déjà été construit avec le nom technique unique.
+        # La colonne persistée/exportée reçoit ensuite le nom métier d'origine.
+        df[COL_FICHIER] = nom
         frames.append(df)
         sources = sorted(set(df[COL_SOURCE].dropna().unique())) if COL_SOURCE in df.columns else []
         resume.append(f"{nom} -> {', '.join(sources) or 'source inconnue'} ({len(df)})")
